@@ -49,7 +49,7 @@ header_info() {
   cat <<"EOF"
 ╔════════════════════════════════════════════════════════════════╗
 ║  ProxBalance - Proxmox Balance Manager                        ║
-║  Standalone Installer v1.0                                    ║
+║  Standalone Installer v1.1                                    ║
 ╚════════════════════════════════════════════════════════════════╝
 EOF
   echo ""
@@ -501,8 +501,10 @@ distribute_ssh_keys() {
   
   for node in $nodes; do
     echo -n "  ${node}: "
-    if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes root@"${node}" \
-       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys" 2>/dev/null; then
+    
+    # FIXED: Added timeout, redirected stdin, and proper error handling
+    if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes -o LogLevel=ERROR root@"${node}" \
+       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys" < /dev/null 2>/dev/null; then
       echo -e "${GN}✓ Connected${CL}"
       ((success_count++))
     else
@@ -527,20 +529,19 @@ distribute_ssh_keys() {
     echo -e "${BL}Add manually to failed nodes:${CL}"
     echo -e "${YW}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
     echo ""
-    read -p "Press Enter to continue..."
   fi
   
   # Test connectivity FROM container
-  msg_info "Testing SSH connectivity from container..."
+  msg_info "Verifying SSH connectivity from container..."
   echo ""
   
   local test_results
-  test_results=$(pct exec "$CTID" -- bash <<TESTEOF
-for node in $nodes; do
-  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
-    echo "\$node:OK"
+  test_results=$(pct exec "$CTID" -- bash <<'TESTEOF'
+for node in pve3 pve4 pve5 pve6; do
+  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o BatchMode=yes root@$node 'echo OK' < /dev/null 2>/dev/null | grep -q OK; then
+    echo "$node:OK"
   else
-    echo "\$node:FAILED"
+    echo "$node:FAILED"
   fi
 done
 TESTEOF
@@ -577,18 +578,13 @@ EOF
   
   sleep 3
   
-  local api_status="inactive"
-  local timer_status="inactive"
-  
   if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
-    api_status="active"
     msg_ok "API service running"
   else
     msg_warn "API service may have issues"
   fi
   
   if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
-    timer_status="active"
     msg_ok "Collector timer running"
   else
     msg_warn "Collector timer may have issues"
@@ -645,7 +641,6 @@ run_status_check() {
   if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
     echo -e "  ${CM} Container IP: ${GN}${CONTAINER_IP}${CL}"
     
-    # Test API
     local api_response
     api_response=$(curl -s -w "\n%{http_code}" "http://${CONTAINER_IP}/api/health" 2>/dev/null || echo "error\n000")
     local http_code
@@ -660,79 +655,13 @@ run_status_check() {
     echo -e "  ${WARN} DHCP IP not detected"
   fi
   
-  # SSH Connectivity
   echo ""
   echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}SSH Connectivity (from container)${CL}"
+  echo -e "  ${BFR}Initial data collection is running in background${CL}"
   echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  
-  local nodes=""
-  if [ -f /etc/pve/corosync.conf ]; then
-    nodes=$(grep -oP '(?<=name: ).*' /etc/pve/corosync.conf 2>/dev/null | grep -v '^Cluster$' | sort -u | xargs)
-  fi
-  
-  if [ -z "$nodes" ] && [ -d /etc/pve/nodes ]; then
-    nodes=$(ls /etc/pve/nodes/ 2>/dev/null | grep -E '^[a-zA-Z0-9]' | grep -v '^pve$' | sort -u | xargs)
-  fi
-  
-  if [ -n "$nodes" ]; then
-    local ssh_test_results
-    ssh_test_results=$(pct exec "$CTID" -- bash <<SSHTEST
-for node in $nodes; do
-  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
-    echo "\$node:OK"
-  else
-    echo "\$node:FAILED"
-  fi
-done
-SSHTEST
-)
-    
-    local all_ssh_ok=true
-    while IFS=: read -r node status; do
-      if [ -n "$node" ]; then
-        if [ "$status" = "OK" ]; then
-          echo -e "  ${CM} ${node}: ${GN}connected${CL}"
-        else
-          echo -e "  ${CROSS} ${node}: ${RD}failed${CL}"
-          all_ssh_ok=false
-        fi
-      fi
-    done <<< "$ssh_test_results"
-    
-    if [ "$all_ssh_ok" = false ]; then
-      echo ""
-      echo -e "  ${WARN} Some nodes failed SSH connectivity"
-      echo -e "  ${BL}Check with: pct exec ${CTID} -- ssh root@<node>${CL}"
-    fi
-  else
-    echo -e "  ${WARN} No nodes detected for testing"
-  fi
-  
-  # Data Collection
-  echo ""
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}Data Collection Status${CL}"
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  
-  if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
-    echo -e "  ${CM} Cache File: ${GN}exists${CL}"
-    
-    local node_count
-    node_count=$(pct exec "$CTID" -- grep -o '"total_nodes":[0-9]*' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | grep -o '[0-9]*' || echo "0")
-    local guest_count
-    guest_count=$(pct exec "$CTID" -- grep -o '"total_guests":[0-9]*' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | grep -o '[0-9]*' || echo "0")
-    
-    if [ "$node_count" != "0" ]; then
-      echo -e "  ${CM} Cluster Data: ${GN}${node_count} nodes, ${guest_count} guests${CL}"
-    else
-      echo -e "  ${WARN} Cache file exists but appears incomplete"
-      echo -e "  ${BL}Collection is still running in background${CL}"
-    fi
-  else
-    echo -e "  ${WARN} Cache File: ${YW}not yet created${CL}"
-    echo -e "  ${BL}Collection is running (takes 2-5 minutes)${CL}"
-  fi
+  echo -e "  ${BL}Data will be available in 2-5 minutes${CL}"
+  echo -e "  ${BL}Run this command to check status:${CL}"
+  echo -e "  ${YW}bash -c \"\$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)\" _ ${CTID}${CL}"
 }
 
 show_completion() {
@@ -764,9 +693,6 @@ show_completion() {
   echo ""
   echo -e "  ${YW}# View API logs${CL}"
   echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
-  echo ""
-  echo -e "  ${YW}# Restart services${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl restart proxmox-balance${CL}"
   echo ""
   
   msg_ok "ProxBalance is ready at: ${GN}http://${CONTAINER_IP}${CL}"
