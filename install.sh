@@ -130,37 +130,37 @@ select_hostname() {
 
 select_network() {
   msg_info "Network Configuration"
-  echo -e "  ${BL}1)${CL} DHCP (Automatic) - Recommended"
+  echo -e "  ${BL}1)${CL} DHCP (Automatic) - ${GN}Recommended (default)${CL}"
   echo -e "  ${BL}2)${CL} Static IP"
   echo ""
   
-  while true; do
-    read -p "Select option [1-2]: " choice
-    case $choice in
-      1)
-        NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
-        msg_ok "Network: ${GN}DHCP (Automatic)${CL}"
-        break
-        ;;
-      2)
-        read -p "Enter IP address (e.g., 10.0.0.131): " ip_addr
-        read -p "Enter CIDR (e.g., 24): " cidr
-        read -p "Enter gateway (e.g., 10.0.0.1): " gateway
-        
-        if [[ ! "$ip_addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          msg_error "Invalid IP address format"
-          continue
-        fi
-        
-        NET_CONFIG="name=eth0,bridge=vmbr0,ip=${ip_addr}/${cidr},gw=${gateway}"
-        msg_ok "Static IP: ${GN}${ip_addr}/${cidr}${CL} via ${GN}${gateway}${CL}"
-        break
-        ;;
-      *)
-        msg_error "Invalid selection"
-        ;;
-    esac
-  done
+  read -p "Select option [1-2] (default: 1): " choice
+  choice=${choice:-1}
+  
+  case $choice in
+    1)
+      NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
+      msg_ok "Network: ${GN}DHCP (Automatic)${CL}"
+      ;;
+    2)
+      read -p "Enter IP address (e.g., 10.0.0.131): " ip_addr
+      read -p "Enter CIDR (e.g., 24): " cidr
+      read -p "Enter gateway (e.g., 10.0.0.1): " gateway
+      
+      if [[ ! "$ip_addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        msg_error "Invalid IP address format"
+        select_network
+        return
+      fi
+      
+      NET_CONFIG="name=eth0,bridge=vmbr0,ip=${ip_addr}/${cidr},gw=${gateway}"
+      msg_ok "Static IP: ${GN}${ip_addr}/${cidr}${CL} via ${GN}${gateway}${CL}"
+      ;;
+    *)
+      msg_error "Invalid selection"
+      select_network
+      ;;
+  esac
 }
 
 select_storage() {
