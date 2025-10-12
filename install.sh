@@ -475,6 +475,97 @@ setup_ssh() {
   msg_ok "SSH key generated"
 }
 
+distribute_ssh_keys() {
+  msg_info "Distributing SSH Keys to Cluster Nodes"
+  
+  # Detect all cluster nodes
+  local nodes
+  if command -v pvesh &> /dev/null; then
+    nodes=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | tr '\n' ' ')
+  fi
+  
+  if [ -z "$nodes" ]; then
+    msg_warn "Could not auto-detect cluster nodes"
+    read -p "Enter space-separated list of node hostnames (e.g., pve1 pve2 pve3): " nodes
+  else
+    msg_ok "Detected cluster nodes: ${GN}${nodes}${CL}"
+    echo ""
+    read -p "Add SSH key to all detected nodes? [Y/n]: " add_keys
+    add_keys=${add_keys:-Y}
+    
+    if [[ ! "$add_keys" =~ ^[Yy]$ ]]; then
+      read -p "Enter space-separated list of nodes to configure: " nodes
+    fi
+  fi
+  
+  echo ""
+  msg_info "Adding SSH key to nodes..."
+  local success_count=0
+  local fail_count=0
+  local failed_nodes=""
+  
+  for node in $nodes; do
+    echo -n "  ${node}: "
+    
+    # Try to add key
+    if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@"${node}" \
+       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys" &>/dev/null; then
+      echo -e "${GN}✓${CL}"
+      ((success_count++))
+    else
+      echo -e "${RD}✗${CL}"
+      ((fail_count++))
+      failed_nodes="${failed_nodes} ${node}"
+    fi
+  done
+  
+  echo ""
+  if [ $success_count -gt 0 ]; then
+    msg_ok "Successfully added SSH key to ${success_count} node(s)"
+  fi
+  
+  if [ $fail_count -gt 0 ]; then
+    msg_warn "Failed to add SSH key to ${fail_count} node(s):${failed_nodes}"
+    echo ""
+    msg_info "Manual setup required for failed nodes. Run on each:"
+    echo -e "${YW}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
+    echo ""
+    read -p "Press Enter to continue..."
+  fi
+  
+  # Test connectivity from container
+  msg_info "Testing SSH connectivity from container..."
+  local test_results
+  test_results=$(pct exec "$CTID" -- bash <<EOF
+for node in $nodes; do
+  if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
+    echo "\$node:OK"
+  else
+    echo "\$node:FAILED"
+  fi
+done
+EOF
+)
+  
+  echo ""
+  local connectivity_ok=true
+  while IFS=: read -r node status; do
+    if [ "$status" = "OK" ]; then
+      echo -e "  ${node}: ${GN}✓ Connected${CL}"
+    else
+      echo -e "  ${node}: ${RD}✗ Failed${CL}"
+      connectivity_ok=false
+    fi
+  done <<< "$test_results"
+  
+  echo ""
+  if [ "$connectivity_ok" = true ]; then
+    msg_ok "All SSH connections verified"
+  else
+    msg_warn "Some SSH connections failed - check configuration"
+  fi
+}
+
 start_services() {
   msg_info "Starting Services"
   
@@ -499,13 +590,160 @@ EOF
 }
 
 initial_collection() {
-  msg_info "Running Initial Data Collection (30-60 seconds)"
+  msg_info "Initial Data Collection"
+  echo ""
+  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
+  echo -e "${YW}IMPORTANT:${CL} The first data collection can take 2-5 minutes"
+  echo ""
+  echo -e "During this time:"
+  echo -e "  • The web interface will show an error"
+  echo -e "  • API requests will return 503 (Service Unavailable)"
+  echo -e "  • This is ${GN}normal${CL} and expected"
+  echo ""
+  echo -e "The collection gathers data from all cluster nodes via SSH."
+  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
+  echo ""
   
-  if pct exec "$CTID" -- /opt/proxmox-balance-manager/venv/bin/python3 /opt/proxmox-balance-manager/collector.py 2>/dev/null; then
-    msg_ok "Initial data collection complete"
-  else
-    msg_warn "Initial collection had issues - will retry automatically"
+  read -p "Start initial data collection now? [Y/n]: " start_collection
+  start_collection=${start_collection:-Y}
+  
+  if [[ ! "$start_collection" =~ ^[Yy]$ ]]; then
+    msg_warn "Skipping initial collection"
+    echo ""
+    msg_info "You can trigger it manually later with:"
+    echo -e "  ${YW}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
+    echo -e "  ${YW}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
+    return
   fi
+  
+  echo ""
+  msg_info "Starting data collection in background..."
+  
+  # Start collection in background
+  pct exec "$CTID" -- bash -c "
+    /opt/proxmox-balance-manager/venv/bin/python3 \
+    /opt/proxmox-balance-manager/collector.py \
+    > /var/log/proxmox-collector-initial.log 2>&1 &
+    echo \$!
+  " > /tmp/collector_pid 2>/dev/null
+  
+  local collector_pid
+  collector_pid=$(cat /tmp/collector_pid 2>/dev/null)
+  
+  if [ -n "$collector_pid" ]; then
+    msg_ok "Collection started (PID: ${collector_pid})"
+  else
+    msg_ok "Collection started"
+  fi
+  
+  echo ""
+  echo -e "${BL}Monitoring collection progress...${CL}"
+  echo -e "${YW}This will take 2-5 minutes. Please wait...${CL}"
+  echo ""
+  
+  local max_wait=300  # 5 minutes
+  local wait_time=0
+  local check_interval=10
+  local dots=""
+  
+  while [ $wait_time -lt $max_wait ]; do
+    # Check if cache file exists and is recent
+    local cache_exists
+    cache_exists=$(pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json && echo "yes" || echo "no")
+    
+    if [ "$cache_exists" = "yes" ]; then
+      # Check if it's recent (less than 60 seconds old)
+      local cache_age
+      cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
+      local now
+      now=$(date +%s)
+      local age_diff=$((now - cache_age))
+      
+      if [ $age_diff -lt 60 ]; then
+        echo ""
+        msg_ok "Data collection completed successfully!"
+        
+        # Verify data is valid
+        local data_valid
+        data_valid=$(pct exec "$CTID" -- bash -c "
+          if command -v jq &>/dev/null; then
+            jq -e '.nodes' /opt/proxmox-balance-manager/cluster_cache.json >/dev/null 2>&1 && echo 'yes' || echo 'no'
+          else
+            grep -q '\"nodes\"' /opt/proxmox-balance-manager/cluster_cache.json && echo 'yes' || echo 'no'
+          fi
+        " 2>/dev/null)
+        
+        if [ "$data_valid" = "yes" ]; then
+          msg_ok "Cache file validated"
+          
+          # Show summary
+          local node_count
+          node_count=$(pct exec "$CTID" -- bash -c "
+            if command -v jq &>/dev/null; then
+              jq -r '.summary.total_nodes // 0' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null
+            else
+              echo '?'
+            fi
+          ")
+          
+          local guest_count
+          guest_count=$(pct exec "$CTID" -- bash -c "
+            if command -v jq &>/dev/null; then
+              jq -r '.summary.total_guests // 0' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null
+            else
+              echo '?'
+            fi
+          ")
+          
+          if [ "$node_count" != "?" ] && [ "$guest_count" != "?" ]; then
+            echo -e "  ${BL}Cluster Summary:${CL}"
+            echo -e "    Nodes: ${GN}${node_count}${CL}"
+            echo -e "    Guests: ${GN}${guest_count}${CL}"
+          fi
+        else
+          msg_warn "Cache file created but may be incomplete"
+        fi
+        
+        break
+      fi
+    fi
+    
+    # Update progress indicator
+    dots="${dots}."
+    if [ ${#dots} -gt 40 ]; then
+      dots="."
+    fi
+    echo -ne "\r  Collecting data${dots} (${wait_time}s elapsed)                    "
+    
+    sleep $check_interval
+    wait_time=$((wait_time + check_interval))
+  done
+  
+  echo ""
+  
+  if [ $wait_time -ge $max_wait ]; then
+    msg_warn "Collection is taking longer than expected"
+    echo ""
+    echo -e "${YW}The collection is still running in the background.${CL}"
+    echo -e "You can monitor it with:"
+    echo -e "  ${BL}pct exec ${CTID} -- tail -f /var/log/proxmox-collector-initial.log${CL}"
+    echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-collector -f${CL}"
+  fi
+  
+  echo ""
+  msg_info "Collection Status Check Commands:"
+  echo -e "  ${BL}# Check if cache file exists${CL}"
+  echo -e "  ${YW}pct exec ${CTID} -- ls -lh /opt/proxmox-balance-manager/cluster_cache.json${CL}"
+  echo ""
+  echo -e "  ${BL}# View collection timestamp${CL}"
+  echo -e "  ${YW}pct exec ${CTID} -- jq -r '.collected_at' /opt/proxmox-balance-manager/cluster_cache.json${CL}"
+  echo ""
+  echo -e "  ${BL}# Check API health${CL}"
+  echo -e "  ${YW}curl -s http://${CONTAINER_IP}/api/health | jq${CL}"
+  echo ""
+  echo -e "  ${BL}# Verify data is available${CL}"
+  echo -e "  ${YW}curl -s http://${CONTAINER_IP}/api/analyze | jq '.success'${CL}"
+  echo ""
 }
 
 show_completion() {
@@ -519,23 +757,69 @@ show_completion() {
   echo ""
   
   if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
+    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+    echo -e "  ${BFR}Access Information${CL}"
+    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
     echo -e "  ${BL}Web Interface:${CL}  http://${GN}${CONTAINER_IP}${CL}"
     echo -e "  ${BL}API Endpoint:${CL}   http://${GN}${CONTAINER_IP}${CL}/api"
+    echo -e "  ${BL}Container ID:${CL}   ${GN}${CTID}${CL}"
+    echo ""
   else
-    echo -e "  ${YW}Container using DHCP - run this to get IP:${CL}"
+    echo -e "${YW}Container using DHCP - run this to get IP:${CL}"
     echo -e "  ${BL}pct exec ${CTID} -- hostname -I${CL}"
+    echo ""
   fi
+  
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}Quick Status Check Commands${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo ""
+  echo -e "  ${YW}# Check if data collection is complete${CL}"
+  echo -e "  ${BL}curl -s http://${CONTAINER_IP}/api/health | jq${CL}"
+  echo ""
+  echo -e "  ${YW}# View collection status${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- jq -r '.collected_at' /opt/proxmox-balance-manager/cluster_cache.json${CL}"
+  echo ""
+  echo -e "  ${YW}# Check service status${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- systemctl status proxmox-balance --no-pager${CL}"
+  echo ""
+  echo -e "  ${YW}# View API logs${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -n 20${CL}"
+  echo ""
+  echo -e "  ${YW}# View collector logs${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-collector -n 20${CL}"
   echo ""
   
-  echo -e "${BL}SSH Key Configuration:${CL}"
-  echo -e "Add this key to all Proxmox nodes:"
-  echo -e "${YW}${SSH_PUBKEY}${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}Management Commands${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
   echo ""
-  echo -e "Run on each node:"
-  echo -e "${BL}mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys${CL}"
+  echo -e "  ${YW}# Restart services${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- systemctl restart proxmox-balance${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- systemctl restart proxmox-collector.timer${CL}"
+  echo ""
+  echo -e "  ${YW}# Trigger manual data collection${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
+  echo -e "  ${BL}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
+  echo ""
+  echo -e "  ${YW}# View/Edit configuration${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- /opt/proxmox-balance-manager/manage_settings.sh show${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- nano /opt/proxmox-balance-manager/config.json${CL}"
   echo ""
   
-  msg_ok "Enjoy ProxBalance!"
+  if [ -n "$SSH_PUBKEY" ]; then
+    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+    echo -e "  ${BFR}SSH Public Key${CL}"
+    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+    echo -e "${GN}${SSH_PUBKEY}${CL}"
+    echo ""
+    echo -e "${YW}If you need to manually add this key to any nodes:${CL}"
+    echo -e "${BL}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
+    echo ""
+  fi
+  
+  msg_ok "Installation complete! Access ProxBalance at: ${GN}http://${CONTAINER_IP}${CL}"
+  echo ""
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -567,6 +851,7 @@ main() {
   setup_services
   setup_nginx
   setup_ssh
+  distribute_ssh_keys
   start_services
   initial_collection
   show_completion
