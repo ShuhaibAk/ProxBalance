@@ -23,8 +23,10 @@
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
 ```
 
-**⏱️ Complete setup in under 5 minutes!**
-Run on a Proxmox host, creates a CT.
+**⏱️ Complete setup in under 5 minutes!**  
+Run on a Proxmox host, creates an LXC container with ProxBalance installed.
+
+➡️ **[Detailed Installation Guide](docs/INSTALL.md#-quick-install-recommended)**
 
 ---
 
@@ -83,88 +85,83 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
 ### Prerequisites
 
 - Proxmox VE 7.0 or higher
-- Debian 11/12 LXC container (unprivileged)
-- SSH access to all Proxmox nodes
-- Python 3.8+
-- 2GB RAM, 2 CPU cores, 8GB disk (minimum)
+- Root access to Proxmox host
+- Network connectivity between container and all nodes
+- Minimum: 2GB RAM, 2 CPU cores, 8GB disk
+- Recommended: 4GB RAM, 2 CPU cores, 16GB disk
 
 ### Installation
 
-#### Option 1: Automated Install (Recommended)
+#### Automated Install (Recommended)
 
 ```bash
-# On your Proxmox host, download and run the installer
-wget https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh
-chmod +x install.sh
-./install.sh
+# On your Proxmox host, run:
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
 ```
 
-#### Option 2: Manual Install
+The installer will:
+1. Auto-detect your cluster nodes
+2. Create an LXC container (default ID: next available)
+3. Configure DHCP or static IP
+4. Install all dependencies
+5. Setup SSH keys across all nodes
+6. Deploy and start all services
+7. Trigger initial data collection
 
-See [INSTALL.md](INSTALL.md) for detailed step-by-step instructions.
+#### Manual Install
 
-### Quick Configuration
+See [docs/INSTALL.md](docs/INSTALL.md) for detailed step-by-step instructions.
 
-After installation completes:
+### Initial Configuration
+
+The installer automatically configures most settings, but you should verify:
 
 1. **Access the web interface**: `http://<container-ip>`
-   - The installer will show you the exact URL at the end
+   - The installer displays the URL at completion
 
-2. **Review your cluster status** 
-   - View node metrics and guest distribution
-   - Check for any immediate recommendations
+2. **Wait for initial data collection** (2-5 minutes)
+   - First collection runs automatically
+   - View progress: `pct exec <ctid> -- journalctl -u proxmox-collector -f`
 
-3. **Adjust settings** (optional)
-   - Click the ⚙️ Settings icon
+3. **Verify cluster detection**
+   - Check that all nodes appear in the dashboard
+   - Verify SSH connectivity to all nodes
+
+4. **Adjust settings** (optional)
+   - Click ⚙️ Settings icon
    - Customize collection intervals (default: 60 min)
    - Customize UI refresh intervals (default: 15 min)
 
-4. **Configure SSH for additional nodes** (if you have multiple nodes)
-   - The installer adds the SSH key to your main Proxmox host automatically
-   - For additional nodes, copy the SSH public key displayed at installation
-   - Or run: `ssh root@<other-node> 'cat >> /root/.ssh/authorized_keys' < /root/.ssh/id_ed25519.pub`
+### Quick Health Check
 
-5. **Start monitoring and balancing!** 🎉
+Run the status checker script:
 
-### 📺 What You'll See
+```bash
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)" _ <container-id>
+```
 
-After installation, ProxBalance immediately begins monitoring your cluster:
-
-- **Real-time Dashboard** - CPU, memory, and load metrics for all nodes
-- **Guest Overview** - All VMs and containers with their current locations
-- **Smart Recommendations** - Automatic migration suggestions when imbalance detected
-- **One-Click Actions** - Execute migrations with a single button press
-- **Tag Management** - View ignored guests and anti-affinity rules
-
-**No configuration needed to start!** ProxBalance works out of the box with sensible defaults.
+This provides a comprehensive health report including:
+- Container status
+- Service status
+- Cache age and content
+- API health
+- SSH connectivity to all nodes
 
 ---
 
 ## ⚙️ Configuration
 
-### Initial Setup
+### Configuration File
 
-After installation, you must configure the Proxmox host IP:
+Location: `/opt/proxmox-balance-manager/config.json`
 
-1. Edit the configuration file:
-   ```bash
-   nano /opt/proxmox-balance-manager/config.json
-   ```
-
-2. Update the `proxmox_host` value:
-   ```json
-   {
-     "collection_interval_minutes": 60,
-     "ui_refresh_interval_minutes": 15,
-     "proxmox_host": "YOUR_PROXMOX_IP"
-   }
-   ```
-
-3. Restart the services:
-   ```bash
-   systemctl restart proxmox-balance
-   systemctl restart proxmox-collector.timer
-   ```
+```json
+{
+  "collection_interval_minutes": 60,
+  "ui_refresh_interval_minutes": 15,
+  "proxmox_host": "10.0.0.3"
+}
+```
 
 ### Configuration Options
 
@@ -172,9 +169,33 @@ After installation, you must configure the Proxmox host IP:
 |--------|-------------|---------|-------|
 | `collection_interval_minutes` | How often to collect cluster data | 60 | 5-240 |
 | `ui_refresh_interval_minutes` | How often the UI auto-refreshes | 15 | 5-120 |
-| `proxmox_host` | IP address of your Proxmox host | CHANGE_ME | Any valid IP |
+| `proxmox_host` | Primary Proxmox host IP | Auto-detected | Any valid IP/hostname |
 
-**Note:** UI refresh interval should be ≤ backend collection interval for best experience.
+**Note:** Set UI interval ≤ backend interval for best experience.
+
+### Updating Configuration
+
+#### Via Web Interface
+1. Click ⚙️ Settings icon
+2. Adjust intervals using sliders
+3. Click "Save Settings"
+4. Services restart automatically
+
+#### Via Command Line
+
+```bash
+# View current settings
+pct exec <ctid> -- /opt/proxmox-balance-manager/manage_settings.sh show
+
+# Set backend collection interval
+pct exec <ctid> -- /opt/proxmox-balance-manager/manage_settings.sh set-backend 30
+
+# Set UI refresh interval
+pct exec <ctid> -- /opt/proxmox-balance-manager/manage_settings.sh set-ui 15
+
+# Set both intervals at once
+pct exec <ctid> -- /opt/proxmox-balance-manager/manage_settings.sh set-both 45
+```
 
 ---
 
@@ -192,15 +213,27 @@ pvesh set /nodes/<node-name>/qemu/<vmid>/config --tags "ignore"
 # Example: Firewall VMs that must be on different nodes
 pvesh set /nodes/<node1>/qemu/<vmid1>/config --tags "exclude_firewall"
 pvesh set /nodes/<node2>/qemu/<vmid2>/config --tags "exclude_firewall"
+
+# Example: Database servers with anti-affinity
+pvesh set /nodes/<node1>/qemu/<vmid1>/config --tags "exclude_database"
+pvesh set /nodes/<node2>/qemu/<vmid2>/config --tags "exclude_database"
+```
+
+**Multiple tags** - Combine ignore with anti-affinity:
+```bash
+pvesh set /nodes/<node>/qemu/<vmid>/config --tags "ignore;exclude_firewall"
 ```
 
 ### API Endpoints
 
 ```bash
-# Get cluster status
+# Health check
+curl http://<container-ip>/api/health
+
+# Get cluster analysis
 curl http://<container-ip>/api/analyze
 
-# Get recommendations
+# Get migration recommendations
 curl -X POST http://<container-ip>/api/recommendations \
   -H "Content-Type: application/json" \
   -d '{"cpu_threshold": 60, "mem_threshold": 70}'
@@ -208,57 +241,62 @@ curl -X POST http://<container-ip>/api/recommendations \
 # Trigger data refresh
 curl -X POST http://<container-ip>/api/refresh
 
-# Execute migration
+# Execute single migration
 curl -X POST http://<container-ip>/api/migrate \
   -H "Content-Type: application/json" \
   -d '{
     "vmid": 100,
-    "source_node": "<source-node>",
-    "target_node": "<target-node>",
-    "type": "CT"
+    "source_node": "pve1",
+    "target_node": "pve2",
+    "type": "VM"
+  }'
+
+# Execute batch migrations
+curl -X POST http://<container-ip>/api/migrate/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "migrations": [
+      {"vmid": 100, "source_node": "pve1", "target_node": "pve2", "type": "VM"},
+      {"vmid": 101, "source_node": "pve1", "target_node": "pve3", "type": "CT"}
+    ]
+  }'
+
+# Get configuration
+curl http://<container-ip>/api/config
+
+# Update configuration
+curl -X POST http://<container-ip>/api/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection_interval_minutes": 30,
+    "ui_refresh_interval_minutes": 15
   }'
 ```
 
-### Command Line Management
+### Useful Commands
 
 ```bash
-# View current settings
-pct exec <container-id> -- /opt/proxmox-balance-manager/manage_settings.sh show
+# Check all service status
+pct exec <ctid> -- systemctl status proxmox-balance proxmox-collector.timer nginx
 
-# Set backend collection interval to 30 minutes
-pct exec <container-id> -- /opt/proxmox-balance-manager/manage_settings.sh set-backend 30
+# View API logs
+pct exec <ctid> -- journalctl -u proxmox-balance -f
 
-# Set UI refresh interval to 15 minutes
-pct exec <container-id> -- /opt/proxmox-balance-manager/manage_settings.sh set-ui 15
+# View collector logs
+pct exec <ctid> -- journalctl -u proxmox-collector -f
 
-# Restart services
-pct exec <container-id> -- systemctl restart proxmox-balance
-pct exec <container-id> -- systemctl restart proxmox-collector.timer
+# Check cache file
+pct exec <ctid> -- jq '.' /opt/proxmox-balance-manager/cluster_cache.json | head -50
+
+# Manually trigger collection
+pct exec <ctid> -- systemctl start proxmox-collector.service
+
+# Restart all services
+pct exec <ctid> -- systemctl restart proxmox-balance proxmox-collector.timer nginx
+
+# Check SSH connectivity to nodes
+pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ssh root@$node "echo OK"; done'
 ```
-
----
-
-## 📸 Screenshots
-
-### Main Dashboard
-![ProxBalance Dashboard](docs/images/dashboard.png)
-*Main dashboard showing cluster status, resource metrics, and tagged guests with affinity rules*
-
-### Node Status
-![Node Status](docs/images/node-status.png)
-*Real-time view of all cluster nodes with CPU, memory, cores, and guest counts*
-
-### Migration Recommendations
-![Migration Recommendations](docs/images/recommendations.png)
-*Intelligent migration suggestions with detailed reasoning and one-click execution*
-
-### Tagged Guests & Affinity Rules
-![Tagged Guests](docs/images/tagged-guests.png)
-*Visual management of ignored guests and anti-affinity groups for workload separation*
-
-### Settings Panel
-![Settings Panel](docs/images/settings.png)
-*Configurable intervals and thresholds*
 
 ---
 
@@ -323,6 +361,8 @@ ProxBalance/
 ├── manage_settings.sh          # Settings CLI tool
 ├── update_timer.py             # Timer update script
 ├── install.sh                  # Automated installer
+├── check-status.sh             # Status checker script
+├── debug-services.sh           # Service debugger
 ├── systemd/
 │   ├── proxmox-balance.service       # API service
 │   ├── proxmox-collector.service     # Collector service
@@ -337,6 +377,8 @@ ProxBalance/
 │   ├── logo.svg                      # ProxBalance logo
 │   └── favicon.svg                   # Browser icon
 ├── LICENSE
+├── CHANGELOG.md
+├── CONTRIBUTING.md
 └── README.md
 ```
 
@@ -351,99 +393,101 @@ ProxBalance uses SSH key-based authentication to communicate with Proxmox nodes:
 - **Local network only** - Designed for internal cluster networks
 - **API on localhost** - Nginx proxies, no direct external access to Flask
 
-### Recommendations
+### Security Best Practices
 
-1. Run ProxBalance in an **unprivileged LXC container**
-2. Use **firewall rules** to restrict access to the web interface
-3. Consider **SSL/TLS termination** with Let's Encrypt if exposing externally
-4. Regularly **review migration logs** for unexpected activity
+1. **Use unprivileged LXC container** (default in installer)
+2. **Implement firewall rules** to restrict web interface access
+3. **Consider SSL/TLS** with Let's Encrypt if exposing externally
+4. **Regular audits** - Review migration logs for unexpected activity
+5. **SSH key rotation** - Periodically regenerate SSH keys
+6. **Network isolation** - Run on management VLAN if possible
+
+### Optional Security Hardening
+
+```bash
+# Firewall rules (UFW)
+pct exec <ctid> -- apt-get install -y ufw
+pct exec <ctid> -- ufw allow from <your-network>/24 to any port 80
+pct exec <ctid> -- ufw enable
+
+# SSL/TLS with Let's Encrypt
+pct exec <ctid> -- apt-get install -y certbot python3-certbot-nginx
+pct exec <ctid> -- certbot --nginx -d your-domain.com
+```
 
 ---
 
-## 🛠️ Development
+## 🛠️ Troubleshooting
 
-### Local Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/Pr0zak/ProxBalance.git
-cd ProxBalance
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install flask flask-cors gunicorn
-
-# Run development server
-python3 app.py
-```
-
-### Testing
+### Quick Diagnostics
 
 ```bash
-# Run collector manually
-python3 collector.py
+# Run comprehensive status check
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)" _ <ctid>
 
-# Test API endpoint
-curl http://localhost:5000/api/health
-
-# Check cache file
-cat cluster_cache.json | jq
+# Debug service issues
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/debug-services.sh)" _ <ctid>
 ```
 
-### Contributing
+### Common Issues
 
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 🐛 Troubleshooting
-
-### No cached data available
+#### No cached data available
 
 ```bash
-# Manually trigger collection
-pct exec <container-id> -- systemctl start proxmox-collector.service
+# Trigger manual collection
+pct exec <ctid> -- systemctl start proxmox-collector.service
 
-# Check collector logs
-pct exec <container-id> -- journalctl -u proxmox-collector -n 50
+# Watch collection progress
+pct exec <ctid> -- journalctl -u proxmox-collector -f
+
+# Check if cache file exists
+pct exec <ctid> -- ls -lh /opt/proxmox-balance-manager/cluster_cache.json
 ```
 
-### API not responding (502 Bad Gateway)
+#### API not responding (502 Bad Gateway)
 
 ```bash
 # Check Flask service
-pct exec <container-id> -- systemctl status proxmox-balance
+pct exec <ctid> -- systemctl status proxmox-balance
 
-# Restart API
-pct exec <container-id> -- systemctl restart proxmox-balance
+# Restart Flask
+pct exec <ctid> -- systemctl restart proxmox-balance
 
-# View logs
-pct exec <container-id> -- journalctl -u proxmox-balance -f
+# View recent logs
+pct exec <ctid> -- journalctl -u proxmox-balance -n 50
 ```
 
-### Migrations failing
+#### SSH connectivity issues
 
 ```bash
-# Test SSH connectivity
-pct exec <container-id> -- ssh root@<node-name> "echo OK"
+# Test SSH from container
+pct exec <ctid> -- ssh root@<node-name> "echo OK"
 
-# Check if guest exists
-pvesh get /cluster/resources --type vm | grep <vmid>
+# Check SSH key exists
+pct exec <ctid> -- ls -la /root/.ssh/id_ed25519*
 
-# View Proxmox task log
-pvesh get /nodes/<node-name>/tasks
+# Regenerate SSH key if needed
+pct exec <ctid> -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
+
+# Get public key to add to nodes
+pct exec <ctid> -- cat /root/.ssh/id_ed25519.pub
 ```
 
-See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for more solutions.
+#### Migrations failing
+
+```bash
+# Verify guest exists on source node
+ssh root@<source-node> "pct list | grep <vmid>"  # for CT
+ssh root@<source-node> "qm list | grep <vmid>"   # for VM
+
+# Check for locks
+ssh root@<source-node> "pct config <vmid> | grep lock"
+
+# View Proxmox task log
+ssh root@<source-node> "pvesh get /nodes/<source-node>/tasks"
+```
+
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions.
 
 ---
 
@@ -451,19 +495,26 @@ See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for more solutions.
 
 ### Cluster Size Guidelines
 
-| Cluster Size | Backend Interval | UI Interval |
-|--------------|------------------|-------------|
-| 1-20 guests  | 15-30 min        | 10-15 min   |
-| 21-50 guests | 30-60 min        | 15-30 min   |
-| 51-100 guests| 60-120 min       | 30-60 min   |
-| 100+ guests  | 120-240 min      | 60-120 min  |
+| Cluster Size | Backend Interval | UI Interval | Expected RAM Usage |
+|--------------|------------------|-------------|--------------------|
+| 1-20 guests  | 15-30 min        | 10-15 min   | ~200MB            |
+| 21-50 guests | 30-60 min        | 15-30 min   | ~250MB            |
+| 51-100 guests| 60-120 min       | 30-60 min   | ~300MB            |
+| 100+ guests  | 120-240 min      | 60-120 min  | ~400MB            |
 
 ### Resource Usage
 
-- **Container**: ~200MB RAM, <5% CPU (idle)
-- **Collection**: ~50-100MB RAM spike during data collection
-- **Network**: Minimal (SSH queries only)
-- **Storage**: <100MB total
+- **Container Idle**: ~200MB RAM, <5% CPU
+- **During Collection**: ~50-100MB RAM spike, 10-20% CPU for 30-60 seconds
+- **Network**: Minimal (SSH queries only, ~100KB per collection)
+- **Storage**: <100MB total, cache file grows with cluster size
+
+### Optimization Tips
+
+1. **Large clusters** (100+ guests): Increase intervals to reduce overhead
+2. **Real-time monitoring**: Use shorter intervals for critical clusters
+3. **Resource-constrained hosts**: Increase intervals, allocate more RAM to container
+4. **Multiple networks**: Ensure low-latency connection between container and all nodes
 
 ---
 
@@ -481,6 +532,8 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 - Configurable intervals
 - Batch migration support
 - SSH-based secure communication
+- Automated installer with node auto-detection
+- Status checker and debug tools
 
 ---
 
@@ -489,18 +542,18 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 ### 🐛 Found a Bug?
 Open an [issue](https://github.com/Pr0zak/ProxBalance/issues) with:
 - Your Proxmox VE version
-- Container configuration
+- Container configuration (`pct config <ctid>`)
 - Steps to reproduce
-- Error messages/logs
+- Logs from status checker script
 
 ### 💡 Feature Request?
 We'd love to hear your ideas! Open a [feature request](https://github.com/Pr0zak/ProxBalance/issues/new) or start a [discussion](https://github.com/Pr0zak/ProxBalance/discussions).
 
 ### 🤝 Want to Contribute?
-Contributions are welcome! See our [Contributing Guide](CONTRIBUTING.md) to get started.
+Contributions are welcome! See our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
 
 ### 📣 Share Your Experience
-Using ProxBalance? Share your setup on:
+Using ProxBalance? Share your setup:
 - [r/Proxmox](https://reddit.com/r/Proxmox)
 - [r/homelab](https://reddit.com/r/homelab)
 - [Proxmox Forums](https://forum.proxmox.com/)
@@ -509,13 +562,12 @@ Using ProxBalance? Share your setup on:
 
 ## ⭐ Show Your Support
 
-If ProxBalance helps you manage your Proxmox cluster, please:
+If ProxBalance helps you manage your Proxmox cluster:
 - ⭐ **Star this repository** on GitHub
-- 📢 **Share it** with others in the homelab community
-- 🐛 **Report bugs** to help us improve
+- 📢 **Share it** with the homelab community
+- 🐛 **Report bugs** to help improve
 - 💡 **Suggest features** you'd like to see
-
-Every star and contribution helps the project grow! 🚀
+- 🤝 **Contribute** code or documentation
 
 ---
 
@@ -531,6 +583,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **React** - UI framework
 - **Flask** - Python web framework
 - **Tailwind CSS** - Utility-first CSS framework
+- **Community Contributors** - Thank you for testing, feedback, and improvements!
 
 ---
 
