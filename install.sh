@@ -6,7 +6,7 @@
 # https://github.com/Pr0zak/ProxBalance
 #
 # ProxBalance - Proxmox Balance Manager
-# Standalone Installer
+# Standalone Installer - Robust Version
 
 set -euo pipefail
 shopt -s inherit_errexit nullglob
@@ -49,7 +49,7 @@ header_info() {
   cat <<"EOF"
 ╔════════════════════════════════════════════════════════════════╗
 ║  ProxBalance - Proxmox Balance Manager                        ║
-║  Standalone Installer v1.0                                    ║
+║  Standalone Installer v1.1                                    ║
 ╚════════════════════════════════════════════════════════════════╝
 EOF
   echo ""
@@ -203,14 +203,18 @@ select_template() {
   local template_name="debian-12-standard_12.2-1_amd64.tar.zst"
   local template_path="local:vztmpl/${template_name}"
   
-  if pveam list local | grep -q "$template_name"; then
+  if pveam list local 2>/dev/null | grep -q "$template_name"; then
     TEMPLATE="$template_path"
     msg_ok "Using template: ${GN}${template_name}${CL}"
     return
   fi
   
+  # Update template list
+  msg_info "Updating template list..."
+  pveam update >/dev/null 2>&1 || true
+  
   # List available Debian 12 templates
-  mapfile -t TEMPLATES < <(pveam available | grep "debian-12-standard" | awk '{print $2}')
+  mapfile -t TEMPLATES < <(pveam available 2>/dev/null | grep "debian-12-standard" | awk '{print $2}')
   
   if [ ${#TEMPLATES[@]} -eq 0 ]; then
     msg_warn "No Debian 12 templates available"
@@ -232,7 +236,7 @@ select_template() {
     local selected_template="${TEMPLATES[$((choice-1))]}"
     
     # Download template if not present
-    if ! pveam list local | grep -q "$selected_template"; then
+    if ! pveam list local 2>/dev/null | grep -q "$selected_template"; then
       msg_info "Downloading template..."
       if pveam download local "$selected_template"; then
         msg_ok "Template downloaded"
@@ -268,18 +272,17 @@ select_resources() {
 detect_proxmox_nodes() {
   msg_info "Detecting Proxmox Cluster"
   
+  DETECTED_NODES=""
   if command -v pvesh &> /dev/null; then
     DETECTED_NODES=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | tr '\n' ',' | sed 's/,$//' || echo "")
-    
-    if [ -n "$DETECTED_NODES" ]; then
-      msg_ok "Detected nodes: ${GN}${DETECTED_NODES}${CL}"
-      PROXMOX_HOST=$(echo "$DETECTED_NODES" | cut -d',' -f1)
-      msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
-    else
-      msg_warn "Could not auto-detect cluster"
-      read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
-    fi
+  fi
+  
+  if [ -n "$DETECTED_NODES" ]; then
+    msg_ok "Detected nodes: ${GN}${DETECTED_NODES}${CL}"
+    PROXMOX_HOST=$(echo "$DETECTED_NODES" | cut -d',' -f1)
+    msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
   else
+    msg_warn "Could not auto-detect cluster"
     read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
   fi
 }
@@ -384,7 +387,13 @@ install_proxbalance() {
   
   pct exec "$CTID" -- bash <<'EOF'
 cd /opt
-git clone https://github.com/Pr0zak/ProxBalance.git proxmox-balance-manager
+git clone https://github.com/Pr0zak/ProxBalance.git proxmox-balance-manager 2>/dev/null || {
+  echo "Git clone failed, trying alternative method..."
+  wget -q https://github.com/Pr0zak/ProxBalance/archive/refs/heads/main.zip
+  unzip -q main.zip
+  mv ProxBalance-main proxmox-balance-manager
+  rm main.zip
+}
 cd proxmox-balance-manager
 
 # Create Python virtual environment
@@ -395,8 +404,6 @@ pip install -q flask flask-cors gunicorn
 deactivate
 
 # Make scripts executable
-chmod +x /opt/proxmox-balance-manager/scripts/*.py 2>/dev/null || true
-chmod +x /opt/proxmox-balance-manager/scripts/*.sh 2>/dev/null || true
 chmod +x /opt/proxmox-balance-manager/*.py 2>/dev/null || true
 chmod +x /opt/proxmox-balance-manager/*.sh 2>/dev/null || true
 EOF
@@ -424,19 +431,15 @@ setup_services() {
   msg_info "Setting Up System Services"
   
   pct exec "$CTID" -- bash <<'EOF'
-# Copy service files (check multiple possible locations)
+# Copy service files
 if [ -f /opt/proxmox-balance-manager/systemd/proxmox-balance.service ]; then
-  cp /opt/proxmox-balance-manager/systemd/*.service /etc/systemd/system/
-  cp /opt/proxmox-balance-manager/systemd/*.timer /etc/systemd/system/
-elif [ -f /opt/proxmox-balance-manager/proxmox-balance.service ]; then
-  cp /opt/proxmox-balance-manager/proxmox-balance.service /etc/systemd/system/
-  cp /opt/proxmox-balance-manager/proxmox-collector.service /etc/systemd/system/
-  cp /opt/proxmox-balance-manager/proxmox-collector.timer /etc/systemd/system/
+  cp /opt/proxmox-balance-manager/systemd/*.service /etc/systemd/system/ 2>/dev/null || true
+  cp /opt/proxmox-balance-manager/systemd/*.timer /etc/systemd/system/ 2>/dev/null || true
 fi
 
 systemctl daemon-reload
-systemctl enable proxmox-balance.service
-systemctl enable proxmox-collector.timer
+systemctl enable proxmox-balance.service 2>/dev/null || true
+systemctl enable proxmox-collector.timer 2>/dev/null || true
 EOF
   
   msg_ok "Services configured"
@@ -446,24 +449,20 @@ setup_nginx() {
   msg_info "Configuring Web Server"
   
   pct exec "$CTID" -- bash <<'EOF'
-# Copy web files (check multiple possible locations)
-if [ -d /opt/proxmox-balance-manager/web ]; then
-  cp -r /opt/proxmox-balance-manager/web/* /var/www/html/
-elif [ -f /opt/proxmox-balance-manager/index.html ]; then
+# Copy web files
+if [ -f /opt/proxmox-balance-manager/index.html ]; then
   cp /opt/proxmox-balance-manager/index.html /var/www/html/
 fi
 
 # Copy nginx config
 if [ -f /opt/proxmox-balance-manager/nginx/proxmox-balance ]; then
   cp /opt/proxmox-balance-manager/nginx/proxmox-balance /etc/nginx/sites-available/
-elif [ -f /opt/proxmox-balance-manager/proxmox-balance-nginx ]; then
-  cp /opt/proxmox-balance-manager/proxmox-balance-nginx /etc/nginx/sites-available/proxmox-balance
 fi
 
-ln -sf /etc/nginx/sites-available/proxmox-balance /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/proxmox-balance /etc/nginx/sites-enabled/ 2>/dev/null || true
 rm -f /etc/nginx/sites-enabled/default
 
-nginx -t && systemctl restart nginx && systemctl enable nginx
+nginx -t >/dev/null 2>&1 && systemctl restart nginx && systemctl enable nginx
 EOF
   
   msg_ok "Web server configured"
@@ -472,72 +471,75 @@ EOF
 setup_ssh() {
   msg_info "Setting Up SSH Authentication"
   
-  pct exec "$CTID" -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
-  SSH_PUBKEY=$(pct exec "$CTID" -- cat /root/.ssh/id_ed25519.pub)
+  pct exec "$CTID" -- bash -c "
+    mkdir -p /root/.ssh
+    chmod 700 /root/.ssh
+    ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N '' -q
+  " 2>/dev/null || true
   
-  msg_ok "SSH key generated"
+  SSH_PUBKEY=$(pct exec "$CTID" -- cat /root/.ssh/id_ed25519.pub 2>/dev/null || echo "")
+  
+  if [ -n "$SSH_PUBKEY" ]; then
+    msg_ok "SSH key generated"
+  else
+    msg_error "Failed to generate SSH key"
+    return 1
+  fi
 }
 
 distribute_ssh_keys() {
   msg_info "Distributing SSH Keys to Cluster Nodes"
   
   # Detect all cluster nodes
-  local nodes
+  local nodes=""
   if command -v pvesh &> /dev/null; then
-    nodes=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | tr '\n' ' ')
+    nodes=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | tr '\n' ' ' || echo "")
   fi
   
   if [ -z "$nodes" ]; then
-    msg_warn "Could not auto-detect cluster nodes - skipping SSH key distribution"
+    msg_warn "Could not auto-detect cluster nodes"
+    echo ""
+    echo -e "${YW}SSH Public Key (add manually to all nodes):${CL}"
+    echo -e "${GN}${SSH_PUBKEY}${CL}"
+    echo ""
+    echo -e "Add to each node with:"
+    echo -e "  ${BL}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
+    echo ""
+    read -p "Press Enter to continue..."
     return 0
   fi
   
-  msg_ok "Auto-distributing SSH keys to: ${GN}${nodes}${CL}"
+  msg_ok "Detected nodes: ${GN}${nodes}${CL}"
   echo ""
   msg_info "Adding SSH key to nodes..."
   
+  local failed_nodes=""
   for node in $nodes; do
     echo -n "  ${node}: "
-    if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@"${node}" \
-       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys" &>/dev/null; then
+    
+    # Try to add SSH key
+    if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes root@"${node}" \
+       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys" >/dev/null 2>&1; then
       echo -e "${GN}✓${CL}"
     else
       echo -e "${RD}✗${CL}"
+      failed_nodes="${failed_nodes} ${node}"
     fi
   done
   
-  msg_ok "SSH key distribution complete"
-  
-  # Test SSH connectivity
-  msg_info "Testing SSH connectivity..."
-  local test_results
-  test_results=$(pct exec "$CTID" -- bash <<EOF
-for node in $nodes; do
-  if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
-    echo "\$node:OK"
+  if [ -n "$failed_nodes" ]; then
+    echo ""
+    msg_warn "Failed to add SSH key to:${failed_nodes}"
+    echo ""
+    echo -e "${YW}SSH Public Key (add manually):${CL}"
+    echo -e "${GN}${SSH_PUBKEY}${CL}"
+    echo ""
+    echo -e "Add to failed nodes with:"
+    echo -e "  ${BL}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
+    echo ""
+    read -p "Press Enter to continue..."
   else
-    echo "\$node:FAILED"
-  fi
-done
-EOF
-)
-  
-  echo ""
-  local connectivity_ok=true
-  while IFS=: read -r node status; do
-    if [ "$status" = "OK" ]; then
-      echo -e "  ${node}: ${GN}✓ Connected${CL}"
-    else
-      echo -e "  ${node}: ${RD}✗ Failed${CL}"
-      connectivity_ok=false
-    fi
-  done <<< "$test_results"
-  
-  echo ""
-  if [ "$connectivity_ok" = true ]; then
-    msg_ok "All SSH connections verified"
-  else
-    msg_warn "Some SSH connections failed - check configuration"
+    msg_ok "SSH keys distributed to all nodes"
   fi
 }
 
@@ -545,8 +547,8 @@ start_services() {
   msg_info "Starting Services"
   
   pct exec "$CTID" -- bash <<'EOF'
-systemctl start proxmox-balance.service
-systemctl start proxmox-collector.timer
+systemctl start proxmox-balance.service 2>/dev/null || true
+systemctl start proxmox-collector.timer 2>/dev/null || true
 EOF
   
   sleep 3
@@ -554,13 +556,13 @@ EOF
   if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
     msg_ok "API service running"
   else
-    msg_warn "API service may have issues"
+    msg_warn "API service may have issues - check logs"
   fi
   
   if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
     msg_ok "Collector timer running"
   else
-    msg_warn "Collector timer may have issues"
+    msg_warn "Collector timer may have issues - check logs"
   fi
 }
 
@@ -582,20 +584,23 @@ show_completion() {
   fi
   
   echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}Useful Commands${CL}"
+  echo -e "  ${BFR}Next Steps${CL}"
   echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
   echo ""
-  echo -e "  ${YW}# Check detailed status${CL}"
-  echo -e "  ${BL}bash -c \"\$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)\" _ ${CTID}${CL}"
+  echo -e "  ${YW}1. Verify SSH connectivity to all nodes${CL}"
+  echo -e "     ${BL}pct exec ${CTID} -- ssh root@<node> 'echo OK'${CL}"
   echo ""
-  echo -e "  ${YW}# Monitor data collection${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-collector -f${CL}"
+  echo -e "  ${YW}2. Trigger initial data collection${CL}"
+  echo -e "     ${BL}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
   echo ""
-  echo -e "  ${YW}# View API logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
+  echo -e "  ${YW}3. Check service status${CL}"
+  echo -e "     ${BL}pct exec ${CTID} -- systemctl status proxmox-balance${CL}"
+  echo ""
+  echo -e "  ${YW}4. Monitor logs${CL}"
+  echo -e "     ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
   echo ""
   
-  msg_ok "ProxBalance is now running at: ${GN}http://${CONTAINER_IP}${CL}"
+  msg_ok "ProxBalance is ready at: ${GN}http://${CONTAINER_IP}${CL}"
   echo ""
 }
 
@@ -603,6 +608,10 @@ show_completion() {
 # Main Installation Flow
 # ═══════════════════════════════════════════════════════════════
 main() {
+  # Disable exit on error for SSH distribution
+  set +e
+  trap 'set -e' RETURN
+  
   header_info
   check_root
   check_proxmox
@@ -620,6 +629,9 @@ main() {
   detect_proxmox_nodes
   show_summary
   
+  # Re-enable strict error handling for critical steps
+  set -e
+  
   create_container
   get_container_ip
   install_dependencies
@@ -628,12 +640,14 @@ main() {
   setup_services
   setup_nginx
   setup_ssh
+  
+  # Disable exit on error for SSH distribution
+  set +e
   distribute_ssh_keys
+  set -e
+  
   start_services
   show_completion
 }
-
-# Trap to ensure we don't exit before completion
-trap '' INT
 
 main "$@"
