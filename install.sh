@@ -92,31 +92,33 @@ select_container_id() {
   echo -e "  ${BL}2)${CL} Manual (Enter custom ID)"
   echo ""
   
-  while true; do
-    read -p "Select option [1-2]: " choice
-    case $choice in
-      1)
-        CTID=$next_ctid
-        break
-        ;;
-      2)
-        read -p "Enter container ID (100-999999): " custom_id
-        if [[ ! "$custom_id" =~ ^[0-9]+$ ]] || [ "$custom_id" -lt 100 ]; then
-          msg_error "Invalid container ID. Must be >= 100"
-          continue
-        fi
-        if pct status "$custom_id" &>/dev/null; then
-          msg_error "Container ID $custom_id already exists"
-          continue
-        fi
-        CTID=$custom_id
-        break
-        ;;
-      *)
-        msg_error "Invalid selection"
-        ;;
-    esac
-  done
+  read -p "Select option [1-2] (default: 1): " choice
+  choice=${choice:-1}
+  
+  case $choice in
+    1)
+      CTID=$next_ctid
+      ;;
+    2)
+      read -p "Enter container ID (100-999999): " custom_id
+      if [[ ! "$custom_id" =~ ^[0-9]+$ ]] || [ "$custom_id" -lt 100 ]; then
+        msg_error "Invalid container ID. Must be >= 100"
+        select_container_id
+        return
+      fi
+      if pct status "$custom_id" &>/dev/null; then
+        msg_error "Container ID $custom_id already exists"
+        select_container_id
+        return
+      fi
+      CTID=$custom_id
+      ;;
+    *)
+      msg_error "Invalid selection"
+      select_container_id
+      return
+      ;;
+  esac
   
   msg_ok "Container ID: ${GN}${CTID}${CL}"
 }
@@ -222,29 +224,30 @@ select_template() {
   done
   echo ""
   
-  while true; do
-    read -p "Select template [1-${#TEMPLATES[@]}]: " choice
-    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#TEMPLATES[@]} ]; then
-      local selected_template="${TEMPLATES[$((choice-1))]}"
-      
-      # Download template if not present
-      if ! pveam list local | grep -q "$selected_template"; then
-        msg_info "Downloading template..."
-        if pveam download local "$selected_template"; then
-          msg_ok "Template downloaded"
-        else
-          msg_error "Failed to download template"
-          exit 1
-        fi
+  local default_choice=1
+  read -p "Select template [1-${#TEMPLATES[@]}] (default: 1): " choice
+  choice=${choice:-$default_choice}
+  
+  if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#TEMPLATES[@]} ]; then
+    local selected_template="${TEMPLATES[$((choice-1))]}"
+    
+    # Download template if not present
+    if ! pveam list local | grep -q "$selected_template"; then
+      msg_info "Downloading template..."
+      if pveam download local "$selected_template"; then
+        msg_ok "Template downloaded"
+      else
+        msg_error "Failed to download template"
+        exit 1
       fi
-      
-      TEMPLATE="local:vztmpl/${selected_template}"
-      msg_ok "Using template: ${GN}${selected_template}${CL}"
-      break
-    else
-      msg_error "Invalid selection"
     fi
-  done
+    
+    TEMPLATE="local:vztmpl/${selected_template}"
+    msg_ok "Using template: ${GN}${selected_template}${CL}"
+  else
+    msg_error "Invalid selection"
+    select_template
+  fi
 }
 
 select_resources() {
@@ -753,72 +756,192 @@ show_completion() {
   echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
   echo ""
   
-  msg_info "ProxBalance has been successfully installed!"
+  msg_info "Running Post-Installation Checks..."
+  echo ""
+  
+  # Check 1: Service Status
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}[1/4] Service Status${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  sleep 1
+  
+  # Check API service
+  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
+    echo -e "  ${CM} API Service: ${GN}running${CL}"
+  else
+    echo -e "  ${CROSS} API Service: ${RD}not running${CL}"
+    echo -e "     ${YW}Check logs: pct exec ${CTID} -- journalctl -u proxmox-balance -n 20${CL}"
+  fi
+  
+  # Check collector timer
+  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
+    echo -e "  ${CM} Collector Timer: ${GN}running${CL}"
+    
+    # Get next run time
+    NEXT_RUN=$(pct exec "$CTID" -- systemctl list-timers proxmox-collector.timer 2>/dev/null | grep proxmox-collector | awk '{print $1, $2}' | head -1)
+    if [ -n "$NEXT_RUN" ]; then
+      echo -e "     ${BL}Next collection: ${YW}${NEXT_RUN}${CL}"
+    fi
+  else
+    echo -e "  ${CROSS} Collector Timer: ${RD}not running${CL}"
+  fi
+  
+  # Check nginx
+  if pct exec "$CTID" -- systemctl is-active nginx.service &>/dev/null; then
+    echo -e "  ${CM} Web Server: ${GN}running${CL}"
+  else
+    echo -e "  ${CROSS} Web Server: ${RD}not running${CL}"
+  fi
+  
+  # Check 2: Network Connectivity
+  echo ""
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}[2/4] Network & API Health${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
+    echo -e "  ${CM} Container IP: ${GN}${CONTAINER_IP}${CL}"
+    
+    # Test API endpoint
+    sleep 2
+    API_RESPONSE=$(curl -s -w "\n%{http_code}" "http://${CONTAINER_IP}/api/health" 2>/dev/null || echo "error\n000")
+    HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
+    
+    if [ "$HTTP_CODE" = "200" ]; then
+      echo -e "  ${CM} API Endpoint: ${GN}responding (HTTP 200)${CL}"
+    else
+      echo -e "  ${CROSS} API Endpoint: ${RD}not responding (HTTP ${HTTP_CODE})${CL}"
+    fi
+  else
+    echo -e "  ${YW}⚠${CL} DHCP IP not detected yet"
+  fi
+  
+  # Check 3: SSH Connectivity
+  echo ""
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}[3/4] SSH Connectivity to Cluster Nodes${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  # Detect nodes from cache or cluster
+  local test_nodes=""
+  if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null; then
+    test_nodes=$(pct exec "$CTID" -- cat /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | grep -o '"[^"]*":' | grep -v "timestamp\|collected_at\|nodes\|guests\|summary\|metrics\|tags\|status\|cpu\|mem" | sed 's/"//g' | sed 's/://g' | head -10 | tr '\n' ' ')
+  fi
+  
+  if [ -z "$test_nodes" ] && command -v pvesh &>/dev/null; then
+    test_nodes=$(pvesh get /nodes --output-format json 2>/dev/null | grep -o '"node":"[^"]*"' | cut -d'"' -f4 | tr '\n' ' ')
+  fi
+  
+  if [ -n "$test_nodes" ]; then
+    local ssh_test_results
+    ssh_test_results=$(pct exec "$CTID" -- bash <<EOF
+for node in $test_nodes; do
+  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
+    echo "\$node:OK"
+  else
+    echo "\$node:FAILED"
+  fi
+done
+EOF
+)
+    
+    local all_ssh_ok=true
+    if [ -n "$ssh_test_results" ]; then
+      while IFS=: read -r node status; do
+        if [ -n "$node" ]; then
+          if [ "$status" = "OK" ]; then
+            echo -e "  ${CM} ${node}: ${GN}connected${CL}"
+          else
+            echo -e "  ${CROSS} ${node}: ${RD}failed${CL}"
+            all_ssh_ok=false
+          fi
+        fi
+      done <<< "$ssh_test_results"
+      
+      if [ "$all_ssh_ok" = false ]; then
+        echo ""
+        echo -e "  ${YW}⚠ Some nodes failed SSH connectivity${CL}"
+        echo -e "  ${BL}SSH Public Key:${CL}"
+        echo -e "  ${GN}${SSH_PUBKEY}${CL}"
+        echo ""
+        echo -e "  ${BL}Add manually to failed nodes:${CL}"
+        echo -e "  ${YW}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
+      fi
+    else
+      echo -e "  ${YW}⚠${CL} Could not test SSH connectivity (no nodes detected)"
+    fi
+  else
+    echo -e "  ${YW}⚠${CL} No cluster nodes detected for SSH testing"
+    echo -e "  ${BL}You may need to manually configure SSH access${CL}"
+    if [ -n "$SSH_PUBKEY" ]; then
+      echo ""
+      echo -e "  ${BL}SSH Public Key:${CL}"
+      echo -e "  ${GN}${SSH_PUBKEY}${CL}"
+    fi
+  fi
+  
+  # Check 4: Data Collection Status
+  echo ""
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}[4/4] Data Collection Status${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
+    echo -e "  ${CM} Cache File: ${GN}exists${CL}"
+    
+    # Get cluster summary
+    local node_count
+    node_count=$(pct exec "$CTID" -- grep -o '"total_nodes":[0-9]*' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | grep -o '[0-9]*' || echo "0")
+    local guest_count
+    guest_count=$(pct exec "$CTID" -- grep -o '"total_guests":[0-9]*' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | grep -o '[0-9]*' || echo "0")
+    
+    if [ "$node_count" != "0" ]; then
+      echo -e "  ${CM} Cluster Data: ${GN}${node_count} nodes${CL}, ${GN}${guest_count} guests${CL}"
+    else
+      echo -e "  ${YW}⚠${CL} Cache file exists but appears incomplete"
+    fi
+  else
+    echo -e "  ${YW}⚠${CL} Cache File: ${YW}not yet created${CL}"
+    echo -e "     ${BL}Initial collection is running in background${CL}"
+    echo -e "     ${BL}This can take 2-5 minutes to complete${CL}"
+  fi
+  
+  # Summary
+  echo ""
+  echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
+  echo -e "${GN}║${CL}  ${BFR}Post-Installation Check Complete${CL}                            ${GN}║${CL}"
+  echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
   echo ""
   
   if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
     echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
     echo -e "  ${BFR}Access Information${CL}"
     echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-    echo -e "  ${BL}Web Interface:${CL}  http://${GN}${CONTAINER_IP}${CL}"
-    echo -e "  ${BL}API Endpoint:${CL}   http://${GN}${CONTAINER_IP}${CL}/api"
+    echo -e "  ${BL}Web Interface:${CL}  ${GN}http://${CONTAINER_IP}${CL}"
+    echo -e "  ${BL}API Endpoint:${CL}   ${GN}http://${CONTAINER_IP}/api${CL}"
     echo -e "  ${BL}Container ID:${CL}   ${GN}${CTID}${CL}"
-    echo ""
-  else
-    echo -e "${YW}Container using DHCP - run this to get IP:${CL}"
-    echo -e "  ${BL}pct exec ${CTID} -- hostname -I${CL}"
     echo ""
   fi
   
   echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}Quick Status Check Commands${CL}"
+  echo -e "  ${BFR}Useful Commands${CL}"
   echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
   echo ""
-  echo -e "  ${YW}# Check if data collection is complete${CL}"
-  echo -e "  ${BL}curl -s http://${CONTAINER_IP}/api/health | jq${CL}"
+  echo -e "  ${YW}# Check detailed status${CL}"
+  echo -e "  ${BL}bash -c \"\$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)\" _ ${CTID}${CL}"
   echo ""
-  echo -e "  ${YW}# View collection status${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- jq -r '.collected_at' /opt/proxmox-balance-manager/cluster_cache.json${CL}"
-  echo ""
-  echo -e "  ${YW}# Check service status${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl status proxmox-balance --no-pager${CL}"
+  echo -e "  ${YW}# Monitor data collection${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-collector -f${CL}"
   echo ""
   echo -e "  ${YW}# View API logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -n 20${CL}"
-  echo ""
-  echo -e "  ${YW}# View collector logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-collector -n 20${CL}"
-  echo ""
-  
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}Management Commands${CL}"
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
   echo ""
   echo -e "  ${YW}# Restart services${CL}"
   echo -e "  ${BL}pct exec ${CTID} -- systemctl restart proxmox-balance${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl restart proxmox-collector.timer${CL}"
-  echo ""
-  echo -e "  ${YW}# Trigger manual data collection${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
-  echo -e "  ${BL}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
-  echo ""
-  echo -e "  ${YW}# View/Edit configuration${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- /opt/proxmox-balance-manager/manage_settings.sh show${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- nano /opt/proxmox-balance-manager/config.json${CL}"
   echo ""
   
-  if [ -n "$SSH_PUBKEY" ]; then
-    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-    echo -e "  ${BFR}SSH Public Key${CL}"
-    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-    echo -e "${GN}${SSH_PUBKEY}${CL}"
-    echo ""
-    echo -e "${YW}If you need to manually add this key to any nodes:${CL}"
-    echo -e "${BL}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
-    echo ""
-  fi
-  
-  msg_ok "Installation complete! Access ProxBalance at: ${GN}http://${CONTAINER_IP}${CL}"
+  msg_ok "ProxBalance is now running at: ${GN}http://${CONTAINER_IP}${CL}"
   echo ""
 }
 
@@ -856,5 +979,8 @@ main() {
   initial_collection
   show_completion
 }
+
+# Trap to ensure we don't exit before completion
+trap '' INT
 
 main "$@"
