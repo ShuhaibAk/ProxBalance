@@ -497,6 +497,7 @@ distribute_ssh_keys() {
   
   local success_count=0
   local fail_count=0
+  local failed_nodes=""
   
   for node in $nodes; do
     echo -n "  ${node}: "
@@ -507,6 +508,7 @@ distribute_ssh_keys() {
     else
       echo -e "${RD}✗ Failed${CL}"
       ((fail_count++))
+      failed_nodes="${failed_nodes} ${node}"
     fi
   done
   
@@ -517,7 +519,7 @@ distribute_ssh_keys() {
   fi
   
   if [ $fail_count -gt 0 ]; then
-    msg_warn "${fail_count} node(s) failed - you may need to add the key manually"
+    msg_warn "${fail_count} node(s) failed:${failed_nodes}"
     echo ""
     echo -e "${BL}SSH Public Key:${CL}"
     echo -e "${GN}${SSH_PUBKEY}${CL}"
@@ -526,6 +528,42 @@ distribute_ssh_keys() {
     echo -e "${YW}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
     echo ""
     read -p "Press Enter to continue..."
+  fi
+  
+  # Test connectivity FROM container
+  msg_info "Testing SSH connectivity from container..."
+  echo ""
+  
+  local test_results
+  test_results=$(pct exec "$CTID" -- bash <<TESTEOF
+for node in $nodes; do
+  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
+    echo "\$node:OK"
+  else
+    echo "\$node:FAILED"
+  fi
+done
+TESTEOF
+)
+  
+  local all_ssh_ok=true
+  while IFS=: read -r node status; do
+    if [ -n "$node" ]; then
+      if [ "$status" = "OK" ]; then
+        echo -e "  ${node}: ${GN}✓ Container can connect${CL}"
+      else
+        echo -e "  ${node}: ${RD}✗ Container cannot connect${CL}"
+        all_ssh_ok=false
+      fi
+    fi
+  done <<< "$test_results"
+  
+  echo ""
+  
+  if [ "$all_ssh_ok" = true ]; then
+    msg_ok "All SSH connections verified from container"
+  else
+    msg_warn "Some SSH connections failed - data collection may not work for all nodes"
   fi
 }
 
@@ -539,13 +577,18 @@ EOF
   
   sleep 3
   
+  local api_status="inactive"
+  local timer_status="inactive"
+  
   if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
+    api_status="active"
     msg_ok "API service running"
   else
     msg_warn "API service may have issues"
   fi
   
   if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
+    timer_status="active"
     msg_ok "Collector timer running"
   else
     msg_warn "Collector timer may have issues"
@@ -561,6 +604,137 @@ initial_collection() {
   msg_info "Data will be available in 2-5 minutes"
 }
 
+run_status_check() {
+  echo ""
+  echo -e "${BL}╔════════════════════════════════════════════════════════════════╗${CL}"
+  echo -e "${BL}║${CL}  ${BFR}Running Post-Installation Status Check${CL}                      ${BL}║${CL}"
+  echo -e "${BL}╚════════════════════════════════════════════════════════════════╝${CL}"
+  echo ""
+  
+  sleep 2
+  
+  # Service Status
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}Service Status${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
+    echo -e "  ${CM} API Service: ${GN}running${CL}"
+  else
+    echo -e "  ${CROSS} API Service: ${RD}not running${CL}"
+  fi
+  
+  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
+    echo -e "  ${CM} Collector Timer: ${GN}running${CL}"
+  else
+    echo -e "  ${CROSS} Collector Timer: ${RD}not running${CL}"
+  fi
+  
+  if pct exec "$CTID" -- systemctl is-active nginx.service &>/dev/null; then
+    echo -e "  ${CM} Web Server: ${GN}running${CL}"
+  else
+    echo -e "  ${CROSS} Web Server: ${RD}not running${CL}"
+  fi
+  
+  # Network & API
+  echo ""
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}Network & API Health${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
+    echo -e "  ${CM} Container IP: ${GN}${CONTAINER_IP}${CL}"
+    
+    # Test API
+    local api_response
+    api_response=$(curl -s -w "\n%{http_code}" "http://${CONTAINER_IP}/api/health" 2>/dev/null || echo "error\n000")
+    local http_code
+    http_code=$(echo "$api_response" | tail -n1)
+    
+    if [ "$http_code" = "200" ]; then
+      echo -e "  ${CM} API Endpoint: ${GN}responding (HTTP 200)${CL}"
+    else
+      echo -e "  ${CROSS} API Endpoint: ${RD}not responding (HTTP ${http_code})${CL}"
+    fi
+  else
+    echo -e "  ${WARN} DHCP IP not detected"
+  fi
+  
+  # SSH Connectivity
+  echo ""
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}SSH Connectivity (from container)${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  local nodes=""
+  if [ -f /etc/pve/corosync.conf ]; then
+    nodes=$(grep -oP '(?<=name: ).*' /etc/pve/corosync.conf 2>/dev/null | grep -v '^Cluster$' | sort -u | xargs)
+  fi
+  
+  if [ -z "$nodes" ] && [ -d /etc/pve/nodes ]; then
+    nodes=$(ls /etc/pve/nodes/ 2>/dev/null | grep -E '^[a-zA-Z0-9]' | grep -v '^pve$' | sort -u | xargs)
+  fi
+  
+  if [ -n "$nodes" ]; then
+    local ssh_test_results
+    ssh_test_results=$(pct exec "$CTID" -- bash <<SSHTEST
+for node in $nodes; do
+  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
+    echo "\$node:OK"
+  else
+    echo "\$node:FAILED"
+  fi
+done
+SSHTEST
+)
+    
+    local all_ssh_ok=true
+    while IFS=: read -r node status; do
+      if [ -n "$node" ]; then
+        if [ "$status" = "OK" ]; then
+          echo -e "  ${CM} ${node}: ${GN}connected${CL}"
+        else
+          echo -e "  ${CROSS} ${node}: ${RD}failed${CL}"
+          all_ssh_ok=false
+        fi
+      fi
+    done <<< "$ssh_test_results"
+    
+    if [ "$all_ssh_ok" = false ]; then
+      echo ""
+      echo -e "  ${WARN} Some nodes failed SSH connectivity"
+      echo -e "  ${BL}Check with: pct exec ${CTID} -- ssh root@<node>${CL}"
+    fi
+  else
+    echo -e "  ${WARN} No nodes detected for testing"
+  fi
+  
+  # Data Collection
+  echo ""
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}Data Collection Status${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  
+  if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
+    echo -e "  ${CM} Cache File: ${GN}exists${CL}"
+    
+    local node_count
+    node_count=$(pct exec "$CTID" -- grep -o '"total_nodes":[0-9]*' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | grep -o '[0-9]*' || echo "0")
+    local guest_count
+    guest_count=$(pct exec "$CTID" -- grep -o '"total_guests":[0-9]*' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | grep -o '[0-9]*' || echo "0")
+    
+    if [ "$node_count" != "0" ]; then
+      echo -e "  ${CM} Cluster Data: ${GN}${node_count} nodes, ${guest_count} guests${CL}"
+    else
+      echo -e "  ${WARN} Cache file exists but appears incomplete"
+      echo -e "  ${BL}Collection is still running in background${CL}"
+    fi
+  else
+    echo -e "  ${WARN} Cache File: ${YW}not yet created${CL}"
+    echo -e "  ${BL}Collection is running (takes 2-5 minutes)${CL}"
+  fi
+}
+
 show_completion() {
   echo ""
   echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
@@ -569,12 +743,33 @@ show_completion() {
   echo ""
   
   if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
+    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+    echo -e "  ${BFR}Access Information${CL}"
+    echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
     echo -e "  ${BL}Web Interface:${CL}  ${GN}http://${CONTAINER_IP}${CL}"
+    echo -e "  ${BL}API Endpoint:${CL}   ${GN}http://${CONTAINER_IP}/api${CL}"
     echo -e "  ${BL}Container ID:${CL}   ${GN}${CTID}${CL}"
     echo ""
   fi
   
-  msg_ok "ProxBalance is now running!"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${BFR}Useful Commands${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo ""
+  echo -e "  ${YW}# Check detailed status${CL}"
+  echo -e "  ${BL}bash -c \"\$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)\" _ ${CTID}${CL}"
+  echo ""
+  echo -e "  ${YW}# Monitor data collection${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-collector -f${CL}"
+  echo ""
+  echo -e "  ${YW}# View API logs${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
+  echo ""
+  echo -e "  ${YW}# Restart services${CL}"
+  echo -e "  ${BL}pct exec ${CTID} -- systemctl restart proxmox-balance${CL}"
+  echo ""
+  
+  msg_ok "ProxBalance is ready at: ${GN}http://${CONTAINER_IP}${CL}"
   echo ""
 }
 
@@ -607,6 +802,7 @@ main() {
   distribute_ssh_keys
   start_services
   initial_collection
+  run_status_check
   show_completion
 }
 
