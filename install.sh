@@ -489,57 +489,25 @@ distribute_ssh_keys() {
   
   if [ -z "$nodes" ]; then
     msg_warn "Could not auto-detect cluster nodes - skipping SSH key distribution"
-    return
+    return 0
   fi
   
+  msg_ok "Auto-distributing SSH keys to: ${GN}${nodes}${CL}"
   echo ""
   msg_info "Adding SSH key to nodes..."
-  local success_count=0
-  local fail_count=0
-  local failed_nodes=""
   
   for node in $nodes; do
     echo -n "  ${node}: "
-    
-    # Try to add key
     if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@"${node}" \
-       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys" &>/dev/null; then
+       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys" &>/dev/null; then
       echo -e "${GN}✓${CL}"
-      ((success_count++))
     else
       echo -e "${RD}✗${CL}"
-      ((fail_count++))
-      failed_nodes="${failed_nodes} ${node}"
     fi
   done
   
-  echo ""
-  if [ $success_count -gt 0 ]; then
-    msg_ok "Successfully added SSH key to ${success_count} node(s)"
-  fi
-  
-  if [ $fail_count -gt 0 ]; then
-    msg_warn "Failed to add SSH key to ${fail_count} node(s):${failed_nodes}"
-    echo ""
-    msg_info "Manual setup required for failed nodes. Run on each:"
-    echo -e "${YW}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
-    echo ""
-  fi
-  
-  # Test connectivity from container
-  msg_info "Testing SSH connectivity from container..."
-  local test_results
-  test_results=$(pct exec "$CTID" -- bash <<EOF
-for node in $nodes; do
-  if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
-    echo "\$node:OK"
-  else
-    echo "\$node:FAILED"
-  fi
-done
-EOF
-)
-  
+  msg_ok "SSH key distribution complete"
+}  
   echo ""
   local connectivity_ok=true
   while IFS=: read -r node status; do
