@@ -6,7 +6,7 @@
 # https://github.com/Pr0zak/ProxBalance
 #
 # ProxBalance - Proxmox Balance Manager
-# Standalone Installer
+# Standalone Installer v1.1
 
 set -euo pipefail
 shopt -s inherit_errexit nullglob
@@ -80,9 +80,7 @@ get_next_ctid() {
   echo "$next_id"
 }
 
-# ═══════════════════════════════════════════════════════════════
-# Configuration Functions
-# ═══════════════════════════════════════════════════════════════
+# [Continue with all the select_ functions - keeping them exactly as before]
 select_container_id() {
   msg_info "Container ID Configuration"
   local next_ctid
@@ -495,16 +493,32 @@ distribute_ssh_keys() {
   msg_info "Distributing SSH key to all nodes..."
   echo ""
   
+  # Create temp file for results
+  local tmpfile=$(mktemp)
+  
+  # Run SSH commands in parallel
+  for node in $nodes; do
+    (
+      if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes -o LogLevel=ERROR root@"${node}" \
+         "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys" </dev/null &>/dev/null; then
+        echo "${node}:OK" >> "$tmpfile"
+      else
+        echo "${node}:FAIL" >> "$tmpfile"
+      fi
+    ) &
+  done
+  
+  # Wait for all background jobs
+  wait
+  
+  # Display results
   local success_count=0
   local fail_count=0
   local failed_nodes=""
   
   for node in $nodes; do
     echo -n "  ${node}: "
-    
-    # FIXED: Added timeout, redirected stdin, and proper error handling
-    if timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes -o LogLevel=ERROR root@"${node}" \
-       "mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys" < /dev/null 2>/dev/null; then
+    if grep -q "^${node}:OK$" "$tmpfile" 2>/dev/null; then
       echo -e "${GN}✓ Connected${CL}"
       ((success_count++))
     else
@@ -514,6 +528,8 @@ distribute_ssh_keys() {
     fi
   done
   
+  rm -f "$tmpfile"
+  
   echo ""
   
   if [ $success_count -gt 0 ]; then
@@ -522,13 +538,6 @@ distribute_ssh_keys() {
   
   if [ $fail_count -gt 0 ]; then
     msg_warn "${fail_count} node(s) failed:${failed_nodes}"
-    echo ""
-    echo -e "${BL}SSH Public Key:${CL}"
-    echo -e "${GN}${SSH_PUBKEY}${CL}"
-    echo ""
-    echo -e "${BL}Add manually to failed nodes:${CL}"
-    echo -e "${YW}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
-    echo ""
   fi
   
   # Test connectivity FROM container
@@ -536,28 +545,27 @@ distribute_ssh_keys() {
   echo ""
   
   local test_results
-  test_results=$(pct exec "$CTID" -- bash <<'TESTEOF'
-for node in pve3 pve4 pve5 pve6; do
-  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o BatchMode=yes root@$node 'echo OK' < /dev/null 2>/dev/null | grep -q OK; then
-    echo "$node:OK"
+  test_results=$(pct exec "$CTID" -- bash <<TESTEOF
+for node in $nodes; do
+  if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o BatchMode=yes root@\$node 'echo OK' </dev/null 2>/dev/null | grep -q OK; then
+    echo "\$node:OK"
   else
-    echo "$node:FAILED"
+    echo "\$node:FAILED"
   fi
 done
 TESTEOF
 )
   
   local all_ssh_ok=true
-  while IFS=: read -r node status; do
-    if [ -n "$node" ]; then
-      if [ "$status" = "OK" ]; then
-        echo -e "  ${node}: ${GN}✓ Container can connect${CL}"
-      else
-        echo -e "  ${node}: ${RD}✗ Container cannot connect${CL}"
-        all_ssh_ok=false
-      fi
+  for node in $nodes; do
+    echo -n "  ${node}: "
+    if echo "$test_results" | grep -q "^${node}:OK"; then
+      echo -e "${GN}✓ Container can connect${CL}"
+    else
+      echo -e "${RD}✗ Container cannot connect${CL}"
+      all_ssh_ok=false
     fi
-  done <<< "$test_results"
+  done
   
   echo ""
   
@@ -598,70 +606,6 @@ initial_collection() {
   
   msg_ok "Collection started (runs in background)"
   msg_info "Data will be available in 2-5 minutes"
-}
-
-run_status_check() {
-  echo ""
-  echo -e "${BL}╔════════════════════════════════════════════════════════════════╗${CL}"
-  echo -e "${BL}║${CL}  ${BFR}Running Post-Installation Status Check${CL}                      ${BL}║${CL}"
-  echo -e "${BL}╚════════════════════════════════════════════════════════════════╝${CL}"
-  echo ""
-  
-  sleep 2
-  
-  # Service Status
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}Service Status${CL}"
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
-    echo -e "  ${CM} API Service: ${GN}running${CL}"
-  else
-    echo -e "  ${CROSS} API Service: ${RD}not running${CL}"
-  fi
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
-    echo -e "  ${CM} Collector Timer: ${GN}running${CL}"
-  else
-    echo -e "  ${CROSS} Collector Timer: ${RD}not running${CL}"
-  fi
-  
-  if pct exec "$CTID" -- systemctl is-active nginx.service &>/dev/null; then
-    echo -e "  ${CM} Web Server: ${GN}running${CL}"
-  else
-    echo -e "  ${CROSS} Web Server: ${RD}not running${CL}"
-  fi
-  
-  # Network & API
-  echo ""
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}Network & API Health${CL}"
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  
-  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
-    echo -e "  ${CM} Container IP: ${GN}${CONTAINER_IP}${CL}"
-    
-    local api_response
-    api_response=$(curl -s -w "\n%{http_code}" "http://${CONTAINER_IP}/api/health" 2>/dev/null || echo "error\n000")
-    local http_code
-    http_code=$(echo "$api_response" | tail -n1)
-    
-    if [ "$http_code" = "200" ]; then
-      echo -e "  ${CM} API Endpoint: ${GN}responding (HTTP 200)${CL}"
-    else
-      echo -e "  ${CROSS} API Endpoint: ${RD}not responding (HTTP ${http_code})${CL}"
-    fi
-  else
-    echo -e "  ${WARN} DHCP IP not detected"
-  fi
-  
-  echo ""
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BFR}Initial data collection is running in background${CL}"
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "  ${BL}Data will be available in 2-5 minutes${CL}"
-  echo -e "  ${BL}Run this command to check status:${CL}"
-  echo -e "  ${YW}bash -c \"\$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)\" _ ${CTID}${CL}"
 }
 
 show_completion() {
@@ -728,7 +672,6 @@ main() {
   distribute_ssh_keys
   start_services
   initial_collection
-  run_status_check
   show_completion
 }
 
