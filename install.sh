@@ -393,7 +393,8 @@ get_container_ip() {
     
     msg_verbose "Detecting DHCP IP (max attempts: $max_attempts)"
     while [ $attempt -lt $max_attempts ]; do
-      CONTAINER_IP=$(pct exec "$CTID" -- ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "")
+      # Use awk instead of grep -P to avoid regex parsing issues when piped
+      CONTAINER_IP=$(pct exec "$CTID" -- ip -4 addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d'/' -f1 || echo "")
       
       if [ -n "$CONTAINER_IP" ]; then
         msg_ok "Container IP (DHCP): ${GN}${CONTAINER_IP}${CL}"
@@ -408,7 +409,8 @@ get_container_ip() {
     msg_warn "Could not detect DHCP IP after $max_attempts attempts"
     CONTAINER_IP="<DHCP-assigned>"
   else
-    CONTAINER_IP=$(echo "$NET_CONFIG" | grep -oP '(?<=ip=)[^/]+')
+    # Extract IP from config string without perl regex
+    CONTAINER_IP=$(echo "$NET_CONFIG" | sed -n 's/.*ip=\([^/]*\).*/\1/p')
     msg_ok "Container IP (Static): ${GN}${CONTAINER_IP}${CL}"
   fi
 }
