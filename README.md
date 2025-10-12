@@ -38,7 +38,7 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
 ### Why ProxBalance?
 
 - **Real-time Monitoring** - Track CPU, memory, and load across all nodes
-- **Smart Recommendations** - AI-powered migration suggestions based on historical data
+- **Smart Recommendations** - Migration suggestions based on historical data
 - **Anti-Affinity Rules** - Tag-based system to enforce workload separation
 - **One-Click Migrations** - Execute individual or batch migrations from the web UI
 - **Zero Downtime** - Online migration for VMs, restart migration for containers
