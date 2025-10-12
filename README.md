@@ -24,6 +24,7 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main
 ```
 
 **⏱️ Complete setup in under 5 minutes!**
+Run on a Proxmox host, creates a CT.
 
 ---
 
