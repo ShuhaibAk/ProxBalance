@@ -461,6 +461,7 @@ setup_ssh() {
 }
 
 distribute_ssh_keys() {
+  set -x  # DEBUG: Enable tracing
   msg_info "Distributing SSH Keys to Cluster Nodes"
   
   local nodes=""
@@ -520,10 +521,10 @@ distribute_ssh_keys() {
     echo -n "  ${node}: "
     if grep -q "^${node}:OK$" "$tmpfile" 2>/dev/null; then
       echo -e "${GN}✓ Connected${CL}"
-      ((success_count++))
+      success_count=$((success_count + 1))
     else
       echo -e "${RD}✗ Failed${CL}"
-      ((fail_count++))
+      fail_count=$((fail_count + 1))
       failed_nodes="${failed_nodes} ${node}"
     fi
   done
@@ -574,6 +575,7 @@ TESTEOF
   else
     msg_warn "Some SSH connections failed - data collection may not work for all nodes"
   fi
+  set +x  # DEBUG: Disable tracing
 }
 
 start_services() {
