@@ -41,7 +41,7 @@ The automated installer will:
 
 ```bash
 # Download installer
-wget https://raw.githubusercontent.com/zak-forsyth/ProxBalance/main/install.sh
+wget https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh
 
 # Make it executable
 chmod +x install.sh
@@ -126,10 +126,10 @@ exit
 ```bash
 # From Proxmox host
 cd /tmp
-git clone https://github.com/zak-forsyth/ProxBalance.git
+git clone https://github.com/Pr0zak/ProxBalance.git
 
 # Or download release
-wget https://github.com/zak-forsyth/ProxBalance/archive/refs/heads/main.zip
+wget https://github.com/Pr0zak/ProxBalance/archive/refs/heads/main.zip
 unzip main.zip
 cd ProxBalance-main
 ```
@@ -453,8 +453,8 @@ After successful installation:
 ## 🆘 Need Help?
 
 - Check [Troubleshooting Guide](TROUBLESHOOTING.md)
-- Open an [Issue](https://github.com/zak-forsyth/ProxBalance/issues)
-- Review [Discussions](https://github.com/zak-forsyth/ProxBalance/discussions)
+- Open an [Issue](https://github.com/Pr0zak/ProxBalance/issues)
+- Review [Discussions](https://github.com/Pr0zak/ProxBalance/discussions)
 
 ---
 

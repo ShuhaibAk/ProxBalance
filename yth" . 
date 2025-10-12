@@ -1,0 +1,59 @@
+[1mdiff --git a/README.md b/README.md[m
+[1mindex 3f2df52..439d322 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -89,7 +89,7 @@[m [mProxBalance is a comprehensive web-based cluster balance analyzer and automated[m
+ [m
+ ```bash[m
+ # On your Proxmox host, download and run the installer[m
+[31m-wget https://raw.githubusercontent.com/zak-forsyth/ProxBalance/main/install.sh[m
+[32m+[m[32mwget https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh[m
+ chmod +x install.sh[m
+ ./install.sh[m
+ ```[m
+[36m@@ -353,7 +353,7 @@[m [mProxBalance uses SSH key-based authentication to communicate with Proxmox nodes:[m
+ [m
+ ```bash[m
+ # Clone the repository[m
+[31m-git clone https://github.com/zak-forsyth/ProxBalance.git[m
+[32m+[m[32mgit clone https://github.com/Pr0zak/ProxBalance.git[m
+ cd ProxBalance[m
+ [m
+ # Create virtual environment[m
+[1mdiff --git a/docs/INSTALL.md b/docs/INSTALL.md[m
+[1mindex fbef1a1..6d35a80 100644[m
+[1m--- a/docs/INSTALL.md[m
+[1m+++ b/docs/INSTALL.md[m
+[36m@@ -41,7 +41,7 @@[m [mThe automated installer will:[m
+ [m
+ ```bash[m
+ # Download installer[m
+[31m-wget https://raw.githubusercontent.com/zak-forsyth/ProxBalance/main/install.sh[m
+[32m+[m[32mwget https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh[m
+ [m
+ # Make it executable[m
+ chmod +x install.sh[m
+[36m@@ -126,10 +126,10 @@[m [mexit[m
+ ```bash[m
+ # From Proxmox host[m
+ cd /tmp[m
+[31m-git clone https://github.com/zak-forsyth/ProxBalance.git[m
+[32m+[m[32mgit clone https://github.com/Pr0zak/ProxBalance.git[m
+ [m
+ # Or download release[m
+[31m-wget https://github.com/zak-forsyth/ProxBalance/archive/refs/heads/main.zip[m
+[32m+[m[32mwget https://github.com/Pr0zak/ProxBalance/archive/refs/heads/main.zip[m
+ unzip main.zip[m
+ cd ProxBalance-main[m
+ ```[m
+[36m@@ -453,8 +453,8 @@[m [mAfter successful installation:[m
+ ## 🆘 Need Help?[m
+ [m
+ - Check [Troubleshooting Guide](TROUBLESHOOTING.md)[m
+[31m-- Open an [Issue](https://github.com/zak-forsyth/ProxBalance/issues)[m
+[31m-- Review [Discussions](https://github.com/zak-forsyth/ProxBalance/discussions)[m
+[32m+[m[32m- Open an [Issue](https://github.com/Pr0zak/ProxBalance/issues)[m
+[32m+[m[32m- Review [Discussions](https://github.com/Pr0zak/ProxBalance/discussions)[m
+ [m
+ ---[m
+ [m

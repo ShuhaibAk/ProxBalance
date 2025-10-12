@@ -89,7 +89,7 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
 
 ```bash
 # On your Proxmox host, download and run the installer
-wget https://raw.githubusercontent.com/zak-forsyth/ProxBalance/main/install.sh
+wget https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh
 chmod +x install.sh
 ./install.sh
 ```
@@ -353,7 +353,7 @@ ProxBalance uses SSH key-based authentication to communicate with Proxmox nodes:
 
 ```bash
 # Clone the repository
-git clone https://github.com/zak-forsyth/ProxBalance.git
+git clone https://github.com/Pr0zak/ProxBalance.git
 cd ProxBalance
 
 # Create virtual environment
