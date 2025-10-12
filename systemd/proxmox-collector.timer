@@ -1,0 +1,10 @@
+[Unit]
+Description=Proxmox Balance Manager Data Collector Timer
+Requires=proxmox-collector.service
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=120min
+
+[Install]
+WantedBy=timers.target

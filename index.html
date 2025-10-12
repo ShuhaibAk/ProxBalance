@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>ProxBalance - Cluster Optimization</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='64' height='64' rx='12' fill='%231e40af'/%3E%3Crect x='16' y='30' width='32' height='4' rx='2' fill='%23ffffff'/%3E%3Ccircle cx='32' cy='32' r='5' fill='%23f97316'/%3E%3Crect x='20' y='18' width='10' height='10' rx='2' fill='%2360a5fa'/%3E%3Cline x1='25' y1='28' x2='25' y2='30' stroke='%23ffffff' stroke-width='2'/%3E%3Crect x='34' y='20' width='10' height='10' rx='2' fill='%2334d399'/%3E%3Cline x1='39' y1='30' x2='39' y2='30' stroke='%23ffffff' stroke-width='2'/%3E%3Cline x1='21' y1='21' x2='29' y2='21' stroke='%231e40af' stroke-width='1' opacity='0.5'/%3E%3Cline x1='21' y1='24' x2='29' y2='24' stroke='%231e40af' stroke-width='1' opacity='0.5'/%3E%3Cline x1='35' y1='23' x2='43' y2='23' stroke='%23047857' stroke-width='1' opacity='0.5'/%3E%3Cline x1='35' y1='26' x2='43' y2='26' stroke='%23047857' stroke-width='1' opacity='0.5'/%3E%3Cpath d='M 26 40 L 30 40' stroke='%23f97316' stroke-width='1.5' opacity='0.8'/%3E%3Cpolygon points='30,40 28,39 28,41' fill='%23f97316' opacity='0.8'/%3E%3Cpath d='M 38 44 L 34 44' stroke='%23f97316' stroke-width='1.5' opacity='0.8'/%3E%3Cpolygon points='34,44 36,43 36,45' fill='%23f97316' opacity='0.8'/%3E%3C/svg%3E">
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class'
+      }
+    </script>
+    <style>
+      @keyframes dashFlow {
+        from { stroke-dashoffset: 0; }
+        to { stroke-dashoffset: 10; }
+      }
+      .animated-arrow {
+        animation: dashFlow 1s linear infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      .pulse-animation {
+        animation: pulse 2s ease-in-out infinite;
+      }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        const AlertCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>);
+        const Server = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect></svg>);
+        const HardDrive = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="22" y1="12" x2="2" y2="12"></line><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>);
+        const Activity = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>);
+        const RefreshCw = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>);
+        const Play = ({ size }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>);
+        const CheckCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>);
+        const XCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>);
+        const Tag = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>);
+        const AlertTriangle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>);
+        const Shield = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>);
+        const Clock = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>);
+        const Sun = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>);
+        const Moon = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>);
+        const Settings = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>);
+        const X = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>);
+        const Save = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>);
+
+        // Logo component
+        const ProxBalanceLogo = ({ size = 32 }) => (
+          <svg width={size} height={size} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="inline-block">
+            <rect x="16" y="30" width="32" height="4" rx="2" fill="currentColor" opacity="0.3"/>
+            <circle cx="32" cy="32" r="5" fill="#f97316"/>
+            <rect x="20" y="18" width="10" height="10" rx="2" fill="#3b82f6"/>
+            <line x1="25" y1="28" x2="25" y2="30" stroke="currentColor" strokeWidth="2"/>
+            <rect x="34" y="20" width="10" height="10" rx="2" fill="#10b981"/>
+            <line x1="39" y1="30" x2="39" y2="30" stroke="currentColor" strokeWidth="2"/>
+          </svg>
+        );
+
+        const API_BASE = `/api`;
+
+        const ProxmoxBalanceManager = () => {
+          const [data, setData] = useState(null);
+          const [recommendations, setRecommendations] = useState([]);
+          const [loading, setLoading] = useState(false);
+          const [error, setError] = useState(null);
+          const [cpuThreshold, setCpuThreshold] = useState(60);
+          const [memThreshold, setMemThreshold] = useState(70);
+          const [migrationStatus, setMigrationStatus] = useState({});
+          const [lastUpdate, setLastUpdate] = useState(null);
+          const [nextUpdate, setNextUpdate] = useState(null);
+          const [backendCollected, setBackendCollected] = useState(null);
+          const [darkMode, setDarkMode] = useState(true);
+          const [config, setConfig] = useState(null);
+          const [autoRefreshInterval, setAutoRefreshInterval] = useState(60 * 60 * 1000);
+          const [showSettings, setShowSettings] = useState(false);
+          const [tempBackendInterval, setTempBackendInterval] = useState(60);
+          const [tempUiInterval, setTempUiInterval] = useState(60);
+          const [savingSettings, setSavingSettings] = useState(false);
+
+          useEffect(() => {
+            document.documentElement.classList.add('dark');
+            fetchConfig();
+          }, []);
+
+          const fetchConfig = async () => {
+            try {
+              const response = await fetch(`${API_BASE}/config`);
+              const result = await response.json();
+              if (result.success) {
+                setConfig(result.config);
+                const intervalMs = (result.config.ui_refresh_interval_minutes || 60) * 60 * 1000;
+                setAutoRefreshInterval(intervalMs);
+                setTempBackendInterval(result.config.collection_interval_minutes || 60);
+                setTempUiInterval(result.config.ui_refresh_interval_minutes || 60);
+              }
+            } catch (err) {
+              console.error('Failed to load config:', err);
+            }
+          };
+
+          const saveSettings = async () => {
+            setSavingSettings(true);
+            try {
+              const response = await fetch(`${API_BASE}/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  collection_interval_minutes: tempBackendInterval,
+                  ui_refresh_interval_minutes: tempUiInterval
+                })
+              });
+              
+              const result = await response.json();
+              if (result.success) {
+                setConfig(result.config);
+                const intervalMs = tempUiInterval * 60 * 1000;
+                setAutoRefreshInterval(intervalMs);
+                setShowSettings(false);
+                
+                const now = new Date();
+                setLastUpdate(now);
+                setNextUpdate(new Date(now.getTime() + intervalMs));
+              } else {
+                alert('Failed to save settings: ' + result.error);
+              }
+            } catch (err) {
+              alert('Failed to save settings: ' + err.message);
+            }
+            setSavingSettings(false);
+          };
+
+          const toggleDarkMode = () => {
+            setDarkMode(!darkMode);
+            document.documentElement.classList.toggle('dark');
+          };
+
+          const formatCSTTime = (date) => {
+            return new Date(date).toLocaleString('en-US', {
+              timeZone: 'America/Chicago',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true
+            });
+          };
+
+          const handleRefresh = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+              const refreshResponse = await fetch(`${API_BASE}/refresh`, { method: 'POST' });
+              if (!refreshResponse.ok) throw new Error('Failed to trigger data collection');
+              await new Promise(resolve => setTimeout(resolve, 45000));
+              await fetchAnalysis();
+            } catch (err) {
+              setError(`Refresh failed: ${err.message}`);
+              setLoading(false);
+            }
+          };
+
+          const fetchAnalysis = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+              const response = await fetch(`${API_BASE}/analyze`);
+              
+              if (!response.ok) {
+                if (response.status === 503) {
+                  const result = await response.json();
+                  setError(result.error || 'Service temporarily unavailable');
+                } else {
+                  setError(`Server error: ${response.status}`);
+                }
+                setLoading(false);
+                return;
+              }
+              
+              const result = await response.json();
+              if (result.success && result.data) {
+                setData(result.data);
+                const now = new Date();
+                setLastUpdate(now);
+                setNextUpdate(new Date(now.getTime() + autoRefreshInterval));
+                if (result.data.collected_at) {
+                  setBackendCollected(new Date(result.data.collected_at));
+                }
+              } else {
+                setError(result.error || 'No data received');
+              }
+            } catch (err) {
+              setError(`Connection failed: ${err.message}`);
+            }
+            setLoading(false);
+          };
+
+          const fetchRecommendations = async () => {
+            if (!data) return;
+            try {
+              const response = await fetch(`${API_BASE}/recommendations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cpu_threshold: cpuThreshold, mem_threshold: memThreshold })
+              });
+              const result = await response.json();
+              if (result.success) {
+                setRecommendations(result.recommendations);
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          };
+
+          const executeMigration = async (rec) => {
+            const key = `${rec.vmid}-${rec.target_node}`;
+            setMigrationStatus(prev => ({ ...prev, [key]: 'running' }));
+            
+            try {
+              const response = await fetch(`${API_BASE}/migrate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  source_node: rec.source_node,
+                  vmid: rec.vmid,
+                  target_node: rec.target_node,
+                  type: rec.type
+                })
+              });
+              
+              const result = await response.json();
+              setMigrationStatus(prev => ({ 
+                ...prev, 
+                [key]: result.success ? 'success' : 'failed' 
+              }));
+              
+              if (result.success) {
+                setTimeout(() => fetchAnalysis(), 5000);
+              }
+            } catch (err) {
+              setMigrationStatus(prev => ({ ...prev, [key]: 'failed' }));
+            }
+          };
+
+          const executeBatchMigration = async () => {
+            if (!window.confirm(`Execute ${recommendations.length} migration(s)?`)) return;
+            
+            setLoading(true);
+            try {
+              const response = await fetch(`${API_BASE}/migrate/batch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ migrations: recommendations })
+              });
+              
+              const result = await response.json();
+              if (result.success) {
+                result.results.forEach(r => {
+                  const key = `${r.vmid}-batch`;
+                  setMigrationStatus(prev => ({ 
+                    ...prev, 
+                    [key]: r.success ? 'success' : 'failed' 
+                  }));
+                });
+                setTimeout(() => fetchAnalysis(), 5000);
+              }
+            } catch (err) {
+              setError(`Batch migration failed: ${err.message}`);
+            }
+            setLoading(false);
+          };
+
+          const checkAffinityViolations = () => {
+            if (!data) return [];
+            const violations = [];
+            
+            Object.values(data.nodes).forEach(node => {
+              const guestsOnNode = node.guests.map(gid => data.guests[gid]);
+              
+              guestsOnNode.forEach(guest => {
+                if (guest.tags.exclude_groups.length > 0) {
+                  guest.tags.exclude_groups.forEach(excludeTag => {
+                    const conflicts = guestsOnNode.filter(other => 
+                      other.vmid !== guest.vmid && 
+                      other.tags.all_tags.includes(excludeTag)
+                    );
+                    
+                    if (conflicts.length > 0) {
+                      violations.push({
+                        guest: guest,
+                        node: node.name,
+                        excludeTag: excludeTag,
+                        conflicts: conflicts
+                      });
+                    }
+                  });
+                }
+              });
+            });
+            
+            return violations;
+          };
+
+          useEffect(() => { fetchAnalysis(); }, []);
+          useEffect(() => {
+            const interval = setInterval(() => {
+              fetchAnalysis();
+            }, autoRefreshInterval);
+            return () => clearInterval(interval);
+          }, [autoRefreshInterval]);
+          useEffect(() => { if (data) fetchRecommendations(); }, [data, cpuThreshold, memThreshold]);
+
+          if (error) {
+            return (
+              <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-8">
+                <div className="max-w-7xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+                  <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
+                    <AlertCircle size={24} />
+                    <div>
+                      <h3 className="text-lg font-semibold">Error</h3>
+                      <p className="text-sm">{error}</p>
+                    </div>
+                  </div>
+                  <button onClick={handleRefresh} className="mt-4 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600">Retry</button>
+                </div>
+              </div>
+            );
+          }
+
+          if (!data) {
+            return (
+              <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+                <div className="text-center">
+                  <RefreshCw size={48} className="animate-spin mx-auto mb-4 text-blue-600 dark:text-blue-400" />
+                  <p className="text-gray-600 dark:text-gray-300">Loading cluster data...</p>
+                </div>
+              </div>
+            );
+          }
+
+          const ignoredGuests = Object.values(data.guests).filter(g => g.tags.has_ignore);
+          const excludeGuests = Object.values(data.guests).filter(g => g.tags.exclude_groups.length > 0);
+          const violations = checkAffinityViolations();
+
+          return (<>
+            <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4">
+              <div className="max-w-7xl mx-auto">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <ProxBalanceLogo size={48} />
+                      <div>
+                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ProxBalance</h1>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Cluster Optimization</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setShowSettings(true)}
+                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        title="Settings"
+                      >
+                        <Settings size={20} className="text-gray-700 dark:text-gray-300" />
+                      </button>
+                      <button 
+                        onClick={toggleDarkMode} 
+                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                      >
+                        {darkMode ? <Sun size={20} className="text-yellow-500" /> : <Moon size={20} className="text-gray-700" />}
+                      </button>
+                      <button onClick={handleRefresh} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400">
+                        <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {lastUpdate && (
+                    <div className="flex items-center gap-3 mb-4 text-xs text-gray-500 dark:text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <Clock size={12} />
+                        <span>UI refreshed: <span className="font-semibold text-gray-700 dark:text-gray-300">{formatCSTTime(lastUpdate)} CST</span></span>
+                      </div>
+                      {backendCollected && (
+                        <div className="flex items-center gap-1">
+                          <Server size={12} />
+                          <span>Data collected: <span className="font-semibold text-green-600 dark:text-green-400">{formatCSTTime(backendCollected)} CST</span></span>
+                        </div>
+                      )}
+                      {config && (
+                        <span className="text-gray-400 dark:text-gray-600 text-xs">
+                          (Backend: {config.collection_interval_minutes}m, UI: {config.ui_refresh_interval_minutes}m)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Server size={20} className="text-blue-600 dark:text-blue-400" />
+                        <span className="text-xs text-gray-500 dark:text-gray-500">Nodes</span>
+                      </div>
+                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{data.summary.total_nodes}</p>
+                    </div>
+                    <div className="bg-green-50 dark:bg-green-900/30 p-4 rounded">
+                      <div className="flex items-center gap-2 mb-2">
+                        <HardDrive size={20} className="text-green-600 dark:text-green-400" />
+                        <span className="text-xs text-gray-500 dark:text-gray-500">Guests</span>
+                      </div>
+                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">{data.summary.total_guests}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-500">{data.summary.vms} VMs, {data.summary.containers} CTs</p>
+                    </div>
+                    <div className="bg-yellow-50 dark:bg-yellow-900/30 p-4 rounded">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Activity size={20} className="text-yellow-600 dark:text-yellow-400" />
+                        <span className="text-xs text-gray-500 dark:text-gray-500">Recommendations</span>
+                      </div>
+                      <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{recommendations.length}</p>
+                    </div>
+                    <div className="bg-purple-50 dark:bg-purple-900/30 p-4 rounded">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle size={20} className="text-purple-600 dark:text-purple-400" />
+                        <span className="text-xs text-gray-500 dark:text-gray-500">Tagged</span>
+                      </div>
+                      <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{data.summary.ignored_guests + data.summary.excluded_guests}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">CPU Threshold:</label>
+                      <input type="range" min="40" max="90" value={cpuThreshold} onChange={(e) => setCpuThreshold(Number(e.target.value))} className="w-32" />
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{cpuThreshold}%</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Memory Threshold:</label>
+                      <input type="range" min="50" max="95" value={memThreshold} onChange={(e) => setMemThreshold(Number(e.target.value))} className="w-32" />
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{memThreshold}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {(ignoredGuests.length > 0 || excludeGuests.length > 0 || violations.length > 0) && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Tag size={24} className="text-purple-600 dark:text-purple-400" />
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Tagged Guests & Affinity Rules</h2>
+                    </div>
+
+                    {violations.length > 0 && (
+                      <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded">
+                        <div className="flex items-center gap-2 mb-3">
+                          <AlertTriangle size={20} className="text-red-600 dark:text-red-400" />
+                          <h3 className="font-semibold text-red-900 dark:text-red-300">Affinity Rule Violations</h3>
+                        </div>
+                        <div className="space-y-3">
+                          {violations.map((v, idx) => (
+                            <div key={idx} className="bg-white dark:bg-gray-900 p-3 rounded border border-red-300 dark:border-red-700">
+                              <p className="font-semibold text-red-900 dark:text-red-300">
+                                [{v.guest.type} {v.guest.vmid}] {v.guest.name} on {v.node}
+                              </p>
+                              <p className="text-sm text-red-700 dark:text-red-400 mt-1">
+                                Has exclusion tag <span className="font-mono bg-red-100 dark:bg-red-900/50 px-1 rounded">{v.excludeTag}</span> but shares node with:
+                              </p>
+                              <ul className="mt-2 ml-4 text-sm text-red-700 dark:text-red-400">
+                                {v.conflicts.map(c => (
+                                  <li key={c.vmid}>• [{c.type} {c.vmid}] {c.name}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {ignoredGuests.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Shield size={18} className="text-yellow-600 dark:text-yellow-400" />
+                            <h3 className="font-semibold text-gray-900 dark:text-white">Ignored Guests ({ignoredGuests.length})</h3>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">These guests will never be migrated</p>
+                          <div className="space-y-2">
+                            {ignoredGuests.map(guest => (
+                              <div key={guest.vmid} className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 p-3 rounded">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">[{guest.type} {guest.vmid}] {guest.name}</p>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Node: {guest.node}</p>
+                                  </div>
+                                  <span className="text-xs px-2 py-1 bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded font-medium">ignore</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {excludeGuests.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Shield size={18} className="text-blue-600 dark:text-blue-400" />
+                            <h3 className="font-semibold text-gray-900 dark:text-white">Affinity Rules ({excludeGuests.length})</h3>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">These guests have anti-affinity requirements</p>
+                          <div className="space-y-2">
+                            {excludeGuests.map(guest => (
+                              <div key={guest.vmid} className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 p-3 rounded">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div>
+                                    <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">[{guest.type} {guest.vmid}] {guest.name}</p>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Node: {guest.node}</p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {guest.tags.exclude_groups.map(tag => (
+                                    <span key={tag} className="text-xs px-2 py-1 bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 rounded font-medium">{tag}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                  <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Node Status</h2>
+                  <div className="space-y-4">
+                    {Object.values(data.nodes).map(node => (
+                      <div key={node.name} className="border border-gray-200 dark:border-gray-700 rounded p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{node.name}</h3>
+                          <span className={`text-sm font-medium ${node.status === 'online' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{node.status}</span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                          <div><span className="text-gray-600 dark:text-gray-400">CPU:</span> <span className={`font-semibold ${node.metrics.current_cpu > cpuThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{node.metrics.current_cpu.toFixed(1)}%</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Memory:</span> <span className={`font-semibold ${node.metrics.current_mem > memThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{node.metrics.current_mem.toFixed(1)}%</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Cores:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.cpu_cores}</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Guests:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.guests.length}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Migration Recommendations</h2>
+                    {recommendations.length > 0 && (
+                      <button onClick={executeBatchMigration} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:bg-gray-400">
+                        <Play size={18} />
+                        Execute All ({recommendations.length})
+                      </button>
+                    )}
+                  </div>
+                  {recommendations.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      <CheckCircle size={48} className="mx-auto mb-2 text-green-500 dark:text-green-400" />
+                      <p className="font-medium">Cluster is balanced!</p>
+                      <p className="text-sm">No migrations needed</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {recommendations.map((rec, idx) => {
+                        const key = `${rec.vmid}-${rec.target_node}`;
+                        const status = migrationStatus[key];
+                        
+                        return (
+                          <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-semibold text-gray-900 dark:text-white">[{rec.type} {rec.vmid}] {rec.name}</span>
+                                  {status === 'success' && <CheckCircle size={18} className="text-green-600 dark:text-green-400" />}
+                                  {status === 'failed' && <XCircle size={18} className="text-red-600 dark:text-red-400" />}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-500">
+                                  <span className="text-red-600 dark:text-red-400 font-medium">FROM:</span> {rec.source_node} → <span className="text-green-600 dark:text-green-400 font-medium">TO:</span> {rec.target_node}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                  <span className="font-medium">Reason:</span> {rec.reason} | <span className="font-medium">Memory:</span> {rec.mem_gb.toFixed(1)} GB
+                                </div>
+                                <div className="text-xs font-mono bg-gray-100 dark:bg-gray-900 p-1 rounded mt-1 text-gray-700 dark:text-gray-300">{rec.command}</div>
+                              </div>
+                              <button 
+                                onClick={() => executeMigration(rec)} 
+                                disabled={status === 'running' || status === 'success'}
+                                className="ml-4 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 flex items-center gap-2 shrink-0"
+                              >
+                                {status === 'running' ? (
+                                  <>
+                                    <RefreshCw size={16} className="animate-spin" />
+                                    Running
+                                  </>
+                                ) : status === 'success' ? (
+                                  <>
+                                    <CheckCircle size={16} />
+                                    Done
+                                  </>
+                                ) : status === 'failed' ? (
+                                  <>
+                                    <XCircle size={16} />
+                                    Failed
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play size={16} />
+                                    Execute
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {showSettings && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2">
+                      <Settings size={24} className="text-blue-600 dark:text-blue-400" />
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
+                    </div>
+                    <button 
+                      onClick={() => setShowSettings(false)}
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <X size={20} className="text-gray-600 dark:text-gray-400" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Backend Collection Interval
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <input 
+                          type="range" 
+                          min="5" 
+                          max="240" 
+                          step="5"
+                          value={tempBackendInterval}
+                          onChange={(e) => setTempBackendInterval(Number(e.target.value))}
+                          className="flex-1"
+                        />
+                        <span className="text-lg font-semibold text-gray-900 dark:text-white w-16 text-right">
+                          {tempBackendInterval}m
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                        How often to collect cluster data from Proxmox (5-240 minutes)
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        UI Refresh Interval
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <input 
+                          type="range" 
+                          min="5" 
+                          max="120" 
+                          step="5"
+                          value={tempUiInterval}
+                          onChange={(e) => setTempUiInterval(Number(e.target.value))}
+                          className="flex-1"
+                        />
+                        <span className="text-lg font-semibold text-gray-900 dark:text-white w-16 text-right">
+                          {tempUiInterval}m
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                        How often the UI auto-refreshes (5-120 minutes)
+                      </p>
+                    </div>
+
+                    <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3">
+                      <p className="text-sm text-blue-900 dark:text-blue-200">
+                        <strong>Recommendation:</strong> Set UI interval ≤ backend interval for best experience.
+                        Current setup: UI refreshes every {tempUiInterval}m, data collected every {tempBackendInterval}m.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={() => setShowSettings(false)}
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveSettings}
+                      disabled={savingSettings}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400"
+                    >
+                      <Save size={18} />
+                      {savingSettings ? 'Saving...' : 'Save Settings'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+        </>);
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<ProxmoxBalanceManager />);
+  </script>
+</body>
+</html>
