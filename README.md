@@ -1,5 +1,8 @@
 # ProxBalance
-
+<div align="center">
+<img src="assets/logo.svg" alt="ProxBalance Logo" width="200"/>
+<br/>
+<br/>
 <div align="center">
 
 ![ProxBalance Logo](https://img.shields.io/badge/ProxBalance-Cluster_Optimization-1e40af?style=for-the-badge)
