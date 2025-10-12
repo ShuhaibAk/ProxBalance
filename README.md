@@ -240,13 +240,21 @@ pct exec <container-id> -- systemctl restart proxmox-collector.timer
 
 ## 📸 Screenshots
 
-### Dashboard
+### Main Dashboard
 ![ProxBalance Dashboard](docs/images/dashboard.png)
-*Main dashboard showing cluster status and node metrics*
+*Main dashboard showing cluster status, resource metrics, and tagged guests with affinity rules*
+
+### Node Status
+![Node Status](docs/images/node-status.png)
+*Real-time view of all cluster nodes with CPU, memory, cores, and guest counts*
 
 ### Migration Recommendations
 ![Migration Recommendations](docs/images/recommendations.png)
-*Intelligent migration suggestions with one-click execution*
+*Intelligent migration suggestions with detailed reasoning and one-click execution*
+
+### Tagged Guests & Affinity Rules
+![Tagged Guests](docs/images/tagged-guests.png)
+*Visual management of ignored guests and anti-affinity groups for workload separation*
 
 ### Settings Panel
 ![Settings Panel](docs/images/settings.png)
