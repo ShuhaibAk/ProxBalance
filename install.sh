@@ -1,558 +1,575 @@
-#!/bin/bash
-#
-# ProxBalance - Proxmox Balance Manager Installer
+#!/usr/bin/env bash
+
+# Copyright (c) 2024 ProxBalance
+# Author: Pr0zak
+# License: MIT
 # https://github.com/Pr0zak/ProxBalance
 #
-# Enhanced installer with automatic/manual container ID, DHCP/static IP, and default hostname
-#
+# ProxBalance - Proxmox Balance Manager
+# Standalone Installer
 
-set -e
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Default values
-DEFAULT_HOSTNAME="ProxBalance"
-DEFAULT_MEMORY=2048
-DEFAULT_CORES=2
-DEFAULT_DISK=8
-DEFAULT_STORAGE="local-lvm"
-DEFAULT_TEMPLATE="local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst"
-
-# Script banner
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║${NC}  ${GREEN}ProxBalance - Proxmox Balance Manager Installer${NC}             ${BLUE}║${NC}"
-echo -e "${BLUE}║${NC}  Version 1.0                                                  ${BLUE}║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-
-# Function to print section headers
-print_header() {
-    echo -e "\n${BLUE}═══${NC} $1 ${BLUE}═══${NC}"
-}
-
-# Function to print success messages
-print_success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-# Function to print error messages
-print_error() {
-    echo -e "${RED}✗${NC} $1"
-}
-
-# Function to print warning messages
-print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-# Function to print info messages
-print_info() {
-    echo -e "${BLUE}ℹ${NC} $1"
-}
-
-# Check if running on Proxmox host
-if ! command -v pct &> /dev/null; then
-    print_error "This script must be run on a Proxmox VE host"
-    exit 1
-fi
-
-print_success "Running on Proxmox VE host"
-
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    print_error "This script must be run as root"
-    exit 1
-fi
-
-print_success "Running as root"
+set -euo pipefail
+shopt -s inherit_errexit nullglob
 
 # ═══════════════════════════════════════════════════════════════
-# Container ID Selection
+# Color Definitions
 # ═══════════════════════════════════════════════════════════════
-print_header "Container ID Configuration"
+RD='\033[0;31m'
+YW='\033[1;33m'
+GN='\033[0;32m'
+BL='\033[0;34m'
+BFR='\033[1;97m'
+CL='\033[0m'
+CM="${GN}✓${CL}"
+CROSS="${RD}✗${CL}"
+INFO="${BL}ℹ${CL}"
+WARN="${YW}⚠${CL}"
 
-# Function to find next available CT ID
+# ═══════════════════════════════════════════════════════════════
+# Helper Functions
+# ═══════════════════════════════════════════════════════════════
+msg_info() {
+  echo -e "${INFO} ${BL}${1}${CL}"
+}
+
+msg_ok() {
+  echo -e "${CM} ${GN}${1}${CL}"
+}
+
+msg_error() {
+  echo -e "${CROSS} ${RD}${1}${CL}"
+}
+
+msg_warn() {
+  echo -e "${WARN} ${YW}${1}${CL}"
+}
+
+header_info() {
+  clear
+  cat <<"EOF"
+╔════════════════════════════════════════════════════════════════╗
+║  ProxBalance - Proxmox Balance Manager                        ║
+║  Standalone Installer v1.0                                    ║
+╚════════════════════════════════════════════════════════════════╝
+EOF
+  echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════
+# Validation Functions
+# ═══════════════════════════════════════════════════════════════
+check_root() {
+  if [[ $EUID -ne 0 ]]; then
+    msg_error "This script must be run as root"
+    exit 1
+  fi
+}
+
+check_proxmox() {
+  if ! command -v pct &> /dev/null; then
+    msg_error "This script must be run on a Proxmox VE host"
+    exit 1
+  fi
+}
+
 get_next_ctid() {
-    local next_id=100
-    while pct status $next_id &>/dev/null; do
-        ((next_id++))
-    done
-    echo $next_id
+  local next_id=100
+  while pct status "$next_id" &>/dev/null; do
+    ((next_id++))
+  done
+  echo "$next_id"
 }
 
-NEXT_CTID=$(get_next_ctid)
-print_info "Next available container ID: ${GREEN}${NEXT_CTID}${NC}"
-
-read -p "$(echo -e "Use automatic ID (${GREEN}${NEXT_CTID}${NC}) or enter custom ID? [a/c] (default: a): ")" ctid_choice
-ctid_choice=${ctid_choice:-a}
-
-if [[ "$ctid_choice" == "c" || "$ctid_choice" == "C" ]]; then
-    while true; do
-        read -p "Enter container ID (100-999999): " CTID
-        if [[ ! "$CTID" =~ ^[0-9]+$ ]] || [ "$CTID" -lt 100 ]; then
-            print_error "Invalid container ID. Must be a number >= 100"
-            continue
-        fi
-        if pct status $CTID &>/dev/null; then
-            print_error "Container ID $CTID already exists"
-            continue
-        fi
+# ═══════════════════════════════════════════════════════════════
+# Configuration Functions
+# ═══════════════════════════════════════════════════════════════
+select_container_id() {
+  msg_info "Container ID Configuration"
+  local next_ctid
+  next_ctid=$(get_next_ctid)
+  
+  echo -e "  ${BL}1)${CL} Automatic (Next available: ${GN}${next_ctid}${CL})"
+  echo -e "  ${BL}2)${CL} Manual (Enter custom ID)"
+  echo ""
+  
+  while true; do
+    read -p "Select option [1-2]: " choice
+    case $choice in
+      1)
+        CTID=$next_ctid
         break
-    done
-else
-    CTID=$NEXT_CTID
-fi
+        ;;
+      2)
+        read -p "Enter container ID (100-999999): " custom_id
+        if [[ ! "$custom_id" =~ ^[0-9]+$ ]] || [ "$custom_id" -lt 100 ]; then
+          msg_error "Invalid container ID. Must be >= 100"
+          continue
+        fi
+        if pct status "$custom_id" &>/dev/null; then
+          msg_error "Container ID $custom_id already exists"
+          continue
+        fi
+        CTID=$custom_id
+        break
+        ;;
+      *)
+        msg_error "Invalid selection"
+        ;;
+    esac
+  done
+  
+  msg_ok "Container ID: ${GN}${CTID}${CL}"
+}
 
-print_success "Using container ID: ${GREEN}${CTID}${NC}"
+select_hostname() {
+  msg_info "Hostname Configuration"
+  read -p "Enter hostname (default: ProxBalance): " hostname
+  HOSTNAME=${hostname:-ProxBalance}
+  msg_ok "Hostname: ${GN}${HOSTNAME}${CL}"
+}
 
-# ═══════════════════════════════════════════════════════════════
-# Hostname Configuration
-# ═══════════════════════════════════════════════════════════════
-print_header "Hostname Configuration"
+select_network() {
+  msg_info "Network Configuration"
+  echo -e "  ${BL}1)${CL} DHCP (Automatic) - Recommended"
+  echo -e "  ${BL}2)${CL} Static IP"
+  echo ""
+  
+  while true; do
+    read -p "Select option [1-2]: " choice
+    case $choice in
+      1)
+        NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
+        msg_ok "Network: ${GN}DHCP (Automatic)${CL}"
+        break
+        ;;
+      2)
+        read -p "Enter IP address (e.g., 10.0.0.131): " ip_addr
+        read -p "Enter CIDR (e.g., 24): " cidr
+        read -p "Enter gateway (e.g., 10.0.0.1): " gateway
+        
+        if [[ ! "$ip_addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          msg_error "Invalid IP address format"
+          continue
+        fi
+        
+        NET_CONFIG="name=eth0,bridge=vmbr0,ip=${ip_addr}/${cidr},gw=${gateway}"
+        msg_ok "Static IP: ${GN}${ip_addr}/${cidr}${CL} via ${GN}${gateway}${CL}"
+        break
+        ;;
+      *)
+        msg_error "Invalid selection"
+        ;;
+    esac
+  done
+}
 
-read -p "$(echo -e "Enter hostname (default: ${GREEN}${DEFAULT_HOSTNAME}${NC}): ")" HOSTNAME
-HOSTNAME=${HOSTNAME:-$DEFAULT_HOSTNAME}
-
-print_success "Hostname: ${GREEN}${HOSTNAME}${NC}"
-
-# ═══════════════════════════════════════════════════════════════
-# Network Configuration
-# ═══════════════════════════════════════════════════════════════
-print_header "Network Configuration"
-
-echo "Select network configuration:"
-echo "  1) DHCP (automatic) - recommended"
-echo "  2) Static IP"
-read -p "Choice [1-2] (default: 1): " net_choice
-net_choice=${net_choice:-1}
-
-if [ "$net_choice" == "2" ]; then
-    # Static IP configuration
-    read -p "Enter IP address (e.g., 10.0.0.131): " IP_ADDR
-    read -p "Enter subnet mask in CIDR notation (e.g., 24): " CIDR
-    read -p "Enter gateway (e.g., 10.0.0.1): " GATEWAY
-    
-    # Validate IP format
-    if [[ ! "$IP_ADDR" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        print_error "Invalid IP address format"
-        exit 1
-    fi
-    
-    NET_CONFIG="name=eth0,bridge=vmbr0,ip=${IP_ADDR}/${CIDR},gw=${GATEWAY}"
-    print_success "Static IP: ${GREEN}${IP_ADDR}/${CIDR}${NC} via ${GREEN}${GATEWAY}${NC}"
-else
-    # DHCP configuration
-    NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
-    print_success "Network: ${GREEN}DHCP${NC} (automatic)"
-fi
-
-# ═══════════════════════════════════════════════════════════════
-# Storage Configuration
-# ═══════════════════════════════════════════════════════════════
-print_header "Storage Configuration"
-
-# List available storages
-print_info "Available storage locations:"
-pvesm status | awk 'NR>1 {print "  - " $1 " (" $2 ")"}'
-
-read -p "$(echo -e "Enter storage name (default: ${GREEN}${DEFAULT_STORAGE}${NC}): ")" STORAGE
-STORAGE=${STORAGE:-$DEFAULT_STORAGE}
-
-# Verify storage exists
-if ! pvesm status | grep -q "^${STORAGE} "; then
-    print_error "Storage '${STORAGE}' not found"
+select_storage() {
+  msg_info "Storage Configuration"
+  
+  # Get available storages
+  mapfile -t STORAGES < <(pvesm status | awk 'NR>1 {print $1}')
+  
+  if [ ${#STORAGES[@]} -eq 0 ]; then
+    msg_error "No storage found"
     exit 1
-fi
-
-print_success "Using storage: ${GREEN}${STORAGE}${NC}"
-
-# ═══════════════════════════════════════════════════════════════
-# Template Selection
-# ═══════════════════════════════════════════════════════════════
-print_header "Template Configuration"
-
-# List available Debian templates
-print_info "Available Debian templates:"
-pveam available | grep "debian-12" | awk '{print "  - " $2}'
-
-read -p "$(echo -e "Enter template path (default: ${GREEN}${DEFAULT_TEMPLATE}${NC}): ")" TEMPLATE
-TEMPLATE=${TEMPLATE:-$DEFAULT_TEMPLATE}
-
-# Check if template exists, offer to download if not
-if ! pveam list local | grep -q "${TEMPLATE##*:}"; then
-    print_warning "Template not found locally"
-    read -p "Download Debian 12 template? [y/N]: " download_template
-    if [[ "$download_template" == "y" || "$download_template" == "Y" ]]; then
-        print_info "Downloading template..."
-        pveam download local debian-12-standard_12.2-1_amd64.tar.zst
-        print_success "Template downloaded"
+  fi
+  
+  echo "Available storage locations:"
+  for i in "${!STORAGES[@]}"; do
+    local storage_type
+    storage_type=$(pvesm status | awk -v s="${STORAGES[$i]}" '$1==s {print $2}')
+    echo -e "  ${BL}$((i+1)))${CL} ${STORAGES[$i]} ${YW}($storage_type)${CL}"
+  done
+  echo ""
+  
+  while true; do
+    read -p "Select storage [1-${#STORAGES[@]}]: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#STORAGES[@]} ]; then
+      STORAGE="${STORAGES[$((choice-1))]}"
+      msg_ok "Using storage: ${GN}${STORAGE}${CL}"
+      break
     else
-        print_error "Template required to continue"
-        exit 1
+      msg_error "Invalid selection"
     fi
-fi
+  done
+}
 
-print_success "Using template: ${GREEN}${TEMPLATE}${NC}"
+select_template() {
+  msg_info "Template Configuration"
+  
+  # Check for Debian 12 standard template
+  local template_name="debian-12-standard_12.2-1_amd64.tar.zst"
+  local template_path="local:vztmpl/${template_name}"
+  
+  if pveam list local | grep -q "$template_name"; then
+    TEMPLATE="$template_path"
+    msg_ok "Using template: ${GN}${template_name}${CL}"
+    return
+  fi
+  
+  # List available Debian 12 templates
+  mapfile -t TEMPLATES < <(pveam available | grep "debian-12-standard" | awk '{print $2}')
+  
+  if [ ${#TEMPLATES[@]} -eq 0 ]; then
+    msg_warn "No Debian 12 templates available"
+    read -p "Enter template path manually: " TEMPLATE
+    return
+  fi
+  
+  echo "Available Debian 12 templates:"
+  for i in "${!TEMPLATES[@]}"; do
+    echo -e "  ${BL}$((i+1)))${CL} ${TEMPLATES[$i]}"
+  done
+  echo ""
+  
+  while true; do
+    read -p "Select template [1-${#TEMPLATES[@]}]: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#TEMPLATES[@]} ]; then
+      local selected_template="${TEMPLATES[$((choice-1))]}"
+      
+      # Download template if not present
+      if ! pveam list local | grep -q "$selected_template"; then
+        msg_info "Downloading template..."
+        if pveam download local "$selected_template"; then
+          msg_ok "Template downloaded"
+        else
+          msg_error "Failed to download template"
+          exit 1
+        fi
+      fi
+      
+      TEMPLATE="local:vztmpl/${selected_template}"
+      msg_ok "Using template: ${GN}${selected_template}${CL}"
+      break
+    else
+      msg_error "Invalid selection"
+    fi
+  done
+}
 
-# ═══════════════════════════════════════════════════════════════
-# Resource Configuration
-# ═══════════════════════════════════════════════════════════════
-print_header "Resource Configuration"
+select_resources() {
+  msg_info "Resource Configuration"
+  
+  read -p "Memory (MB) [default: 2048]: " memory
+  MEMORY=${memory:-2048}
+  
+  read -p "CPU cores [default: 2]: " cores
+  CORES=${cores:-2}
+  
+  read -p "Disk size (GB) [default: 8]: " disk
+  DISK=${disk:-8}
+  
+  msg_ok "Resources: ${GN}${MEMORY}${CL}MB RAM, ${GN}${CORES}${CL} cores, ${GN}${DISK}${CL}GB disk"
+}
 
-read -p "$(echo -e "Memory (MB) (default: ${GREEN}${DEFAULT_MEMORY}${NC}): ")" MEMORY
-MEMORY=${MEMORY:-$DEFAULT_MEMORY}
-
-read -p "$(echo -e "CPU cores (default: ${GREEN}${DEFAULT_CORES}${NC}): ")" CORES
-CORES=${CORES:-$DEFAULT_CORES}
-
-read -p "$(echo -e "Disk size (GB) (default: ${GREEN}${DEFAULT_DISK}${NC}): ")" DISK
-DISK=${DISK:-$DEFAULT_DISK}
-
-print_success "Resources: ${GREEN}${MEMORY}${NC}MB RAM, ${GREEN}${CORES}${NC} cores, ${GREEN}${DISK}${NC}GB disk"
-
-# ═══════════════════════════════════════════════════════════════
-# Proxmox Host Configuration
-# ═══════════════════════════════════════════════════════════════
-print_header "Proxmox Cluster Configuration"
-
-# Auto-detect cluster nodes
-print_info "Detecting Proxmox cluster nodes..."
-DETECTED_NODES=$(pvesh get /nodes --output-format json | jq -r '.[].node' | tr '\n' ',' | sed 's/,$//')
-
-if [ -n "$DETECTED_NODES" ]; then
-    print_success "Detected nodes: ${GREEN}${DETECTED_NODES}${NC}"
-    read -p "Use detected nodes? [Y/n]: " use_detected
-    use_detected=${use_detected:-Y}
+detect_proxmox_nodes() {
+  msg_info "Detecting Proxmox Cluster"
+  
+  if command -v pvesh &> /dev/null; then
+    DETECTED_NODES=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | tr '\n' ',' | sed 's/,$//' || echo "")
     
-    if [[ "$use_detected" == "Y" || "$use_detected" == "y" ]]; then
-        # Use first node as primary host
-        PROXMOX_HOST=$(echo $DETECTED_NODES | cut -d',' -f1)
+    if [ -n "$DETECTED_NODES" ]; then
+      msg_ok "Detected nodes: ${GN}${DETECTED_NODES}${CL}"
+      PROXMOX_HOST=$(echo "$DETECTED_NODES" | cut -d',' -f1)
+      msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
     else
-        read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
+      msg_warn "Could not auto-detect cluster"
+      read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
     fi
-else
-    print_warning "Could not auto-detect cluster nodes"
-    read -p "Enter primary Proxmox host IP/hostname (e.g., 10.0.0.3 or pve1): " PROXMOX_HOST
-fi
+  else
+    read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
+  fi
+}
 
-print_success "Primary Proxmox host: ${GREEN}${PROXMOX_HOST}${NC}"
-
-# ═══════════════════════════════════════════════════════════════
-# Configuration Summary
-# ═══════════════════════════════════════════════════════════════
-print_header "Configuration Summary"
-
-echo ""
-echo "  Container ID:     ${GREEN}${CTID}${NC}"
-echo "  Hostname:         ${GREEN}${HOSTNAME}${NC}"
-echo "  Network:          ${GREEN}${NET_CONFIG}${NC}"
-echo "  Memory:           ${GREEN}${MEMORY}${NC} MB"
-echo "  CPU Cores:        ${GREEN}${CORES}${NC}"
-echo "  Disk:             ${GREEN}${DISK}${NC} GB"
-echo "  Storage:          ${GREEN}${STORAGE}${NC}"
-echo "  Template:         ${GREEN}${TEMPLATE}${NC}"
-echo "  Proxmox Host:     ${GREEN}${PROXMOX_HOST}${NC}"
-echo ""
-
-read -p "Proceed with installation? [Y/n]: " proceed
-proceed=${proceed:-Y}
-
-if [[ "$proceed" != "Y" && "$proceed" != "y" ]]; then
-    print_info "Installation cancelled"
+show_summary() {
+  msg_info "Configuration Summary"
+  echo ""
+  echo -e "  Container ID:     ${GN}${CTID}${CL}"
+  echo -e "  Hostname:         ${GN}${HOSTNAME}${CL}"
+  echo -e "  Network:          ${GN}${NET_CONFIG}${CL}"
+  echo -e "  Storage:          ${GN}${STORAGE}${CL}"
+  echo -e "  Template:         ${GN}${TEMPLATE}${CL}"
+  echo -e "  Memory:           ${GN}${MEMORY}${CL} MB"
+  echo -e "  CPU Cores:        ${GN}${CORES}${CL}"
+  echo -e "  Disk:             ${GN}${DISK}${CL} GB"
+  echo -e "  Proxmox Host:     ${GN}${PROXMOX_HOST}${CL}"
+  echo ""
+  
+  read -p "Proceed with installation? [Y/n]: " proceed
+  proceed=${proceed:-Y}
+  
+  if [[ ! "$proceed" =~ ^[Yy]$ ]]; then
+    msg_info "Installation cancelled"
     exit 0
-fi
+  fi
+}
 
 # ═══════════════════════════════════════════════════════════════
-# Container Creation
+# Installation Functions
 # ═══════════════════════════════════════════════════════════════
-print_header "Creating Container"
-
-pct create $CTID $TEMPLATE \
-    --hostname $HOSTNAME \
-    --memory $MEMORY \
-    --cores $CORES \
-    --rootfs ${STORAGE}:${DISK} \
-    --net0 ${NET_CONFIG} \
+create_container() {
+  msg_info "Creating Container"
+  
+  pct create "$CTID" "$TEMPLATE" \
+    --hostname "$HOSTNAME" \
+    --memory "$MEMORY" \
+    --cores "$CORES" \
+    --rootfs "${STORAGE}:${DISK}" \
+    --net0 "${NET_CONFIG}" \
     --unprivileged 1 \
     --features nesting=1 \
-    --onboot 1
+    --onboot 1 \
+    --start 1
+  
+  msg_ok "Container ${CTID} created"
+  
+  # Wait for container to be ready
+  msg_info "Waiting for container to start..."
+  sleep 10
+  msg_ok "Container started"
+}
 
-print_success "Container ${CTID} created"
-
-# Start container
-print_info "Starting container..."
-pct start $CTID
-sleep 5
-print_success "Container started"
-
-# ═══════════════════════════════════════════════════════════════
-# Get Container IP
-# ═══════════════════════════════════════════════════════════════
-print_header "Network Information"
-
-if [ "$net_choice" == "1" ]; then
-    # DHCP - need to wait and detect IP
-    print_info "Waiting for DHCP lease..."
-    sleep 10
+get_container_ip() {
+  msg_info "Getting Container IP"
+  
+  if [[ "$NET_CONFIG" == *"ip=dhcp"* ]]; then
+    local max_attempts=30
+    local attempt=0
     
-    CONTAINER_IP=$(pct exec $CTID -- ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+    while [ $attempt -lt $max_attempts ]; do
+      CONTAINER_IP=$(pct exec "$CTID" -- ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "")
+      
+      if [ -n "$CONTAINER_IP" ]; then
+        msg_ok "Container IP (DHCP): ${GN}${CONTAINER_IP}${CL}"
+        return
+      fi
+      
+      ((attempt++))
+      sleep 2
+    done
     
-    if [ -n "$CONTAINER_IP" ]; then
-        print_success "Container IP (DHCP): ${GREEN}${CONTAINER_IP}${NC}"
-    else
-        print_warning "Could not detect container IP. Check with: pct exec ${CTID} -- ip addr"
-        CONTAINER_IP="<DHCP-assigned>"
-    fi
-else
-    # Static IP
-    CONTAINER_IP=$IP_ADDR
-    print_success "Container IP (Static): ${GREEN}${CONTAINER_IP}${NC}"
-fi
+    msg_warn "Could not detect DHCP IP"
+    CONTAINER_IP="<DHCP-assigned>"
+  else
+    CONTAINER_IP=$(echo "$NET_CONFIG" | grep -oP '(?<=ip=)[^/]+')
+    msg_ok "Container IP (Static): ${GN}${CONTAINER_IP}${CL}"
+  fi
+}
 
-# ═══════════════════════════════════════════════════════════════
-# Install Dependencies
-# ═══════════════════════════════════════════════════════════════
-print_header "Installing Dependencies"
+install_dependencies() {
+  msg_info "Installing Dependencies"
+  
+  pct exec "$CTID" -- bash -c "
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update >/dev/null 2>&1
+    apt-get install -y \
+      python3 \
+      python3-venv \
+      python3-pip \
+      nginx \
+      curl \
+      jq \
+      openssh-client \
+      git >/dev/null 2>&1
+  "
+  
+  msg_ok "Dependencies installed"
+}
 
-print_info "Updating package lists..."
-pct exec $CTID -- bash -c "apt-get update > /dev/null 2>&1"
-
-print_info "Installing packages..."
-pct exec $CTID -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip nginx curl jq ssh git > /dev/null 2>&1"
-
-print_success "Dependencies installed"
-
-# ═══════════════════════════════════════════════════════════════
-# Clone Repository and Install Application
-# ═══════════════════════════════════════════════════════════════
-print_header "Installing ProxBalance Application"
-
-print_info "Cloning repository..."
-pct exec $CTID -- bash << 'EOF'
+install_proxbalance() {
+  msg_info "Installing ProxBalance"
+  
+  pct exec "$CTID" -- bash <<'EOF'
 cd /opt
 git clone https://github.com/Pr0zak/ProxBalance.git proxmox-balance-manager
 cd proxmox-balance-manager
-EOF
-
-print_success "Repository cloned"
 
 # Create Python virtual environment
-print_info "Setting up Python environment..."
-pct exec $CTID -- bash << 'EOF'
-cd /opt/proxmox-balance-manager
 python3 -m venv venv
 source venv/bin/activate
+pip install -q --upgrade pip
 pip install -q flask flask-cors gunicorn
 deactivate
+
+# Make scripts executable
+chmod +x /opt/proxmox-balance-manager/scripts/*.py 2>/dev/null || true
+chmod +x /opt/proxmox-balance-manager/scripts/*.sh 2>/dev/null || true
+chmod +x /opt/proxmox-balance-manager/*.py 2>/dev/null || true
+chmod +x /opt/proxmox-balance-manager/*.sh 2>/dev/null || true
 EOF
+  
+  msg_ok "ProxBalance installed"
+}
 
-print_success "Python environment ready"
-
-# Configure application
-print_info "Configuring application..."
-pct exec $CTID -- bash << EOF
-cat > /opt/proxmox-balance-manager/config.json << 'CONFIGEOF'
+configure_application() {
+  msg_info "Configuring Application"
+  
+  pct exec "$CTID" -- bash <<EOF
+cat > /opt/proxmox-balance-manager/config.json <<'CONFIGEOF'
 {
   "collection_interval_minutes": 60,
   "ui_refresh_interval_minutes": 15,
   "proxmox_host": "${PROXMOX_HOST}"
 }
 CONFIGEOF
-
-chmod +x /opt/proxmox-balance-manager/*.py
-chmod +x /opt/proxmox-balance-manager/*.sh
 EOF
+  
+  msg_ok "Application configured"
+}
 
-print_success "Application configured"
+setup_services() {
+  msg_info "Setting Up System Services"
+  
+  pct exec "$CTID" -- bash <<'EOF'
+# Copy service files (check multiple possible locations)
+if [ -f /opt/proxmox-balance-manager/systemd/proxmox-balance.service ]; then
+  cp /opt/proxmox-balance-manager/systemd/*.service /etc/systemd/system/
+  cp /opt/proxmox-balance-manager/systemd/*.timer /etc/systemd/system/
+elif [ -f /opt/proxmox-balance-manager/proxmox-balance.service ]; then
+  cp /opt/proxmox-balance-manager/proxmox-balance.service /etc/systemd/system/
+  cp /opt/proxmox-balance-manager/proxmox-collector.service /etc/systemd/system/
+  cp /opt/proxmox-balance-manager/proxmox-collector.timer /etc/systemd/system/
+fi
 
-# ═══════════════════════════════════════════════════════════════
-# Setup Systemd Services
-# ═══════════════════════════════════════════════════════════════
-print_header "Setting Up System Services"
-
-print_info "Installing systemd services..."
-pct exec $CTID -- bash << 'EOF'
-# Copy service files
-cp /opt/proxmox-balance-manager/systemd/proxmox-balance.service /etc/systemd/system/
-cp /opt/proxmox-balance-manager/systemd/proxmox-collector.service /etc/systemd/system/
-cp /opt/proxmox-balance-manager/systemd/proxmox-collector.timer /etc/systemd/system/
-
-# Reload systemd
 systemctl daemon-reload
-
-# Enable services
 systemctl enable proxmox-balance.service
 systemctl enable proxmox-collector.timer
 EOF
+  
+  msg_ok "Services configured"
+}
 
-print_success "Systemd services installed"
-
-# ═══════════════════════════════════════════════════════════════
-# Setup Nginx
-# ═══════════════════════════════════════════════════════════════
-print_header "Configuring Web Server"
-
-print_info "Setting up Nginx..."
-pct exec $CTID -- bash << 'EOF'
-# Copy web files
-cp -r /opt/proxmox-balance-manager/web/* /var/www/html/
+setup_nginx() {
+  msg_info "Configuring Web Server"
+  
+  pct exec "$CTID" -- bash <<'EOF'
+# Copy web files (check multiple possible locations)
+if [ -d /opt/proxmox-balance-manager/web ]; then
+  cp -r /opt/proxmox-balance-manager/web/* /var/www/html/
+elif [ -f /opt/proxmox-balance-manager/index.html ]; then
+  cp /opt/proxmox-balance-manager/index.html /var/www/html/
+fi
 
 # Copy nginx config
-cp /opt/proxmox-balance-manager/nginx/proxmox-balance /etc/nginx/sites-available/
+if [ -f /opt/proxmox-balance-manager/nginx/proxmox-balance ]; then
+  cp /opt/proxmox-balance-manager/nginx/proxmox-balance /etc/nginx/sites-available/
+elif [ -f /opt/proxmox-balance-manager/proxmox-balance-nginx ]; then
+  cp /opt/proxmox-balance-manager/proxmox-balance-nginx /etc/nginx/sites-available/proxmox-balance
+fi
 
-# Enable site
 ln -sf /etc/nginx/sites-available/proxmox-balance /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
-# Test nginx config
-nginx -t
-
-# Enable and restart nginx
-systemctl enable nginx
-systemctl restart nginx
+nginx -t && systemctl restart nginx && systemctl enable nginx
 EOF
+  
+  msg_ok "Web server configured"
+}
 
-print_success "Web server configured"
+setup_ssh() {
+  msg_info "Setting Up SSH Authentication"
+  
+  pct exec "$CTID" -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
+  SSH_PUBKEY=$(pct exec "$CTID" -- cat /root/.ssh/id_ed25519.pub)
+  
+  msg_ok "SSH key generated"
+}
 
-# ═══════════════════════════════════════════════════════════════
-# Setup SSH Keys
-# ═══════════════════════════════════════════════════════════════
-print_header "Setting Up SSH Authentication"
+start_services() {
+  msg_info "Starting Services"
+  
+  pct exec "$CTID" -- bash <<'EOF'
+systemctl start proxmox-balance.service
+systemctl start proxmox-collector.timer
+EOF
+  
+  sleep 3
+  
+  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
+    msg_ok "API service running"
+  else
+    msg_warn "API service may have issues"
+  fi
+  
+  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
+    msg_ok "Collector timer running"
+  else
+    msg_warn "Collector timer may have issues"
+  fi
+}
 
-print_info "Generating SSH key pair..."
-pct exec $CTID -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
+initial_collection() {
+  msg_info "Running Initial Data Collection (30-60 seconds)"
+  
+  if pct exec "$CTID" -- /opt/proxmox-balance-manager/venv/bin/python3 /opt/proxmox-balance-manager/collector.py 2>/dev/null; then
+    msg_ok "Initial data collection complete"
+  else
+    msg_warn "Initial collection had issues - will retry automatically"
+  fi
+}
 
-print_success "SSH key generated"
-
-# Get public key
-SSH_PUBKEY=$(pct exec $CTID -- cat /root/.ssh/id_ed25519.pub)
-
-print_info "SSH public key:"
-echo -e "${YELLOW}${SSH_PUBKEY}${NC}"
-echo ""
-
-print_warning "You need to add this key to all Proxmox nodes"
-echo ""
-echo "Run these commands on each Proxmox node:"
-echo ""
-
-if [ -n "$DETECTED_NODES" ]; then
-    IFS=',' read -ra NODES <<< "$DETECTED_NODES"
-    for node in "${NODES[@]}"; do
-        echo -e "${BLUE}# On node ${node}:${NC}"
-        echo "ssh root@${node} \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\""
-        echo ""
-    done
-else
-    echo "mkdir -p /root/.ssh"
-    echo "echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys"
-    echo ""
-fi
-
-read -p "Press Enter when SSH keys have been added to all nodes..."
-
-# Test SSH connectivity
-print_info "Testing SSH connectivity..."
-if [ -n "$DETECTED_NODES" ]; then
-    IFS=',' read -ra NODES <<< "$DETECTED_NODES"
-    for node in "${NODES[@]}"; do
-        if pct exec $CTID -- ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${node} "echo OK" &>/dev/null; then
-            print_success "SSH to ${node}: OK"
-        else
-            print_error "SSH to ${node}: FAILED"
-        fi
-    done
-else
-    if pct exec $CTID -- ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${PROXMOX_HOST} "echo OK" &>/dev/null; then
-        print_success "SSH to ${PROXMOX_HOST}: OK"
-    else
-        print_error "SSH to ${PROXMOX_HOST}: FAILED"
-    fi
-fi
-
-# ═══════════════════════════════════════════════════════════════
-# Start Services
-# ═══════════════════════════════════════════════════════════════
-print_header "Starting Services"
-
-print_info "Starting API service..."
-pct exec $CTID -- systemctl start proxmox-balance.service
-sleep 2
-
-if pct exec $CTID -- systemctl is-active proxmox-balance.service &>/dev/null; then
-    print_success "API service running"
-else
-    print_error "API service failed to start"
-fi
-
-print_info "Starting collector timer..."
-pct exec $CTID -- systemctl start proxmox-collector.timer
-
-if pct exec $CTID -- systemctl is-active proxmox-collector.timer &>/dev/null; then
-    print_success "Collector timer running"
-else
-    print_error "Collector timer failed to start"
-fi
+show_completion() {
+  echo ""
+  echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
+  echo -e "${GN}║${CL}  ${BFR}Installation Complete!${CL}                                        ${GN}║${CL}"
+  echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
+  echo ""
+  
+  msg_info "ProxBalance has been successfully installed!"
+  echo ""
+  
+  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
+    echo -e "  ${BL}Web Interface:${CL}  http://${GN}${CONTAINER_IP}${CL}"
+    echo -e "  ${BL}API Endpoint:${CL}   http://${GN}${CONTAINER_IP}${CL}/api"
+  else
+    echo -e "  ${YW}Container using DHCP - run this to get IP:${CL}"
+    echo -e "  ${BL}pct exec ${CTID} -- hostname -I${CL}"
+  fi
+  echo ""
+  
+  echo -e "${BL}SSH Key Configuration:${CL}"
+  echo -e "Add this key to all Proxmox nodes:"
+  echo -e "${YW}${SSH_PUBKEY}${CL}"
+  echo ""
+  echo -e "Run on each node:"
+  echo -e "${BL}mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys${CL}"
+  echo ""
+  
+  msg_ok "Enjoy ProxBalance!"
+}
 
 # ═══════════════════════════════════════════════════════════════
-# Initial Data Collection
+# Main Installation Flow
 # ═══════════════════════════════════════════════════════════════
-print_header "Initial Data Collection"
+main() {
+  header_info
+  check_root
+  check_proxmox
+  
+  msg_ok "Running on Proxmox VE"
+  msg_ok "Running as root"
+  echo ""
+  
+  select_container_id
+  select_hostname
+  select_network
+  select_storage
+  select_template
+  select_resources
+  detect_proxmox_nodes
+  show_summary
+  
+  create_container
+  get_container_ip
+  install_dependencies
+  install_proxbalance
+  configure_application
+  setup_services
+  setup_nginx
+  setup_ssh
+  start_services
+  initial_collection
+  show_completion
+}
 
-print_info "Triggering first data collection (this may take 30-60 seconds)..."
-pct exec $CTID -- /opt/proxmox-balance-manager/venv/bin/python3 /opt/proxmox-balance-manager/collector.py
-
-if [ $? -eq 0 ]; then
-    print_success "Initial data collection complete"
-else
-    print_warning "Initial data collection had issues. Check logs later."
-fi
-
-# ═══════════════════════════════════════════════════════════════
-# Installation Complete
-# ═══════════════════════════════════════════════════════════════
-echo ""
-echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║${NC}  ${BLUE}Installation Complete!${NC}                                        ${GREEN}║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-
-print_info "ProxBalance has been successfully installed!"
-echo ""
-
-if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
-    echo -e "  ${BLUE}Web Interface:${NC}  http://${GREEN}${CONTAINER_IP}${NC}"
-    echo -e "  ${BLUE}API Endpoint:${NC}   http://${GREEN}${CONTAINER_IP}${NC}/api"
-else
-    echo -e "  ${YELLOW}Note: Container is using DHCP${NC}"
-    echo -e "  Run this command to get the IP address:"
-    echo -e "  ${BLUE}pct exec ${CTID} -- ip -4 addr show eth0 | grep inet${NC}"
-fi
-echo ""
-
-echo -e "${BLUE}Quick Commands:${NC}"
-echo -e "  View logs:       ${GREEN}pct exec ${CTID} -- journalctl -u proxmox-balance -f${NC}"
-echo -e "  Restart API:     ${GREEN}pct exec ${CTID} -- systemctl restart proxmox-balance${NC}"
-echo -e "  Check status:    ${GREEN}pct exec ${CTID} -- systemctl status proxmox-balance${NC}"
-echo -e "  Manual refresh:  ${GREEN}curl -X POST http://${CONTAINER_IP}/api/refresh${NC}"
-echo ""
-
-echo -e "${BLUE}Configuration:${NC}"
-echo -e "  Config file:     ${GREEN}/opt/proxmox-balance-manager/config.json${NC}"
-echo -e "  Settings tool:   ${GREEN}/opt/proxmox-balance-manager/manage_settings.sh${NC}"
-echo ""
-
-echo -e "${YELLOW}Next Steps:${NC}"
-echo "  1. Access the web interface in your browser"
-echo "  2. Verify all Proxmox nodes are visible"
-echo "  3. Adjust CPU/Memory thresholds as needed"
-echo "  4. Configure collection intervals in Settings"
-echo ""
-
-print_success "Enjoy ProxBalance!"
-echo ""
+main "$@"
