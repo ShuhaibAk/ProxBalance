@@ -297,6 +297,29 @@ pct exec <ctid> -- systemctl restart proxmox-balance proxmox-collector.timer ngi
 # Check SSH connectivity to nodes
 pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ssh root@$node "echo OK"; done'
 ```
+---
+
+## 📸 Screenshots
+
+### Main Dashboard
+![ProxBalance Dashboard](docs/images/dashboard.png)
+*Main dashboard showing cluster status, resource metrics, and migration recommendations*
+
+### Node Status & Resource Monitoring
+![Node Status](docs/images/node-status.png)
+*Real-time view of all cluster nodes with CPU, memory, cores, and guest distribution*
+
+### Migration Recommendations
+![Migration Recommendations](docs/images/recommendations.png)
+*Intelligent migration suggestions with detailed reasoning and one-click execution*
+
+### Tagged Guests & Affinity Rules
+![Tagged Guests](docs/images/tagged-guests.png)
+*Visual management of ignored guests and anti-affinity groups for workload separation*
+
+### Settings Configuration
+![Settings Panel](docs/images/settings.png)
+*Easy configuration of collection intervals, UI refresh rates, and thresholds*
 
 ---
 
