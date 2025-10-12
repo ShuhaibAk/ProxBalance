@@ -488,17 +488,8 @@ distribute_ssh_keys() {
   fi
   
   if [ -z "$nodes" ]; then
-    msg_warn "Could not auto-detect cluster nodes"
-    read -p "Enter space-separated list of node hostnames (e.g., pve1 pve2 pve3): " nodes
-  else
-    msg_ok "Detected cluster nodes: ${GN}${nodes}${CL}"
-    echo ""
-    read -p "Add SSH key to all detected nodes? [Y/n]: " add_keys
-    add_keys=${add_keys:-Y}
-    
-    if [[ ! "$add_keys" =~ ^[Yy]$ ]]; then
-      read -p "Enter space-separated list of nodes to configure: " nodes
-    fi
+    msg_warn "Could not auto-detect cluster nodes - skipping SSH key distribution"
+    return
   fi
   
   echo ""
@@ -533,7 +524,6 @@ distribute_ssh_keys() {
     msg_info "Manual setup required for failed nodes. Run on each:"
     echo -e "${YW}ssh root@<node> \"mkdir -p /root/.ssh && echo '${SSH_PUBKEY}' >> /root/.ssh/authorized_keys\"${CL}"
     echo ""
-    read -p "Press Enter to continue..."
   fi
   
   # Test connectivity from container
