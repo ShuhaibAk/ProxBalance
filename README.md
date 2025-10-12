@@ -9,7 +9,19 @@
 
 **Automated cluster load balancing and intelligent VM/CT migration for Proxmox VE**
 
-[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Screenshots](#-screenshots) • [Documentation](#-documentation)
+[Quick Start](#-quick-start) • [Features](#-features) • [Usage](#-usage) • [Documentation](#-documentation)
+
+---
+
+### 🎯 Install in One Command
+
+```bash
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
+```
+
+**⏱️ Complete setup in under 5 minutes!**
+
+---
 
 </div>
 
@@ -88,17 +100,38 @@ See [INSTALL.md](INSTALL.md) for detailed step-by-step instructions.
 
 ### Quick Configuration
 
-1. **Update config.json** with your Proxmox host IP:
-   ```bash
-   pct exec <container-id> -- nano /opt/proxmox-balance-manager/config.json
-   # Change "CHANGE_ME" to your Proxmox host IP
-   ```
+After installation completes:
 
-2. Access the web interface: `http://<container-ip>`
+1. **Access the web interface**: `http://<container-ip>`
+   - The installer will show you the exact URL at the end
 
-3. Click the ⚙️ Settings icon to adjust collection and refresh intervals
+2. **Review your cluster status** 
+   - View node metrics and guest distribution
+   - Check for any immediate recommendations
 
-4. Start monitoring your cluster!
+3. **Adjust settings** (optional)
+   - Click the ⚙️ Settings icon
+   - Customize collection intervals (default: 60 min)
+   - Customize UI refresh intervals (default: 15 min)
+
+4. **Configure SSH for additional nodes** (if you have multiple nodes)
+   - The installer adds the SSH key to your main Proxmox host automatically
+   - For additional nodes, copy the SSH public key displayed at installation
+   - Or run: `ssh root@<other-node> 'cat >> /root/.ssh/authorized_keys' < /root/.ssh/id_ed25519.pub`
+
+5. **Start monitoring and balancing!** 🎉
+
+### 📺 What You'll See
+
+After installation, ProxBalance immediately begins monitoring your cluster:
+
+- **Real-time Dashboard** - CPU, memory, and load metrics for all nodes
+- **Guest Overview** - All VMs and containers with their current locations
+- **Smart Recommendations** - Automatic migration suggestions when imbalance detected
+- **One-Click Actions** - Execute migrations with a single button press
+- **Tag Management** - View ignored guests and anti-affinity rules
+
+**No configuration needed to start!** ProxBalance works out of the box with sensible defaults.
 
 ---
 
@@ -438,6 +471,41 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ---
 
+## 💬 Community & Support
+
+### 🐛 Found a Bug?
+Open an [issue](https://github.com/Pr0zak/ProxBalance/issues) with:
+- Your Proxmox VE version
+- Container configuration
+- Steps to reproduce
+- Error messages/logs
+
+### 💡 Feature Request?
+We'd love to hear your ideas! Open a [feature request](https://github.com/Pr0zak/ProxBalance/issues/new) or start a [discussion](https://github.com/Pr0zak/ProxBalance/discussions).
+
+### 🤝 Want to Contribute?
+Contributions are welcome! See our [Contributing Guide](CONTRIBUTING.md) to get started.
+
+### 📣 Share Your Experience
+Using ProxBalance? Share your setup on:
+- [r/Proxmox](https://reddit.com/r/Proxmox)
+- [r/homelab](https://reddit.com/r/homelab)
+- [Proxmox Forums](https://forum.proxmox.com/)
+
+---
+
+## ⭐ Show Your Support
+
+If ProxBalance helps you manage your Proxmox cluster, please:
+- ⭐ **Star this repository** on GitHub
+- 📢 **Share it** with others in the homelab community
+- 🐛 **Report bugs** to help us improve
+- 💡 **Suggest features** you'd like to see
+
+Every star and contribution helps the project grow! 🚀
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -450,7 +518,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **React** - UI framework
 - **Flask** - Python web framework
 - **Tailwind CSS** - Utility-first CSS framework
-
 
 ---
 
