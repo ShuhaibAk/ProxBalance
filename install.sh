@@ -461,7 +461,6 @@ setup_ssh() {
 }
 
 distribute_ssh_keys() {
-  set -x  # DEBUG: Enable tracing
   msg_info "Distributing SSH Keys to Cluster Nodes"
   
   local nodes=""
@@ -575,7 +574,6 @@ TESTEOF
   else
     msg_warn "Some SSH connections failed - data collection may not work for all nodes"
   fi
-  set +x  # DEBUG: Disable tracing
 }
 
 start_services() {
@@ -603,11 +601,17 @@ EOF
 
 initial_collection() {
   msg_info "Triggering Initial Data Collection"
+  echo ""
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "  ${YW}⏱  This process runs in the background and typically takes 2-5 minutes${CL}"
+  echo -e "  ${BL}Grab a coffee, stretch your legs, or just relax for a moment...${CL}"
+  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo ""
   
   pct exec "$CTID" -- systemctl start proxmox-collector.service
   
-  msg_ok "Collection started (runs in background)"
-  msg_info "Data will be available in 2-5 minutes"
+  msg_ok "Collection started successfully"
+  msg_info "ProxBalance will be fully operational in 2-5 minutes"
 }
 
 show_completion() {
