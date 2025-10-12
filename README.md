@@ -451,19 +451,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Flask** - Python web framework
 - **Tailwind CSS** - Utility-first CSS framework
 
----
-
-## 📧 Contact
-
-**Zak Forsyth**
-- GitHub: [@zak-forsyth](https://github.com/zak-forsyth)
-- Repository: [ProxBalance](https://github.com/zak-forsyth/ProxBalance)
-
----
-
-## 🌟 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=zak-forsyth/ProxBalance&type=Date)](https://star-history.com/#zak-forsyth/ProxBalance&Date)
 
 ---
 
