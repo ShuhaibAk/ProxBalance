@@ -168,7 +168,6 @@ select_network() {
 select_storage() {
   msg_info "Storage Configuration"
   
-  # Get available storages
   mapfile -t STORAGES < <(pvesm status | awk 'NR>1 {print $1}')
   
   if [ ${#STORAGES[@]} -eq 0 ]; then
@@ -199,7 +198,6 @@ select_storage() {
 select_template() {
   msg_info "Template Configuration"
   
-  # Check for Debian 12 standard template
   local template_name="debian-12-standard_12.2-1_amd64.tar.zst"
   local template_path="local:vztmpl/${template_name}"
   
@@ -209,7 +207,6 @@ select_template() {
     return
   fi
   
-  # List available Debian 12 templates
   mapfile -t TEMPLATES < <(pveam available | grep "debian-12-standard" | awk '{print $2}')
   
   if [ ${#TEMPLATES[@]} -eq 0 ]; then
@@ -231,7 +228,6 @@ select_template() {
   if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#TEMPLATES[@]} ]; then
     local selected_template="${TEMPLATES[$((choice-1))]}"
     
-    # Download template if not present
     if ! pveam list local | grep -q "$selected_template"; then
       msg_info "Downloading template..."
       if pveam download local "$selected_template"; then
@@ -268,18 +264,25 @@ select_resources() {
 detect_proxmox_nodes() {
   msg_info "Detecting Proxmox Cluster"
   
-  if command -v pvesh &> /dev/null; then
-    DETECTED_NODES=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | tr '\n' ',' | sed 's/,$//' || echo "")
-    
-    if [ -n "$DETECTED_NODES" ]; then
-      msg_ok "Detected nodes: ${GN}${DETECTED_NODES}${CL}"
-      PROXMOX_HOST=$(echo "$DETECTED_NODES" | cut -d',' -f1)
-      msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
-    else
-      msg_warn "Could not auto-detect cluster"
-      read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
-    fi
+  local nodes=""
+  
+  # Method 1: corosync.conf
+  if [ -f /etc/pve/corosync.conf ]; then
+    nodes=$(grep -oP '(?<=name: ).*' /etc/pve/corosync.conf 2>/dev/null | grep -v '^Cluster$' | sort -u | xargs)
+  fi
+  
+  # Method 2: /etc/pve/nodes/
+  if [ -z "$nodes" ] && [ -d /etc/pve/nodes ]; then
+    nodes=$(ls /etc/pve/nodes/ 2>/dev/null | grep -E '^[a-zA-Z0-9]' | grep -v '^pve$' | sort -u | xargs)
+  fi
+  
+  if [ -n "$nodes" ]; then
+    DETECTED_NODES=$(echo "$nodes" | tr ' ' ',')
+    msg_ok "Detected nodes: ${GN}${DETECTED_NODES}${CL}"
+    PROXMOX_HOST=$(echo "$nodes" | awk '{print $1}')
+    msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
   else
+    msg_warn "Could not auto-detect cluster"
     read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
   fi
 }
@@ -307,9 +310,6 @@ show_summary() {
   fi
 }
 
-# ═══════════════════════════════════════════════════════════════
-# Installation Functions
-# ═══════════════════════════════════════════════════════════════
 create_container() {
   msg_info "Creating Container"
   
@@ -326,7 +326,6 @@ create_container() {
   
   msg_ok "Container ${CTID} created"
   
-  # Wait for container to be ready
   msg_info "Waiting for container to start..."
   sleep 10
   msg_ok "Container started"
@@ -387,14 +386,12 @@ cd /opt
 git clone https://github.com/Pr0zak/ProxBalance.git proxmox-balance-manager
 cd proxmox-balance-manager
 
-# Create Python virtual environment
 python3 -m venv venv
 source venv/bin/activate
 pip install -q --upgrade pip
 pip install -q flask flask-cors gunicorn
 deactivate
 
-# Make scripts executable
 chmod +x /opt/proxmox-balance-manager/*.py 2>/dev/null || true
 chmod +x /opt/proxmox-balance-manager/*.sh 2>/dev/null || true
 EOF
@@ -422,7 +419,6 @@ setup_services() {
   msg_info "Setting Up System Services"
   
   pct exec "$CTID" -- bash <<'EOF'
-# Copy service files
 if [ -f /opt/proxmox-balance-manager/systemd/proxmox-balance.service ]; then
   cp /opt/proxmox-balance-manager/systemd/*.service /etc/systemd/system/
   cp /opt/proxmox-balance-manager/systemd/*.timer /etc/systemd/system/
@@ -440,12 +436,10 @@ setup_nginx() {
   msg_info "Configuring Web Server"
   
   pct exec "$CTID" -- bash <<'EOF'
-# Copy web interface
 if [ -f /opt/proxmox-balance-manager/index.html ]; then
   cp /opt/proxmox-balance-manager/index.html /var/www/html/
 fi
 
-# Copy nginx config
 if [ -f /opt/proxmox-balance-manager/nginx/proxmox-balance ]; then
   cp /opt/proxmox-balance-manager/nginx/proxmox-balance /etc/nginx/sites-available/
 fi
@@ -471,634 +465,16 @@ setup_ssh() {
 distribute_ssh_keys() {
   msg_info "Distributing SSH Keys to Cluster Nodes"
   
-  # Try multiple methods to detect cluster nodes
   local nodes=""
   
-  # Method 1: corosync.conf (most reliable)
+  # Method 1: corosync.conf
   if [ -f /etc/pve/corosync.conf ]; then
-    nodes=$(grep -oP '(?<=name: ).*' /etc/pve/corosync.conf 2>/dev/null | grep -v '^Cluster
-
-start_services() {
-  msg_info "Starting Services"
-  
-  pct exec "$CTID" -- bash <<'EOF'
-systemctl start proxmox-balance.service
-systemctl start proxmox-collector.timer
-EOF
-  
-  sleep 3
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
-    msg_ok "API service running"
-  else
-    msg_warn "API service may have issues"
+    nodes=$(grep -oP '(?<=name: ).*' /etc/pve/corosync.conf 2>/dev/null | grep -v '^Cluster$' | sort -u | xargs)
   fi
   
-  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
-    msg_ok "Collector timer running"
-  else
-    msg_warn "Collector timer may have issues"
-  fi
-}
-
-initial_collection() {
-  msg_info "Initial Data Collection"
-  echo ""
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo -e "${YW}IMPORTANT:${CL} The first data collection can take 2-5 minutes"
-  echo ""
-  echo -e "During this time:"
-  echo -e "  • The web interface will show an error"
-  echo -e "  • API requests will return 503 (Service Unavailable)"
-  echo -e "  • This is ${GN}normal${CL} and expected"
-  echo ""
-  echo -e "The collection gathers data from all cluster nodes via SSH."
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo ""
-  
-  read -p "Start initial data collection now? [Y/n]: " start_collection
-  start_collection=${start_collection:-Y}
-  
-  if [[ ! "$start_collection" =~ ^[Yy]$ ]]; then
-    msg_warn "Skipping initial collection"
-    echo ""
-    msg_info "You can trigger it manually later with:"
-    echo -e "  ${YW}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
-    echo -e "  ${YW}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
-    return
-  fi
-  
-  echo ""
-  msg_info "Starting data collection..."
-  
-  pct exec "$CTID" -- systemctl start proxmox-collector.service
-  
-  msg_ok "Collection started"
-  echo ""
-  echo -e "${YW}Waiting for collection to complete (this may take 2-5 minutes)...${CL}"
-  
-  local max_wait=300
-  local wait_time=0
-  local check_interval=10
-  
-  while [ $wait_time -lt $max_wait ]; do
-    if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
-      local cache_age
-      cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
-      local now
-      now=$(date +%s)
-      local age_diff=$((now - cache_age))
-      
-      if [ $age_diff -lt 60 ]; then
-        echo ""
-        msg_ok "Data collection completed!"
-        return
-      fi
-    fi
-    
-    echo -n "."
-    sleep $check_interval
-    wait_time=$((wait_time + check_interval))
-  done
-  
-  echo ""
-  msg_warn "Collection is taking longer than expected"
-}
-
-show_completion() {
-  echo ""
-  echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
-  echo -e "${GN}║${CL}  ${BFR}Installation Complete!${CL}                                        ${GN}║${CL}"
-  echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
-  echo ""
-  
-  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
-    echo -e "  ${BL}Web Interface:${CL}  ${GN}http://${CONTAINER_IP}${CL}"
-    echo -e "  ${BL}Container ID:${CL}   ${GN}${CTID}${CL}"
-    echo ""
-  fi
-  
-  echo -e "${BL}Useful Commands:${CL}"
-  echo -e "  ${YW}# Check status${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl status proxmox-balance${CL}"
-  echo ""
-  echo -e "  ${YW}# View logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
-  echo ""
-  
-  msg_ok "ProxBalance is now running!"
-  echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════
-# Main Installation Flow
-# ═══════════════════════════════════════════════════════════════
-main() {
-  header_info
-  check_root
-  check_proxmox
-  
-  msg_ok "Running on Proxmox VE"
-  msg_ok "Running as root"
-  echo ""
-  
-  select_container_id
-  select_hostname
-  select_network
-  select_storage
-  select_template
-  select_resources
-  detect_proxmox_nodes
-  show_summary
-  
-  create_container
-  get_container_ip
-  install_dependencies
-  install_proxbalance
-  configure_application
-  setup_services
-  setup_nginx
-  setup_ssh
-  distribute_ssh_keys
-  start_services
-  initial_collection
-  show_completion
-}
-
-trap '' INT
-
-main "$@"
- | sort -u | xargs)
-  fi
-  
-  # Method 2: /etc/pve/nodes/ directory (fallback)
+  # Method 2: /etc/pve/nodes/
   if [ -z "$nodes" ] && [ -d /etc/pve/nodes ]; then
-    nodes=$(ls /etc/pve/nodes/ 2>/dev/null | grep -E '^[a-zA-Z0-9]' | grep -v '^pve
-
-start_services() {
-  msg_info "Starting Services"
-  
-  pct exec "$CTID" -- bash <<'EOF'
-systemctl start proxmox-balance.service
-systemctl start proxmox-collector.timer
-EOF
-  
-  sleep 3
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
-    msg_ok "API service running"
-  else
-    msg_warn "API service may have issues"
-  fi
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
-    msg_ok "Collector timer running"
-  else
-    msg_warn "Collector timer may have issues"
-  fi
-}
-
-initial_collection() {
-  msg_info "Initial Data Collection"
-  echo ""
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo -e "${YW}IMPORTANT:${CL} The first data collection can take 2-5 minutes"
-  echo ""
-  echo -e "During this time:"
-  echo -e "  • The web interface will show an error"
-  echo -e "  • API requests will return 503 (Service Unavailable)"
-  echo -e "  • This is ${GN}normal${CL} and expected"
-  echo ""
-  echo -e "The collection gathers data from all cluster nodes via SSH."
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo ""
-  
-  read -p "Start initial data collection now? [Y/n]: " start_collection
-  start_collection=${start_collection:-Y}
-  
-  if [[ ! "$start_collection" =~ ^[Yy]$ ]]; then
-    msg_warn "Skipping initial collection"
-    echo ""
-    msg_info "You can trigger it manually later with:"
-    echo -e "  ${YW}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
-    echo -e "  ${YW}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
-    return
-  fi
-  
-  echo ""
-  msg_info "Starting data collection..."
-  
-  pct exec "$CTID" -- systemctl start proxmox-collector.service
-  
-  msg_ok "Collection started"
-  echo ""
-  echo -e "${YW}Waiting for collection to complete (this may take 2-5 minutes)...${CL}"
-  
-  local max_wait=300
-  local wait_time=0
-  local check_interval=10
-  
-  while [ $wait_time -lt $max_wait ]; do
-    if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
-      local cache_age
-      cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
-      local now
-      now=$(date +%s)
-      local age_diff=$((now - cache_age))
-      
-      if [ $age_diff -lt 60 ]; then
-        echo ""
-        msg_ok "Data collection completed!"
-        return
-      fi
-    fi
-    
-    echo -n "."
-    sleep $check_interval
-    wait_time=$((wait_time + check_interval))
-  done
-  
-  echo ""
-  msg_warn "Collection is taking longer than expected"
-}
-
-show_completion() {
-  echo ""
-  echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
-  echo -e "${GN}║${CL}  ${BFR}Installation Complete!${CL}                                        ${GN}║${CL}"
-  echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
-  echo ""
-  
-  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
-    echo -e "  ${BL}Web Interface:${CL}  ${GN}http://${CONTAINER_IP}${CL}"
-    echo -e "  ${BL}Container ID:${CL}   ${GN}${CTID}${CL}"
-    echo ""
-  fi
-  
-  echo -e "${BL}Useful Commands:${CL}"
-  echo -e "  ${YW}# Check status${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl status proxmox-balance${CL}"
-  echo ""
-  echo -e "  ${YW}# View logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
-  echo ""
-  
-  msg_ok "ProxBalance is now running!"
-  echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════
-# Main Installation Flow
-# ═══════════════════════════════════════════════════════════════
-main() {
-  header_info
-  check_root
-  check_proxmox
-  
-  msg_ok "Running on Proxmox VE"
-  msg_ok "Running as root"
-  echo ""
-  
-  select_container_id
-  select_hostname
-  select_network
-  select_storage
-  select_template
-  select_resources
-  detect_proxmox_nodes
-  show_summary
-  
-  create_container
-  get_container_ip
-  install_dependencies
-  install_proxbalance
-  configure_application
-  setup_services
-  setup_nginx
-  setup_ssh
-  distribute_ssh_keys
-  start_services
-  initial_collection
-  show_completion
-}
-
-trap '' INT
-
-main "$@"
- | sort -u | xargs)
-  fi
-  
-  # Method 3: pvesh API (fallback)
-  if [ -z "$nodes" ] && command -v pvesh &> /dev/null; then
-    if command -v jq &> /dev/null; then
-      nodes=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | grep -v '^Cluster
-
-start_services() {
-  msg_info "Starting Services"
-  
-  pct exec "$CTID" -- bash <<'EOF'
-systemctl start proxmox-balance.service
-systemctl start proxmox-collector.timer
-EOF
-  
-  sleep 3
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
-    msg_ok "API service running"
-  else
-    msg_warn "API service may have issues"
-  fi
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
-    msg_ok "Collector timer running"
-  else
-    msg_warn "Collector timer may have issues"
-  fi
-}
-
-initial_collection() {
-  msg_info "Initial Data Collection"
-  echo ""
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo -e "${YW}IMPORTANT:${CL} The first data collection can take 2-5 minutes"
-  echo ""
-  echo -e "During this time:"
-  echo -e "  • The web interface will show an error"
-  echo -e "  • API requests will return 503 (Service Unavailable)"
-  echo -e "  • This is ${GN}normal${CL} and expected"
-  echo ""
-  echo -e "The collection gathers data from all cluster nodes via SSH."
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo ""
-  
-  read -p "Start initial data collection now? [Y/n]: " start_collection
-  start_collection=${start_collection:-Y}
-  
-  if [[ ! "$start_collection" =~ ^[Yy]$ ]]; then
-    msg_warn "Skipping initial collection"
-    echo ""
-    msg_info "You can trigger it manually later with:"
-    echo -e "  ${YW}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
-    echo -e "  ${YW}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
-    return
-  fi
-  
-  echo ""
-  msg_info "Starting data collection..."
-  
-  pct exec "$CTID" -- systemctl start proxmox-collector.service
-  
-  msg_ok "Collection started"
-  echo ""
-  echo -e "${YW}Waiting for collection to complete (this may take 2-5 minutes)...${CL}"
-  
-  local max_wait=300
-  local wait_time=0
-  local check_interval=10
-  
-  while [ $wait_time -lt $max_wait ]; do
-    if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
-      local cache_age
-      cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
-      local now
-      now=$(date +%s)
-      local age_diff=$((now - cache_age))
-      
-      if [ $age_diff -lt 60 ]; then
-        echo ""
-        msg_ok "Data collection completed!"
-        return
-      fi
-    fi
-    
-    echo -n "."
-    sleep $check_interval
-    wait_time=$((wait_time + check_interval))
-  done
-  
-  echo ""
-  msg_warn "Collection is taking longer than expected"
-}
-
-show_completion() {
-  echo ""
-  echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
-  echo -e "${GN}║${CL}  ${BFR}Installation Complete!${CL}                                        ${GN}║${CL}"
-  echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
-  echo ""
-  
-  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
-    echo -e "  ${BL}Web Interface:${CL}  ${GN}http://${CONTAINER_IP}${CL}"
-    echo -e "  ${BL}Container ID:${CL}   ${GN}${CTID}${CL}"
-    echo ""
-  fi
-  
-  echo -e "${BL}Useful Commands:${CL}"
-  echo -e "  ${YW}# Check status${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl status proxmox-balance${CL}"
-  echo ""
-  echo -e "  ${YW}# View logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
-  echo ""
-  
-  msg_ok "ProxBalance is now running!"
-  echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════
-# Main Installation Flow
-# ═══════════════════════════════════════════════════════════════
-main() {
-  header_info
-  check_root
-  check_proxmox
-  
-  msg_ok "Running on Proxmox VE"
-  msg_ok "Running as root"
-  echo ""
-  
-  select_container_id
-  select_hostname
-  select_network
-  select_storage
-  select_template
-  select_resources
-  detect_proxmox_nodes
-  show_summary
-  
-  create_container
-  get_container_ip
-  install_dependencies
-  install_proxbalance
-  configure_application
-  setup_services
-  setup_nginx
-  setup_ssh
-  distribute_ssh_keys
-  start_services
-  initial_collection
-  show_completion
-}
-
-trap '' INT
-
-main "$@"
- | sort -u | xargs)
-    else
-      nodes=$(pvesh get /nodes 2>/dev/null | grep -oP '"node"\s*:\s*"[^"]*"' | cut -d'"' -f4 | grep -v '^Cluster
-
-start_services() {
-  msg_info "Starting Services"
-  
-  pct exec "$CTID" -- bash <<'EOF'
-systemctl start proxmox-balance.service
-systemctl start proxmox-collector.timer
-EOF
-  
-  sleep 3
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-balance.service &>/dev/null; then
-    msg_ok "API service running"
-  else
-    msg_warn "API service may have issues"
-  fi
-  
-  if pct exec "$CTID" -- systemctl is-active proxmox-collector.timer &>/dev/null; then
-    msg_ok "Collector timer running"
-  else
-    msg_warn "Collector timer may have issues"
-  fi
-}
-
-initial_collection() {
-  msg_info "Initial Data Collection"
-  echo ""
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo -e "${YW}IMPORTANT:${CL} The first data collection can take 2-5 minutes"
-  echo ""
-  echo -e "During this time:"
-  echo -e "  • The web interface will show an error"
-  echo -e "  • API requests will return 503 (Service Unavailable)"
-  echo -e "  • This is ${GN}normal${CL} and expected"
-  echo ""
-  echo -e "The collection gathers data from all cluster nodes via SSH."
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo ""
-  
-  read -p "Start initial data collection now? [Y/n]: " start_collection
-  start_collection=${start_collection:-Y}
-  
-  if [[ ! "$start_collection" =~ ^[Yy]$ ]]; then
-    msg_warn "Skipping initial collection"
-    echo ""
-    msg_info "You can trigger it manually later with:"
-    echo -e "  ${YW}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
-    echo -e "  ${YW}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
-    return
-  fi
-  
-  echo ""
-  msg_info "Starting data collection..."
-  
-  pct exec "$CTID" -- systemctl start proxmox-collector.service
-  
-  msg_ok "Collection started"
-  echo ""
-  echo -e "${YW}Waiting for collection to complete (this may take 2-5 minutes)...${CL}"
-  
-  local max_wait=300
-  local wait_time=0
-  local check_interval=10
-  
-  while [ $wait_time -lt $max_wait ]; do
-    if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
-      local cache_age
-      cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
-      local now
-      now=$(date +%s)
-      local age_diff=$((now - cache_age))
-      
-      if [ $age_diff -lt 60 ]; then
-        echo ""
-        msg_ok "Data collection completed!"
-        return
-      fi
-    fi
-    
-    echo -n "."
-    sleep $check_interval
-    wait_time=$((wait_time + check_interval))
-  done
-  
-  echo ""
-  msg_warn "Collection is taking longer than expected"
-}
-
-show_completion() {
-  echo ""
-  echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
-  echo -e "${GN}║${CL}  ${BFR}Installation Complete!${CL}                                        ${GN}║${CL}"
-  echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
-  echo ""
-  
-  if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
-    echo -e "  ${BL}Web Interface:${CL}  ${GN}http://${CONTAINER_IP}${CL}"
-    echo -e "  ${BL}Container ID:${CL}   ${GN}${CTID}${CL}"
-    echo ""
-  fi
-  
-  echo -e "${BL}Useful Commands:${CL}"
-  echo -e "  ${YW}# Check status${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl status proxmox-balance${CL}"
-  echo ""
-  echo -e "  ${YW}# View logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
-  echo ""
-  
-  msg_ok "ProxBalance is now running!"
-  echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════
-# Main Installation Flow
-# ═══════════════════════════════════════════════════════════════
-main() {
-  header_info
-  check_root
-  check_proxmox
-  
-  msg_ok "Running on Proxmox VE"
-  msg_ok "Running as root"
-  echo ""
-  
-  select_container_id
-  select_hostname
-  select_network
-  select_storage
-  select_template
-  select_resources
-  detect_proxmox_nodes
-  show_summary
-  
-  create_container
-  get_container_ip
-  install_dependencies
-  install_proxbalance
-  configure_application
-  setup_services
-  setup_nginx
-  setup_ssh
-  distribute_ssh_keys
-  start_services
-  initial_collection
-  show_completion
-}
-
-trap '' INT
-
-main "$@"
- | sort -u | xargs)
-    fi
+    nodes=$(ls /etc/pve/nodes/ 2>/dev/null | grep -E '^[a-zA-Z0-9]' | grep -v '^pve$' | sort -u | xargs)
   fi
   
   if [ -z "$nodes" ]; then
@@ -1177,67 +553,12 @@ EOF
 }
 
 initial_collection() {
-  msg_info "Initial Data Collection"
-  echo ""
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo -e "${YW}IMPORTANT:${CL} The first data collection can take 2-5 minutes"
-  echo ""
-  echo -e "During this time:"
-  echo -e "  • The web interface will show an error"
-  echo -e "  • API requests will return 503 (Service Unavailable)"
-  echo -e "  • This is ${GN}normal${CL} and expected"
-  echo ""
-  echo -e "The collection gathers data from all cluster nodes via SSH."
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
-  echo ""
-  
-  read -p "Start initial data collection now? [Y/n]: " start_collection
-  start_collection=${start_collection:-Y}
-  
-  if [[ ! "$start_collection" =~ ^[Yy]$ ]]; then
-    msg_warn "Skipping initial collection"
-    echo ""
-    msg_info "You can trigger it manually later with:"
-    echo -e "  ${YW}curl -X POST http://${CONTAINER_IP}/api/refresh${CL}"
-    echo -e "  ${YW}pct exec ${CTID} -- systemctl start proxmox-collector.service${CL}"
-    return
-  fi
-  
-  echo ""
-  msg_info "Starting data collection..."
+  msg_info "Triggering Initial Data Collection"
   
   pct exec "$CTID" -- systemctl start proxmox-collector.service
   
-  msg_ok "Collection started"
-  echo ""
-  echo -e "${YW}Waiting for collection to complete (this may take 2-5 minutes)...${CL}"
-  
-  local max_wait=300
-  local wait_time=0
-  local check_interval=10
-  
-  while [ $wait_time -lt $max_wait ]; do
-    if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
-      local cache_age
-      cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
-      local now
-      now=$(date +%s)
-      local age_diff=$((now - cache_age))
-      
-      if [ $age_diff -lt 60 ]; then
-        echo ""
-        msg_ok "Data collection completed!"
-        return
-      fi
-    fi
-    
-    echo -n "."
-    sleep $check_interval
-    wait_time=$((wait_time + check_interval))
-  done
-  
-  echo ""
-  msg_warn "Collection is taking longer than expected"
+  msg_ok "Collection started (runs in background)"
+  msg_info "Data will be available in 2-5 minutes"
 }
 
 show_completion() {
@@ -1253,21 +574,10 @@ show_completion() {
     echo ""
   fi
   
-  echo -e "${BL}Useful Commands:${CL}"
-  echo -e "  ${YW}# Check status${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- systemctl status proxmox-balance${CL}"
-  echo ""
-  echo -e "  ${YW}# View logs${CL}"
-  echo -e "  ${BL}pct exec ${CTID} -- journalctl -u proxmox-balance -f${CL}"
-  echo ""
-  
   msg_ok "ProxBalance is now running!"
   echo ""
 }
 
-# ═══════════════════════════════════════════════════════════════
-# Main Installation Flow
-# ═══════════════════════════════════════════════════════════════
 main() {
   header_info
   check_root
@@ -1301,5 +611,4 @@ main() {
 }
 
 trap '' INT
-
 main "$@"
