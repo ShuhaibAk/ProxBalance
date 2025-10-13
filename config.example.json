@@ -1,6 +1,6 @@
 {
   "collection_interval_minutes": 60,
   "ui_refresh_interval_minutes": 15,
-  "proxmox_host": "10.0.0.1",
-  "_comment": "Replace proxmox_host with the IP of your main Proxmox node"
+  "proxmox_host": "CHANGE_ME",
+  "_comment": "IMPORTANT: Replace 'CHANGE_ME' with the IP or hostname of your primary Proxmox node"
 }

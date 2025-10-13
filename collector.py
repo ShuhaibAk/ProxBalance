@@ -17,17 +17,37 @@ SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/nul
 
 def load_config():
     """Load configuration from config.json"""
+    if not os.path.exists(CONFIG_FILE):
+        raise FileNotFoundError(
+            f"Configuration file not found: {CONFIG_FILE}\n"
+            f"Please ensure ProxBalance is properly installed and config.json exists."
+        )
+    
     try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as f:
-                config = json.load(f)
-                return config.get('proxmox_host', '10.0.0.3')
-        else:
-            print(f"Warning: Config file not found at {CONFIG_FILE}, using default host")
-            return '10.0.0.3'
+        with open(CONFIG_FILE, 'r') as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Invalid JSON in configuration file: {CONFIG_FILE}\n"
+            f"Error: {e}"
+        )
     except Exception as e:
-        print(f"Error reading config: {e}", file=sys.stderr)
-        return '10.0.0.3'
+        raise Exception(f"Error reading configuration file: {e}")
+    
+    proxmox_host = config.get('proxmox_host')
+    if not proxmox_host:
+        raise ValueError(
+            f"Missing 'proxmox_host' in configuration file: {CONFIG_FILE}\n"
+            f"Please set the proxmox_host value to your primary Proxmox node IP/hostname."
+        )
+    
+    if proxmox_host == "CHANGE_ME":
+        raise ValueError(
+            f"Configuration not completed: proxmox_host is set to 'CHANGE_ME'\n"
+            f"Please edit {CONFIG_FILE} and set proxmox_host to your Proxmox node IP/hostname."
+        )
+    
+    return proxmox_host
 
 class ProxmoxBalanceAnalyzer:
     def __init__(self):
@@ -43,8 +63,16 @@ class ProxmoxBalanceAnalyzer:
             if result.returncode != 0:
                 raise Exception("Command failed: " + result.stderr)
             return result.stdout
+        except subprocess.TimeoutExpired:
+            raise Exception(
+                f"SSH connection to {self.proxmox_host} timed out.\n"
+                f"Please verify:\n"
+                f"  1. The host is reachable: ping {self.proxmox_host}\n"
+                f"  2. SSH is accessible: ssh root@{self.proxmox_host}\n"
+                f"  3. SSH keys are configured correctly"
+            )
         except Exception as e:
-            raise Exception("Command failed: " + str(e))
+            raise Exception(f"SSH command failed: {str(e)}")
     
     def get_cluster_resources(self) -> Dict:
         """Fetch cluster resources via pvesh"""
@@ -216,10 +244,29 @@ def collect_data():
         print(f"[{datetime.utcnow()}] Data collection complete. Cache updated.")
         return True
         
+    except (FileNotFoundError, ValueError) as e:
+        # Configuration errors - these are user-fixable
+        print(f"\n{'='*70}", file=sys.stderr)
+        print(f"CONFIGURATION ERROR", file=sys.stderr)
+        print(f"{'='*70}", file=sys.stderr)
+        print(f"\n{str(e)}\n", file=sys.stderr)
+        print(f"To fix this issue:", file=sys.stderr)
+        print(f"  1. Check if config file exists: ls -l {CONFIG_FILE}", file=sys.stderr)
+        print(f"  2. Edit the config file: nano {CONFIG_FILE}", file=sys.stderr)
+        print(f"  3. Set proxmox_host to your Proxmox node IP or hostname", file=sys.stderr)
+        print(f"  4. Restart the service: systemctl restart proxmox-collector.service", file=sys.stderr)
+        print(f"\n{'='*70}\n", file=sys.stderr)
+        return False
+        
     except Exception as e:
-        print(f"[{datetime.utcnow()}] ERROR: {str(e)}", file=sys.stderr)
+        # Runtime errors
+        print(f"\n{'='*70}", file=sys.stderr)
+        print(f"RUNTIME ERROR", file=sys.stderr)
+        print(f"{'='*70}", file=sys.stderr)
+        print(f"\n{str(e)}\n", file=sys.stderr)
         import traceback
         traceback.print_exc()
+        print(f"\n{'='*70}\n", file=sys.stderr)
         return False
 
 if __name__ == '__main__':

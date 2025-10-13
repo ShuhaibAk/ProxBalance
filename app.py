@@ -17,8 +17,44 @@ app = Flask(__name__)
 CORS(app)
 
 CACHE_FILE = '/opt/proxmox-balance-manager/cluster_cache.json'
-PROXMOX_HOST = "10.0.0.3"
+CONFIG_FILE = '/opt/proxmox-balance-manager/config.json'
 SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
+
+def load_config():
+    """Load configuration from config.json"""
+    if not os.path.exists(CONFIG_FILE):
+        return {
+            "error": True,
+            "message": f"Configuration file not found: {CONFIG_FILE}"
+        }
+    
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        return {
+            "error": True,
+            "message": f"Invalid JSON in configuration file: {e}"
+        }
+    except Exception as e:
+        return {
+            "error": True,
+            "message": f"Error reading configuration file: {e}"
+        }
+    
+    if not config.get('proxmox_host'):
+        return {
+            "error": True,
+            "message": "Missing 'proxmox_host' in configuration file"
+        }
+    
+    if config.get('proxmox_host') == "CHANGE_ME":
+        return {
+            "error": True,
+            "message": "Configuration not completed: proxmox_host is set to 'CHANGE_ME'"
+        }
+    
+    return config
 
 def read_cache() -> Dict:
     """Read cluster data from cache file"""
@@ -49,18 +85,36 @@ def trigger_collection():
 def health_check():
     """Health check endpoint"""
     cache_data = read_cache()
-    return jsonify({
+    config = load_config()
+    
+    health_status = {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
         "cache_available": cache_data is not None,
         "cache_age": cache_data.get('collected_at') if cache_data else None
-    })
+    }
+    
+    if config.get('error'):
+        health_status["status"] = "configuration_error"
+        health_status["config_error"] = config.get('message')
+        return jsonify(health_status), 500
+    
+    return jsonify(health_status)
 
 
 @app.route("/api/analyze", methods=["GET"])
 def analyze_cluster():
     """Return cached cluster data"""
     try:
+        # Check configuration first
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": f"Configuration Error: {config.get('message')}\n\n"
+                        f"Please edit {CONFIG_FILE} and set the proxmox_host value."
+            }), 500
+        
         data = read_cache()
         
         if data is None:
@@ -79,6 +133,14 @@ def analyze_cluster():
 def refresh_data():
     """Trigger immediate data collection"""
     try:
+        # Check configuration first
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": f"Configuration Error: {config.get('message')}"
+            }), 500
+        
         trigger_collection()
         return jsonify({
             "success": True,
@@ -346,17 +408,13 @@ def execute_batch_migration():
 def get_config():
     """Get current configuration"""
     try:
-        config_file = "/opt/proxmox-balance-manager/config.json"
+        config = load_config()
         
-        if os.path.exists(config_file):
-            with open(config_file, "r") as f:
-                config = json.load(f)
-        else:
-            config = {
-                "collection_interval_minutes": 60,
-                "ui_refresh_interval_minutes": 60,
-                "proxmox_host": "10.0.0.3"
-            }
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": config.get('message')
+            }), 500
         
         return jsonify({"success": True, "config": config})
     except Exception as e:
@@ -370,13 +428,13 @@ def update_config():
         import subprocess as sp
         
         data = request.json
-        config_file = "/opt/proxmox-balance-manager/config.json"
         
-        if os.path.exists(config_file):
-            with open(config_file, "r") as f:
-                config = json.load(f)
-        else:
-            config = {}
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": config.get('message')
+            }), 500
         
         if "collection_interval_minutes" in data:
             config["collection_interval_minutes"] = int(data["collection_interval_minutes"])
@@ -385,7 +443,7 @@ def update_config():
         if "proxmox_host" in data:
             config["proxmox_host"] = str(data["proxmox_host"])
         
-        with open(config_file, "w") as f:
+        with open(CONFIG_FILE, "w") as f:
             json.dump(config, f, indent=2)
         
         if "collection_interval_minutes" in data:
