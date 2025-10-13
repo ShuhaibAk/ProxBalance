@@ -12,18 +12,33 @@ from datetime import datetime
 from typing import Dict, List
 
 CACHE_FILE = '/opt/proxmox-balance-manager/cluster_cache.json'
-PROXMOX_HOST = "10.0.0.3"
+CONFIG_FILE = '/opt/proxmox-balance-manager/config.json'
 SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
+
+def load_config():
+    """Load configuration from config.json"""
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                return config.get('proxmox_host', '10.0.0.3')
+        else:
+            print(f"Warning: Config file not found at {CONFIG_FILE}, using default host")
+            return '10.0.0.3'
+    except Exception as e:
+        print(f"Error reading config: {e}", file=sys.stderr)
+        return '10.0.0.3'
 
 class ProxmoxBalanceAnalyzer:
     def __init__(self):
         self.nodes = {}
         self.guests = {}
+        self.proxmox_host = load_config()
         
     def run_command(self, cmd: List[str]) -> str:
         """Execute command on Proxmox host via SSH"""
         try:
-            ssh_cmd = ["/bin/ssh"] + SSH_OPTS + [f"root@{PROXMOX_HOST}"] + cmd
+            ssh_cmd = ["/bin/ssh"] + SSH_OPTS + [f"root@{self.proxmox_host}"] + cmd
             result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
             if result.returncode != 0:
                 raise Exception("Command failed: " + result.stderr)
@@ -184,6 +199,7 @@ def collect_data():
     try:
         print(f"[{datetime.utcnow()}] Starting cluster data collection...")
         analyzer = ProxmoxBalanceAnalyzer()
+        print(f"[{datetime.utcnow()}] Using Proxmox host: {analyzer.proxmox_host}")
         data = analyzer.analyze_cluster()
         
         # Add collection timestamp
