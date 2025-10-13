@@ -263,25 +263,75 @@ detect_proxmox_nodes() {
   msg_info "Detecting Proxmox Cluster"
   
   local nodes=""
+  local detection_method=""
   
   # Method 1: corosync.conf
   if [ -f /etc/pve/corosync.conf ]; then
     nodes=$(grep -oP '(?<=name: ).*' /etc/pve/corosync.conf 2>/dev/null | grep -v '^Cluster$' | sort -u | xargs)
+    if [ -n "$nodes" ]; then
+      detection_method="corosync.conf"
+    fi
   fi
   
   # Method 2: /etc/pve/nodes/
   if [ -z "$nodes" ] && [ -d /etc/pve/nodes ]; then
-    nodes=$(ls /etc/pve/nodes/ 2>/dev/null | grep -E '^[a-zA-Z0-9]' | grep -v '^pve$' | sort -u | xargs)
+    nodes=$(ls /etc/pve/nodes/ 2>/dev/null | grep -E '^[a-zA-Z0-9]' | sort -u | xargs)
+    if [ -n "$nodes" ]; then
+      detection_method="/etc/pve/nodes/"
+    fi
+  fi
+  
+  # Method 3: pvesh (if available)
+  if [ -z "$nodes" ] && command -v pvesh &>/dev/null; then
+    nodes=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | sort -u | xargs)
+    if [ -n "$nodes" ]; then
+      detection_method="pvesh API"
+    fi
+  fi
+  
+  # Method 4: hostname (last resort for single-node)
+  if [ -z "$nodes" ]; then
+    nodes=$(hostname -s)
+    detection_method="hostname (single-node)"
+    msg_warn "Could not detect cluster, assuming single-node setup"
   fi
   
   if [ -n "$nodes" ]; then
     DETECTED_NODES=$(echo "$nodes" | tr ' ' ',')
-    msg_ok "Detected nodes: ${GN}${DETECTED_NODES}${CL}"
+    msg_ok "Detected nodes via ${YW}${detection_method}${CL}: ${GN}${DETECTED_NODES}${CL}"
+    
+    # Use first node as primary host
     PROXMOX_HOST=$(echo "$nodes" | awk '{print $1}')
     msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
+    
+    # Try to get IP if hostname was detected
+    if [[ ! "$PROXMOX_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      # It's a hostname, try to get IP
+      local host_ip=$(getent hosts "$PROXMOX_HOST" 2>/dev/null | awk '{print $1}' | head -n1)
+      if [ -n "$host_ip" ]; then
+        msg_info "Resolved ${PROXMOX_HOST} to IP: ${GN}${host_ip}${CL}"
+        echo ""
+        read -p "Use IP (${host_ip}) or hostname (${PROXMOX_HOST})? [i/H]: " choice
+        choice=${choice:-H}
+        if [[ "$choice" =~ ^[Ii]$ ]]; then
+          PROXMOX_HOST="$host_ip"
+          msg_ok "Using IP: ${GN}${PROXMOX_HOST}${CL}"
+        else
+          msg_ok "Using hostname: ${GN}${PROXMOX_HOST}${CL}"
+        fi
+      fi
+    fi
   else
     msg_warn "Could not auto-detect cluster"
+    echo ""
     read -p "Enter primary Proxmox host IP/hostname: " PROXMOX_HOST
+    
+    if [ -z "$PROXMOX_HOST" ]; then
+      msg_error "Proxmox host is required. Installation cannot continue."
+      exit 1
+    fi
+    
+    msg_ok "Using manually entered host: ${GN}${PROXMOX_HOST}${CL}"
   fi
 }
 
@@ -400,6 +450,20 @@ EOF
 configure_application() {
   msg_info "Configuring Application"
   
+  # Validate PROXMOX_HOST is set
+  if [ -z "$PROXMOX_HOST" ] || [ "$PROXMOX_HOST" = "CHANGE_ME" ]; then
+    msg_error "PROXMOX_HOST not properly detected"
+    echo ""
+    read -p "Enter Proxmox host IP/hostname manually: " PROXMOX_HOST
+    
+    if [ -z "$PROXMOX_HOST" ]; then
+      msg_error "Proxmox host is required. Installation cannot continue."
+      exit 1
+    fi
+  fi
+  
+  msg_ok "Using Proxmox host: ${GN}${PROXMOX_HOST}${CL}"
+  
   pct exec "$CTID" -- bash <<EOF
 cat > /opt/proxmox-balance-manager/config.json <<'CONFIGEOF'
 {
@@ -410,7 +474,15 @@ cat > /opt/proxmox-balance-manager/config.json <<'CONFIGEOF'
 CONFIGEOF
 EOF
   
-  msg_ok "Application configured"
+  # Verify the config was written correctly
+  WRITTEN_HOST=$(pct exec "$CTID" -- jq -r '.proxmox_host' /opt/proxmox-balance-manager/config.json 2>/dev/null)
+  
+  if [ "$WRITTEN_HOST" = "$PROXMOX_HOST" ]; then
+    msg_ok "Configuration file created successfully"
+  else
+    msg_warn "Configuration may not have been written correctly"
+    msg_info "Please verify: pct exec $CTID -- cat /opt/proxmox-balance-manager/config.json"
+  fi
 }
 
 setup_services() {
