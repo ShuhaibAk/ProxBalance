@@ -53,15 +53,24 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
 
 ### 📊 Cluster Monitoring
 - **Real-time metrics** for CPU, memory, and system load across all nodes
-- **Historical analysis** using Proxmox RRD data for trend-based decisions
-- **Automatic discovery** of all VMs and containers across the cluster
+- **Historical analysis** using Proxmox RRD data (1-hour timeframe) for trend-based decisions
+- **Automatic discovery** of all VMs (qemu) and containers (lxc) across the cluster
 - **Health indicators** with customizable threshold alerts
+- **Cached data architecture** - Fast API responses using JSON cache with atomic writes
+- **Background collection** - Data gathered via systemd timer without blocking UI
 
 ### 🤖 Intelligent Balancing
 - **Smart migration recommendations** based on node load and resource availability
+  - Uses historical averages when available, falls back to current metrics
+  - Considers both CPU and memory thresholds
+  - Selects smallest guests first for efficient rebalancing
 - **Anti-affinity enforcement** to prevent conflicting workloads on same nodes
+  - Validates exclusion groups before suggesting migrations
+  - Prevents migrations that would violate affinity rules
 - **Ignore tags** to protect critical VMs from automatic migration
-- **Batch migration** support for cluster-wide rebalancing
+- **Batch migration** support with async execution for cluster-wide rebalancing
+  - Non-blocking migrations run in background
+  - Individual migration status tracking
 
 ### 🎨 Modern Web Interface
 - **React-based dashboard** with real-time updates
@@ -73,10 +82,12 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
 ### 🔧 Advanced Configuration
 - **Tag-based rules** for fine-grained control
   - `ignore` - Exclude from automatic migrations
-  - `exclude_<group>` - Anti-affinity groups
-- **Customizable thresholds** for CPU and memory
+  - `exclude_<group>` - Anti-affinity groups (prevents guests with same tag from being on same node)
+- **Customizable thresholds** for CPU (40-90%) and memory (50-95%)
 - **Flexible scheduling** with adjustable collection intervals (5-240 minutes)
-- **SSH-based architecture** for secure, direct Proxmox control
+- **SSH-based architecture** using ed25519 keys for secure, direct Proxmox control
+- **Automatic configuration validation** with detailed error messages
+- **Dynamic timer updates** - collection intervals update systemd timer in real-time
 
 ---
 
@@ -100,13 +111,14 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main
 ```
 
 The installer will:
-1. Auto-detect your cluster nodes
-2. Create an LXC container (default ID: next available)
-3. Configure DHCP or static IP
-4. Install all dependencies
-5. Setup SSH keys across all nodes
-6. Deploy and start all services
-7. Trigger initial data collection
+1. **Auto-detect your cluster nodes** using multiple methods (corosync.conf, /etc/pve/nodes/, pvecm, pvesh)
+2. **Create an unprivileged LXC container** (default ID: next available, auto-incremented)
+3. **Configure networking** - DHCP (auto-detected) or static IP
+4. **Install all dependencies** - Python 3.8+, Flask, Gunicorn, Nginx, jq, curl, git
+5. **Setup SSH keys** - Generate ed25519 keys and distribute to all nodes in parallel
+6. **Deploy and start all services** - API, collector timer, and web server
+7. **Trigger initial data collection** - Background collection starts immediately
+8. **Verify installation** - Tests SSH connectivity and service status
 
 #### Manual Install
 
@@ -364,12 +376,14 @@ pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ss
 
 ### Components
 
-- **Frontend**: React with Tailwind CSS
-- **Backend API**: Flask + Gunicorn (Python)
-- **Web Server**: Nginx (reverse proxy + static files)
-- **Data Collector**: Python script with systemd timer
-- **Cache**: JSON file for fast API responses
-- **Communication**: SSH (passwordless key-based auth)
+- **Frontend**: React with Tailwind CSS (single-page application in index.html)
+- **Backend API**: Flask + Gunicorn (Python 3.8+) on port 5000
+- **Web Server**: Nginx (reverse proxy + static files) on port 80
+- **Data Collector**: Python script (collector.py) with systemd timer
+- **Cache**: JSON file (cluster_cache.json) with atomic writes for fast API responses
+- **Communication**: SSH with ed25519 keys (passwordless key-based auth)
+- **Configuration Manager**: update_timer.py dynamically updates systemd timers
+- **Settings CLI**: manage_settings.sh for command-line configuration management
 
 ---
 
@@ -377,32 +391,32 @@ pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ss
 
 ```
 ProxBalance/
-├── app.py                      # Flask API server
-├── collector.py                # Background data collector
-├── index.html                  # React web interface
-├── config.json                 # Configuration file
+├── app.py                      # Flask API server (8 endpoints)
+├── collector.py                # Background data collector with RRD analysis
+├── index.html                  # React web interface (single-page app)
+├── config.json                 # Runtime configuration file
+├── config.example.json         # Example configuration template
 ├── manage_settings.sh          # Settings CLI tool
-├── update_timer.py             # Timer update script
-├── install.sh                  # Automated installer
-├── check-status.sh             # Status checker script
-├── debug-services.sh           # Service debugger
+├── update_timer.py             # Dynamic systemd timer updater
+├── install.sh                  # Automated installer with node auto-detection
+├── bootstrap-install.sh        # Bootstrap installer (downloads and runs install.sh)
+├── check-status.sh             # Comprehensive status checker script
+├── debug-services.sh           # Service debugger tool
 ├── systemd/
-│   ├── proxmox-balance.service       # API service
-│   ├── proxmox-collector.service     # Collector service
-│   └── proxmox-collector.timer       # Collection timer
+│   ├── proxmox-balance.service       # Flask API systemd service
+│   ├── proxmox-collector.service     # Data collector service
+│   └── proxmox-collector.timer       # Dynamic collection timer
 ├── nginx/
-│   └── proxmox-balance               # Nginx config
+│   └── proxmox-balance               # Nginx reverse proxy config
 ├── docs/
-│   ├── INSTALL.md                    # Installation guide
-│   ├── TROUBLESHOOTING.md            # Common issues
-│   └── API.md                        # API documentation
+│   ├── INSTALL.md                    # Detailed installation guide
+│   └── TROUBLESHOOTING.md            # Comprehensive troubleshooting guide
 ├── assets/
 │   ├── logo.svg                      # ProxBalance logo
-│   └── favicon.svg                   # Browser icon
-├── LICENSE
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-└── README.md
+│   └── favicon.svg                   # Browser favicon
+├── LICENSE                     # MIT License
+├── CONTRIBUTING.md             # Contribution guidelines
+└── README.md                   # This file
 ```
 
 ---
@@ -510,7 +524,7 @@ ssh root@<source-node> "pct config <vmid> | grep lock"
 ssh root@<source-node> "pvesh get /nodes/<source-node>/tasks"
 ```
 
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions.
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions and comprehensive troubleshooting guides.
 
 ---
 
@@ -541,22 +555,43 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions.
 
 ---
 
-## 📝 Changelog
+## 📝 Version History
 
-See [CHANGELOG.md](CHANGELOG.md) for version history.
+### Latest Version: 1.1.0 (January 2025)
 
-### Latest Version: 1.0.0 (2025-01-12)
+**Core Features:**
+- Real-time cluster monitoring with historical RRD data analysis (1-hour timeframe)
+- Intelligent migration recommendations using averages when available
+- Tag-based anti-affinity rules (`ignore`, `exclude_<group>`)
+- Batch migration support with async, non-blocking execution
+- Configurable collection intervals (5-240 minutes) with dynamic systemd timer updates
+- Modern React-based web UI with dark/light mode support
 
-- Initial release
-- Real-time cluster monitoring
-- Intelligent migration recommendations
-- Tag-based anti-affinity rules
-- Dark/light mode support
-- Configurable intervals
-- Batch migration support
-- SSH-based secure communication
-- Automated installer with node auto-detection
-- Status checker and debug tools
+**Installation & Deployment:**
+- Automated installer with multi-method cluster node auto-detection
+- Parallel SSH key distribution to all cluster nodes
+- Bootstrap installer for one-command deployment
+- Unprivileged LXC container deployment
+- Automatic IP detection (DHCP) with static IP option
+
+**API & Backend:**
+- 8 REST API endpoints (health, analyze, refresh, recommendations, migrate, migrate/batch, config GET/POST)
+- Flask + Gunicorn WSGI server on port 5000
+- Nginx reverse proxy on port 80
+- Cached data architecture with atomic JSON writes
+- Configuration validation with detailed error messages
+
+**Administration Tools:**
+- Comprehensive status checker (check-status.sh)
+- Service debugger (debug-services.sh)
+- Settings management CLI (manage_settings.sh)
+- Web-based settings configuration with auto-restart
+
+**Security:**
+- SSH-based communication using ed25519 keys
+- Unprivileged container architecture
+- No stored passwords or credentials
+- Local network design
 
 ---
 
