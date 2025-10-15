@@ -24,7 +24,7 @@ Before installing ProxBalance, ensure you have:
 - **Proxmox VE 7.0+** (tested on 7.x and 8.x)
 - **Root access** to Proxmox host
 - **Network connectivity** between container and all nodes
-- **SSH access** to all Proxmox nodes (or ability to add SSH keys)
+- **SSH access** to all Proxmox nodes (installer automatically distributes keys in parallel)
 
 ### Resource Requirements
 
@@ -102,10 +102,10 @@ The installer is interactive and will prompt you for:
 The automated installer performs these steps:
 
 ### Phase 1: Pre-Installation (30 seconds)
-1. ✅ Validates you're running on Proxmox VE
-2. ✅ Checks for root privileges
-3. ✅ Detects next available container ID
-4. ✅ Gathers your configuration preferences
+1. ✅ Validates you're running on Proxmox VE (checks for `pct` command)
+2. ✅ Checks for root privileges (EUID must be 0)
+3. ✅ Detects next available container ID (starting from 100, auto-increments)
+4. ✅ Gathers your configuration preferences (interactive prompts)
 
 ### Phase 2: Container Creation (1-2 minutes)
 1. ✅ Downloads Debian 12 template (if not present)
@@ -116,40 +116,64 @@ The automated installer performs these steps:
 6. ✅ Detects container IP address
 
 ### Phase 3: Dependency Installation (1-2 minutes)
-1. ✅ Updates package repositories
+1. ✅ Updates package repositories (apt-get update)
 2. ✅ Installs system packages:
-   - Python 3.8+
-   - Python virtual environment
-   - Nginx web server
-   - curl, jq, ssh, git
-3. ✅ Cleans up package cache
+   - Python 3 (3.8+ from Debian 12)
+   - python3-venv (virtual environment)
+   - python3-pip (package manager)
+   - Nginx web server (reverse proxy)
+   - curl (API testing)
+   - jq (JSON parsing)
+   - openssh-client (SSH connectivity)
+   - git (repository cloning)
+3. ✅ Cleans up package cache (reduces container size)
 
 ### Phase 4: ProxBalance Installation (1 minute)
-1. ✅ Clones ProxBalance repository
-2. ✅ Creates Python virtual environment
-3. ✅ Installs Python dependencies:
-   - Flask (web framework)
-   - Flask-CORS (API support)
-   - Gunicorn (WSGI server)
-4. ✅ Sets file permissions
+1. ✅ Clones ProxBalance repository from GitHub to /opt/proxmox-balance-manager
+2. ✅ Creates Python virtual environment (venv/)
+3. ✅ Installs Python dependencies via pip:
+   - Flask 3.x (web framework for REST API)
+   - Flask-CORS (cross-origin resource sharing for API)
+   - Gunicorn (production WSGI HTTP server)
+4. ✅ Sets file permissions (chmod +x for *.py and *.sh scripts)
 
 ### Phase 5: Configuration (1 minute)
-1. ✅ Auto-detects cluster nodes using 4 methods:
-   - Method 1: Parses `/etc/pve/corosync.conf`
-   - Method 2: Scans `/etc/pve/nodes/` directory
-   - Method 3: Tries `pvecm status` command
-   - Method 4: Queries `pvesh get /nodes`
-2. ✅ Configures application with detected settings
-3. ✅ Sets up systemd services (API, collector, timer)
-4. ✅ Configures Nginx as reverse proxy
-5. ✅ Enables services to start on boot
+1. ✅ Auto-detects cluster nodes using 4 methods (in order):
+   - Method 1: Parses `/etc/pve/corosync.conf` for node names
+   - Method 2: Scans `/etc/pve/nodes/` directory listing
+   - Method 3: Tries `pvecm status` command output
+   - Method 4: Queries `pvesh get /nodes` API endpoint
+2. ✅ Creates config.json with detected settings:
+   - `collection_interval_minutes`: 60 (default)
+   - `ui_refresh_interval_minutes`: 15 (default)
+   - `proxmox_host`: Auto-detected primary node IP/hostname
+3. ✅ Sets up systemd services (copies to /etc/systemd/system/):
+   - proxmox-balance.service (Flask API with Gunicorn)
+   - proxmox-collector.service (data collection script)
+   - proxmox-collector.timer (OnBootSec=1min, OnUnitActiveSec=60min)
+4. ✅ Configures Nginx as reverse proxy:
+   - Copies proxmox-balance to /etc/nginx/sites-available/
+   - Creates symlink in sites-enabled/
+   - Removes default site
+   - Proxies port 80 → 127.0.0.1:5000
+5. ✅ Enables services to start on boot (systemctl enable)
 
 ### Phase 6: SSH Key Setup (1-2 minutes)
-1. ✅ Generates ed25519 SSH key pair in container
-2. ✅ **Automatically distributes to all detected nodes** (parallel)
-3. ✅ Tests SSH connectivity from Proxmox host
+1. ✅ Generates ed25519 SSH key pair in container (/root/.ssh/id_ed25519)
+   - Uses ed25519 algorithm (modern, secure, fast)
+   - No passphrase (-N "")
+   - Quiet mode (-q)
+2. ✅ **Automatically distributes to all detected nodes** (parallel execution with timeout)
+   - Creates /root/.ssh/ directory if needed
+   - Appends public key to authorized_keys
+   - Sets proper permissions (700 for .ssh/, 600 for authorized_keys)
+   - 10-second timeout per node
+   - Background jobs for parallel processing
+3. ✅ Tests SSH connectivity from Proxmox host to each node
 4. ✅ Tests SSH connectivity from container to each node
-5. ✅ Reports success/failure for each node
+   - Verifies passwordless SSH works
+   - Tests basic command execution ("echo OK")
+5. ✅ Reports success/failure for each node with color-coded output
 
 ### Phase 7: Service Startup (30 seconds)
 1. ✅ Starts Flask API service
@@ -158,10 +182,15 @@ The automated installer performs these steps:
 4. ✅ Verifies all services are running
 
 ### Phase 8: Initial Data Collection (2-5 minutes)
-1. ✅ Triggers first cluster data collection
-2. ✅ Runs in background (non-blocking)
-3. ✅ Web interface becomes available immediately
-4. ✅ Data appears when collection completes
+1. ✅ Triggers first cluster data collection (systemctl start proxmox-collector.service)
+2. ✅ Runs in background (non-blocking, doesn't hold up installer)
+3. ✅ Web interface becomes available immediately (shows "loading" state)
+4. ✅ Data appears when collection completes:
+   - Collects cluster resources via pvesh
+   - Gathers RRD data (1-hour timeframe) for each node
+   - Fetches guest configurations and tags
+   - Writes to cluster_cache.json with atomic rename
+   - Takes 30-90 seconds depending on cluster size
 
 ### Phase 9: Completion
 1. ✅ Displays access information
@@ -274,11 +303,19 @@ pip install flask flask-cors gunicorn
 # Deactivate venv
 deactivate
 
-# Set permissions
-chmod +x /opt/proxmox-balance-manager/*.py
-chmod +x /opt/proxmox-balance-manager/*.sh
+# Set permissions for Python scripts and shell scripts
+chmod +x /opt/proxmox-balance-manager/*.py 2>/dev/null || true
+chmod +x /opt/proxmox-balance-manager/*.sh 2>/dev/null || true
 "
 ```
+
+**What this installs:**
+- Flask API server (app.py) - 8 REST endpoints
+- Data collector (collector.py) - RRD analysis and caching
+- Settings manager (manage_settings.sh) - CLI configuration tool
+- Timer updater (update_timer.py) - Dynamic systemd timer management
+- Status checker (check-status.sh) - Comprehensive diagnostics
+- Service debugger (debug-services.sh) - Troubleshooting tool
 
 ### Step 5: Configure Application
 
@@ -293,8 +330,15 @@ pct exec $CTID -- bash -c 'cat > /opt/proxmox-balance-manager/config.json <<EOF
 EOF'
 
 # Replace YOUR_PROXMOX_HOST_IP with your actual Proxmox host IP
-# Example: "10.0.0.1" or hostname
+# Example: "10.0.0.1" or hostname like "pve1"
 ```
+
+**Configuration Options:**
+- `collection_interval_minutes` (5-240): How often to collect cluster data
+- `ui_refresh_interval_minutes` (5-120): How often UI auto-refreshes
+- `proxmox_host`: Primary Proxmox node IP or hostname for SSH connections
+
+**Note:** The automated installer auto-detects `proxmox_host` using multiple methods. Manual installation requires you to set this value.
 
 ### Step 6: Setup System Services
 
@@ -308,42 +352,71 @@ cp /opt/proxmox-balance-manager/systemd/proxmox-collector.timer /etc/systemd/sys
 # Reload systemd
 systemctl daemon-reload
 
-# Enable services
+# Enable services to start on boot
 systemctl enable proxmox-balance.service
 systemctl enable proxmox-collector.timer
 systemctl enable nginx.service
 "
 ```
 
+**Service Descriptions:**
+
+1. **proxmox-balance.service**
+   - Runs Flask API via Gunicorn on port 5000
+   - 4 worker processes (adjust based on load)
+   - Serves 8 REST API endpoints
+   - Reads from cluster_cache.json
+
+2. **proxmox-collector.service**
+   - Runs collector.py script
+   - Collects data via SSH to proxmox_host
+   - Uses pvesh commands for cluster data
+   - Writes to cluster_cache.json atomically
+
+3. **proxmox-collector.timer**
+   - Triggers collector.service periodically
+   - OnBootSec=1min (runs 1 min after boot)
+   - OnUnitActiveSec=60min (runs every 60 min by default)
+   - Dynamically updated by update_timer.py when interval changes
+
 ### Step 7: Configure Nginx
 
 ```bash
 # Setup web server
 pct exec $CTID -- bash -c "
-# Copy web interface
+# Copy web interface (React single-page app)
 cp /opt/proxmox-balance-manager/index.html /var/www/html/
 
 # Copy Nginx configuration
 cp /opt/proxmox-balance-manager/nginx/proxmox-balance /etc/nginx/sites-available/
 
-# Enable site
+# Enable site (create symlink)
 ln -sf /etc/nginx/sites-available/proxmox-balance /etc/nginx/sites-enabled/
 
-# Remove default site
+# Remove default Nginx site
 rm -f /etc/nginx/sites-enabled/default
 
-# Test configuration
+# Test configuration syntax
 nginx -t
 
-# Restart Nginx
+# Restart Nginx to apply changes
 systemctl restart nginx
 "
 ```
 
+**Nginx Configuration Details:**
+- Listens on port 80 (HTTP)
+- Serves static files from /var/www/html/ (index.html)
+- Proxies /api/* requests to http://127.0.0.1:5000 (Flask backend)
+- Sets proper headers for API requests
+- Client max body size: 10M (for configuration updates)
+- Access log: /var/log/nginx/access.log
+- Error log: /var/log/nginx/error.log
+
 ### Step 8: Setup SSH Keys
 
 ```bash
-# Generate SSH key in container
+# Generate ed25519 SSH key in container (no passphrase)
 pct exec $CTID -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
 
 # Get the public key
@@ -371,6 +444,19 @@ for node in pve1 pve2 pve3 pve4; do
 done
 '
 ```
+
+**SSH Key Details:**
+- Algorithm: ed25519 (modern, secure, fast - better than RSA)
+- Key size: 256-bit (equivalent to ~3072-bit RSA)
+- Location: /root/.ssh/id_ed25519 (private), /root/.ssh/id_ed25519.pub (public)
+- No passphrase: Required for automated SSH connections
+- StrictHostKeyChecking=no: Auto-accepts host keys (internal network trust)
+
+**Why ed25519?**
+- Faster key generation and verification
+- Smaller key size (easier to manage)
+- More resistant to timing attacks
+- Modern and recommended by security experts
 
 ### Step 9: Start Services
 
@@ -449,6 +535,14 @@ This comprehensive check verifies:
 4. Click **Save Settings**
 5. Services restart automatically
 
+**What happens when you save:**
+1. API validates the new values (range checks)
+2. Updates config.json
+3. Runs update_timer.py to modify systemd timer
+4. Executes systemctl daemon-reload
+5. Restarts proxmox-collector.timer with new interval
+6. No manual service restart needed!
+
 #### Via Command Line
 
 ```bash
@@ -478,6 +572,13 @@ pvesh set /nodes/<node-name>/qemu/<vmid>/config --tags "ignore"
 pvesh set /nodes/<node-name>/lxc/<vmid>/config --tags "ignore"
 ```
 
+**How it works:**
+- Collector.py reads tags via pvesh get config
+- parse_tags() function extracts "ignore" keyword
+- Sets `has_ignore: true` in cache
+- Recommendation engine skips guests with has_ignore=true
+- Guests with ignore tag won't appear in migration recommendations
+
 #### Anti-Affinity Tags - Keep Workloads Separated
 ```bash
 # Example: Firewall VMs that must be on different nodes
@@ -492,10 +593,23 @@ pvesh set /nodes/pve3/qemu/201/config --tags "exclude_database"
 pvesh set /nodes/pve1/qemu/300/config --tags "ignore;exclude_critical"
 ```
 
+**How anti-affinity works:**
+- Tags starting with `exclude_` are extracted into `exclude_groups` array
+- Before recommending migration, checks if target node has any guest with same exclusion tag
+- If conflict detected, skips that migration recommendation
+- Prevents guests with same `exclude_*` tag from being on same node
+
 After adding tags, trigger a data refresh:
 ```bash
 curl -X POST http://<container-ip>/api/refresh
 ```
+
+**Tag Format Rules:**
+- Case-sensitive (use lowercase for consistency)
+- No spaces in tag names
+- Multiple tags separated by semicolon (`;`) or space
+- `exclude_` prefix required for anti-affinity groups
+- Exact match required (exclude_db ≠ exclude_database)
 
 ### 4. Adjust Thresholds
 
