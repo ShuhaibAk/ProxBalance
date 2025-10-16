@@ -162,44 +162,62 @@ fi
 
 echo ""
 echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-echo -e "${BL}SSH Connectivity Test${CL}"
+echo -e "${BL}Proxmox API Token Status${CL}"
 echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
 
-# Detect nodes from config or cache
-if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json; then
-    NODES=$(pct exec "$CTID" -- jq -r '.nodes | keys[]' /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null | tr '\n' ' ')
-elif command -v pvesh &>/dev/null; then
-    NODES=$(pvesh get /nodes --output-format json 2>/dev/null | jq -r '.[].node' 2>/dev/null | tr '\n' ' ')
+# Check API token configuration
+TOKEN_ID=$(pct exec "$CTID" -- jq -r '.proxmox_api_token_id // ""' /opt/proxmox-balance-manager/config.json 2>/dev/null)
+TOKEN_SECRET=$(pct exec "$CTID" -- jq -r '.proxmox_api_token_secret // ""' /opt/proxmox-balance-manager/config.json 2>/dev/null)
+PROXMOX_HOST=$(pct exec "$CTID" -- jq -r '.proxmox_host // "localhost"' /opt/proxmox-balance-manager/config.json 2>/dev/null)
+PROXMOX_PORT=$(pct exec "$CTID" -- jq -r '.proxmox_port // 8006' /opt/proxmox-balance-manager/config.json 2>/dev/null)
+
+if [ -n "$TOKEN_ID" ] && [ "$TOKEN_ID" != "null" ]; then
+    echo -e "${CM} Token ID: ${GN}${TOKEN_ID}${CL}"
+else
+    echo -e "${CROSS} Token ID: ${RD}not configured${CL}"
 fi
 
-if [ -n "$NODES" ]; then
-    SSH_TEST_RESULTS=$(pct exec "$CTID" -- bash <<EOF
-for node in $NODES; do
-    if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@\$node 'echo OK' 2>/dev/null | grep -q OK; then
-        echo "\$node:OK"
-    else
-        echo "\$node:FAILED"
-    fi
-done
-EOF
-)
-    
-    ALL_OK=true
-    while IFS=: read -r node status; do
-        if [ "$status" = "OK" ]; then
-            echo -e "${CM} ${node}: ${GN}connected${CL}"
-        else
-            echo -e "${CROSS} ${node}: ${RD}failed${CL}"
-            ALL_OK=false
+if [ -n "$TOKEN_SECRET" ] && [ "$TOKEN_SECRET" != "null" ]; then
+    SECRET_LEN=${#TOKEN_SECRET}
+    echo -e "${CM} Token Secret: ${GN}configured${CL} (${SECRET_LEN} characters)"
+else
+    echo -e "${CROSS} Token Secret: ${RD}not configured${CL}"
+fi
+
+echo -e "   ${BL}Proxmox Host: ${YW}${PROXMOX_HOST}:${PROXMOX_PORT}${CL}"
+
+# Test API token connectivity
+if [ -n "$TOKEN_ID" ] && [ -n "$TOKEN_SECRET" ] && [ "$TOKEN_SECRET" != "null" ]; then
+    echo ""
+    echo -e "   ${BL}Testing Proxmox API connectivity...${CL}"
+
+    # Test API call using the token
+    API_TEST=$(pct exec "$CTID" -- curl -s -k -w "\n%{http_code}" \
+        -H "Authorization: PVEAPIToken=${TOKEN_ID}=${TOKEN_SECRET}" \
+        "https://${PROXMOX_HOST}:${PROXMOX_PORT}/api2/json/version" 2>/dev/null || echo "error\n000")
+
+    API_HTTP_CODE=$(echo "$API_TEST" | tail -n1)
+
+    if [ "$API_HTTP_CODE" = "200" ]; then
+        echo -e "${CM} Proxmox API: ${GN}connected${CL}"
+
+        # Get Proxmox version from response
+        PVE_VERSION=$(echo "$API_TEST" | head -n-1 | jq -r '.data.version // "unknown"' 2>/dev/null)
+        if [ -n "$PVE_VERSION" ] && [ "$PVE_VERSION" != "unknown" ]; then
+            echo -e "   ${BL}Proxmox Version: ${GN}${PVE_VERSION}${CL}"
         fi
-    done <<< "$SSH_TEST_RESULTS"
-    
-    if [ "$ALL_OK" = false ]; then
-        echo ""
-        echo -e "${YW}Some SSH connections failed. Check SSH key configuration.${CL}"
+    elif [ "$API_HTTP_CODE" = "401" ]; then
+        echo -e "${CROSS} Proxmox API: ${RD}authentication failed${CL}"
+        echo -e "   ${YW}Token may be invalid or expired${CL}"
+    elif [ "$API_HTTP_CODE" = "000" ]; then
+        echo -e "${CROSS} Proxmox API: ${RD}connection failed${CL}"
+        echo -e "   ${YW}Cannot reach Proxmox host at ${PROXMOX_HOST}:${PROXMOX_PORT}${CL}"
+    else
+        echo -e "${CROSS} Proxmox API: ${RD}error${CL} (HTTP ${API_HTTP_CODE})"
     fi
 else
-    echo -e "${YW}⚠${CL} No nodes detected - cache may not be ready yet"
+    echo -e "${YW}⚠${CL} API token not fully configured"
+    echo -e "   ${YW}Run the installer to configure Proxmox API access${CL}"
 fi
 
 echo ""

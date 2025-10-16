@@ -1,0 +1,19 @@
+# Ensure shell scripts always use LF line endings
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Python files
+*.py text eol=lf
+
+# Markdown and documentation
+*.md text eol=lf
+
+# JSON files
+*.json text eol=lf
+
+# HTML files
+*.html text eol=lf
+
+# Configuration files
+*.conf text eol=lf
+*.cfg text eol=lf

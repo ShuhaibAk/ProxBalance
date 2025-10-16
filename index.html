@@ -13,6 +13,8 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <script>
       tailwind.config = {
         darkMode: 'class'
@@ -57,6 +59,9 @@
         const Settings = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>);
         const X = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>);
         const Save = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>);
+        const ChevronDown = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="6 9 12 15 18 9"></polyline></svg>);
+        const ChevronUp = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="18 15 12 9 6 15"></polyline></svg>);
+        const GitHub = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>);
 
 // Logo component
 const ProxBalanceLogo = ({ size = 32 }) => (
@@ -88,6 +93,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
         const ProxmoxBalanceManager = () => {
           const [data, setData] = useState(null);
           const [recommendations, setRecommendations] = useState([]);
+          const [aiRecommendations, setAiRecommendations] = useState(null);
+          const [loadingAi, setLoadingAi] = useState(false);
           const [loading, setLoading] = useState(false);
           const [error, setError] = useState(null);
           const [cpuThreshold, setCpuThreshold] = useState(60);
@@ -103,10 +110,71 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [tempBackendInterval, setTempBackendInterval] = useState(60);
           const [tempUiInterval, setTempUiInterval] = useState(60);
           const [savingSettings, setSavingSettings] = useState(false);
+          const [aiProvider, setAiProvider] = useState('none');
+          const [aiEnabled, setAiEnabled] = useState(false);
+          const [openaiKey, setOpenaiKey] = useState('');
+          const [openaiModel, setOpenaiModel] = useState('gpt-4');
+          const [openaiModelCustom, setOpenaiModelCustom] = useState('');
+          const [openaiAvailableModels, setOpenaiAvailableModels] = useState([]);
+          const [openaiLoadingModels, setOpenaiLoadingModels] = useState(false);
+          const [anthropicKey, setAnthropicKey] = useState('');
+          const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
+          const [anthropicModelCustom, setAnthropicModelCustom] = useState('');
+          const [anthropicAvailableModels, setAnthropicAvailableModels] = useState([]);
+          const [anthropicLoadingModels, setAnthropicLoadingModels] = useState(false);
+          const [localUrl, setLocalUrl] = useState('http://localhost:11434');
+          const [localModel, setLocalModel] = useState('llama2');
+          const [localModelCustom, setLocalModelCustom] = useState('');
+          const [localAvailableModels, setLocalAvailableModels] = useState([]);
+          const [localLoadingModels, setLocalLoadingModels] = useState(false);
+          const [systemInfo, setSystemInfo] = useState(null);
+          const [updating, setUpdating] = useState(false);
+          const [updateLog, setUpdateLog] = useState([]);
+          const [chartPeriod, setChartPeriod] = useState('1h');
+          const [charts, setCharts] = useState({});
+          const [showUpdateModal, setShowUpdateModal] = useState(false);
+          const [aiAnalysisPeriod, setAiAnalysisPeriod] = useState('24h');
+          const [proxmoxTokenId, setProxmoxTokenId] = useState('');
+          const [proxmoxTokenSecret, setProxmoxTokenSecret] = useState('');
+
+          // Node grid layout state with localStorage persistence
+          const [nodeGridColumns, setNodeGridColumns] = useState(() => {
+            const saved = localStorage.getItem('nodeGridColumns');
+            return saved ? parseInt(saved) : 3;
+          });
+
+          // Collapsed sections state with localStorage persistence
+          const [collapsedSections, setCollapsedSections] = useState(() => {
+            const saved = localStorage.getItem('collapsedSections');
+            return saved ? JSON.parse(saved) : {
+              nodeStatus: true,
+              recommendations: false,
+              aiRecommendations: false,
+              taggedGuests: true
+            };
+          });
+
+          // Save collapsed state to localStorage whenever it changes
+          useEffect(() => {
+            localStorage.setItem('collapsedSections', JSON.stringify(collapsedSections));
+          }, [collapsedSections]);
+
+          // Save node grid columns to localStorage whenever it changes
+          useEffect(() => {
+            localStorage.setItem('nodeGridColumns', nodeGridColumns.toString());
+          }, [nodeGridColumns]);
+
+          const toggleSection = (section) => {
+            setCollapsedSections(prev => ({
+              ...prev,
+              [section]: !prev[section]
+            }));
+          };
 
           useEffect(() => {
             document.documentElement.classList.add('dark');
             fetchConfig();
+            fetchSystemInfo();
           }, []);
 
           const fetchConfig = async () => {
@@ -119,6 +187,28 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 setAutoRefreshInterval(intervalMs);
                 setTempBackendInterval(result.config.collection_interval_minutes || 60);
                 setTempUiInterval(result.config.ui_refresh_interval_minutes || 60);
+
+                // Load Proxmox API settings
+                setProxmoxTokenId(result.config.proxmox_api_token_id || '');
+                setProxmoxTokenSecret(result.config.proxmox_api_token_secret || '');
+
+                // Load AI settings
+                setAiProvider(result.config.ai_provider || 'none');
+                setAiEnabled(result.config.ai_recommendations_enabled || false);
+                if (result.config.ai_config) {
+                  if (result.config.ai_config.openai) {
+                    setOpenaiKey(result.config.ai_config.openai.api_key || '');
+                    setOpenaiModel(result.config.ai_config.openai.model || 'gpt-4');
+                  }
+                  if (result.config.ai_config.anthropic) {
+                    setAnthropicKey(result.config.ai_config.anthropic.api_key || '');
+                    setAnthropicModel(result.config.ai_config.anthropic.model || 'claude-3-5-sonnet-20241022');
+                  }
+                  if (result.config.ai_config.local) {
+                    setLocalUrl(result.config.ai_config.local.base_url || 'http://localhost:11434');
+                    setLocalModel(result.config.ai_config.local.model || 'llama2');
+                  }
+                }
               }
             } catch (err) {
               console.error('Failed to load config:', err);
@@ -133,7 +223,26 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   collection_interval_minutes: tempBackendInterval,
-                  ui_refresh_interval_minutes: tempUiInterval
+                  ui_refresh_interval_minutes: tempUiInterval,
+                  proxmox_auth_method: 'api_token',
+                  proxmox_api_token_id: proxmoxTokenId,
+                  proxmox_api_token_secret: proxmoxTokenSecret,
+                  ai_provider: aiProvider,
+                  ai_recommendations_enabled: aiEnabled,
+                  ai_config: {
+                    openai: {
+                      api_key: openaiKey,
+                      model: openaiModelCustom || openaiModel
+                    },
+                    anthropic: {
+                      api_key: anthropicKey,
+                      model: anthropicModel
+                    },
+                    local: {
+                      base_url: localUrl,
+                      model: localModelCustom || localModel
+                    }
+                  }
                 })
               });
               
@@ -240,6 +349,106 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
           };
 
+          const fetchAiRecommendations = async () => {
+            if (!data) return;
+            setLoadingAi(true);
+            try {
+              const response = await fetch(`${API_BASE}/ai-recommendations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  cpu_threshold: cpuThreshold,
+                  mem_threshold: memThreshold,
+                  analysis_period: aiAnalysisPeriod
+                })
+              });
+              const result = await response.json();
+              if (result.success) {
+                setAiRecommendations(result);
+              } else {
+                setAiRecommendations({ success: false, error: result.error });
+              }
+            } catch (err) {
+              setAiRecommendations({ success: false, error: err.message });
+            }
+            setLoadingAi(false);
+          };
+
+          const fetchAiModels = async (provider, apiKey = null, baseUrl = null) => {
+            const setLoading = provider === 'openai' ? setOpenaiLoadingModels
+              : provider === 'anthropic' ? setAnthropicLoadingModels
+              : setLocalLoadingModels;
+            const setModels = provider === 'openai' ? setOpenaiAvailableModels
+              : provider === 'anthropic' ? setAnthropicAvailableModels
+              : setLocalAvailableModels;
+
+            setLoading(true);
+            try {
+              const payload = { provider };
+              if (apiKey) payload.api_key = apiKey;
+              if (baseUrl) payload.base_url = baseUrl;
+
+              const response = await fetch(`${API_BASE}/ai-models`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+              const result = await response.json();
+              if (result.success) {
+                setModels(result.models);
+              } else {
+                alert(`Failed to fetch models: ${result.error}`);
+              }
+            } catch (err) {
+              alert(`Failed to fetch models: ${err.message}`);
+            }
+            setLoading(false);
+          };
+
+          const fetchSystemInfo = async () => {
+            try {
+              const response = await fetch(`${API_BASE}/system/info`);
+              const result = await response.json();
+              if (result.success) {
+                setSystemInfo(result);
+              }
+            } catch (err) {
+              console.error('Failed to fetch system info:', err);
+            }
+          };
+
+          const handleUpdate = async () => {
+            setUpdating(true);
+            setUpdateLog([]);
+            setShowUpdateModal(true);
+
+            try {
+              const response = await fetch(`${API_BASE}/system/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              });
+              const result = await response.json();
+
+              if (result.success) {
+                setUpdateLog(result.log || []);
+                if (result.updated) {
+                  // Refresh system info after update
+                  setTimeout(() => {
+                    fetchSystemInfo();
+                    // Reload page to get new code
+                    setTimeout(() => window.location.reload(), 2000);
+                  }, 1000);
+                }
+              } else {
+                setUpdateLog([...(result.log || []), `Error: ${result.error}`]);
+              }
+            } catch (err) {
+              setUpdateLog(prev => [...prev, `Error: ${err.message}`]);
+            }
+
+            setUpdating(false);
+          };
+
           const executeMigration = async (rec) => {
             const key = `${rec.vmid}-${rec.target_node}`;
             setMigrationStatus(prev => ({ ...prev, [key]: 'running' }));
@@ -257,12 +466,13 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               });
               
               const result = await response.json();
-              setMigrationStatus(prev => ({ 
-                ...prev, 
-                [key]: result.success ? 'success' : 'failed' 
+              setMigrationStatus(prev => ({
+                ...prev,
+                [key]: result.success ? 'success' : 'failed'
               }));
-              
+
               if (result.success) {
+                alert(`Migration started for ${rec.type} ${rec.vmid} (${rec.name || 'unnamed'}).\n\nCheck Proxmox cluster task logs for migration status and progress.`);
                 setTimeout(() => fetchAnalysis(), 5000);
               }
             } catch (err) {
@@ -271,7 +481,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           };
 
           const executeBatchMigration = async () => {
-            if (!window.confirm(`Execute ${recommendations.length} migration(s)?`)) return;
+            if (!window.confirm(`Start ${recommendations.length} migration(s)?\n\nYou can monitor progress in Proxmox task logs.`)) return;
             
             setLoading(true);
             try {
@@ -338,6 +548,193 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           }, [autoRefreshInterval]);
           useEffect(() => { if (data) fetchRecommendations(); }, [data, cpuThreshold, memThreshold]);
 
+          // Render charts when data changes or chart period changes
+          useEffect(() => {
+            if (!data || !data.nodes) return;
+            if (typeof Chart === 'undefined') {
+              console.error('Chart.js is not loaded');
+              return;
+            }
+
+            // Destroy old charts
+            Object.values(charts).forEach(chart => {
+              try {
+                chart.destroy();
+              } catch (e) {
+                console.error('Error destroying chart:', e);
+              }
+            });
+            const newCharts = {};
+
+            Object.values(data.nodes).forEach(node => {
+              if (!node.trend_data || node.trend_data.length === 0) {
+                console.log(`No trend data for node ${node.name}`);
+                return;
+              }
+
+              const canvas = document.getElementById(`chart-${node.name}`);
+              if (!canvas) {
+                console.error(`Canvas not found for node ${node.name}`);
+                return;
+              }
+
+              // Filter data based on chart period
+              const now = Math.floor(Date.now() / 1000);
+              const periodSeconds = {
+                '1h': 3600,
+                '6h': 6 * 3600,
+                '12h': 12 * 3600,
+                '24h': 24 * 3600
+              }[chartPeriod] || 24 * 3600;
+
+              const filteredData = node.trend_data.filter(point =>
+                (now - point.time) <= periodSeconds
+              );
+
+              if (filteredData.length === 0) {
+                console.log(`No filtered data for node ${node.name} with period ${chartPeriod}`);
+                return;
+              }
+
+              console.log(`Creating chart for node ${node.name} with ${filteredData.length} data points`);
+
+              const ctx = canvas.getContext('2d');
+              const isDark = darkMode;
+
+              try {
+                newCharts[node.name] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                  labels: filteredData.map(point => {
+                    const date = new Date(point.time * 1000);
+                    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  }),
+                  datasets: [
+                    {
+                      label: 'CPU %',
+                      data: filteredData.map(point => point.cpu),
+                      borderColor: 'rgb(59, 130, 246)',
+                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                      tension: 0.4,
+                      fill: true
+                    },
+                    {
+                      label: 'Memory %',
+                      data: filteredData.map(point => point.mem),
+                      borderColor: 'rgb(16, 185, 129)',
+                      backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                      tension: 0.4,
+                      fill: true
+                    }
+                  ]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  interaction: {
+                    mode: 'index',
+                    intersect: false,
+                  },
+                  plugins: {
+                    legend: {
+                      display: true,
+                      position: 'top',
+                      labels: {
+                        color: isDark ? '#9ca3af' : '#4b5563',
+                        font: { size: 11 }
+                      }
+                    },
+                    tooltip: {
+                      backgroundColor: isDark ? '#1f2937' : '#ffffff',
+                      titleColor: isDark ? '#f3f4f6' : '#111827',
+                      bodyColor: isDark ? '#d1d5db' : '#374151',
+                      borderColor: isDark ? '#374151' : '#e5e7eb',
+                      borderWidth: 1
+                    },
+                    annotation: {
+                      annotations: {
+                        cpuThresholdLine: {
+                          type: 'line',
+                          yMin: cpuThreshold,
+                          yMax: cpuThreshold,
+                          borderColor: 'rgba(239, 68, 68, 0.8)',
+                          borderWidth: 2,
+                          borderDash: [5, 5],
+                          label: {
+                            display: true,
+                            content: `CPU Threshold: ${cpuThreshold}%`,
+                            position: 'end',
+                            backgroundColor: 'rgba(239, 68, 68, 0.9)',
+                            color: '#ffffff',
+                            font: { size: 10 },
+                            padding: 4
+                          }
+                        },
+                        memThresholdLine: {
+                          type: 'line',
+                          yMin: memThreshold,
+                          yMax: memThreshold,
+                          borderColor: 'rgba(249, 115, 22, 0.8)',
+                          borderWidth: 2,
+                          borderDash: [5, 5],
+                          label: {
+                            display: true,
+                            content: `Mem Threshold: ${memThreshold}%`,
+                            position: 'start',
+                            backgroundColor: 'rgba(249, 115, 22, 0.9)',
+                            color: '#ffffff',
+                            font: { size: 10 },
+                            padding: 4
+                          }
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: {
+                      display: true,
+                      grid: {
+                        color: isDark ? '#374151' : '#e5e7eb'
+                      },
+                      ticks: {
+                        color: isDark ? '#9ca3af' : '#6b7280',
+                        maxTicksLimit: 8,
+                        font: { size: 10 }
+                      }
+                    },
+                    y: {
+                      display: true,
+                      min: 0,
+                      max: 100,
+                      grid: {
+                        color: isDark ? '#374151' : '#e5e7eb'
+                      },
+                      ticks: {
+                        color: isDark ? '#9ca3af' : '#6b7280',
+                        font: { size: 10 },
+                        callback: function(value) {
+                          return value + '%';
+                        }
+                      }
+                    }
+                  }
+                }
+              });
+              console.log(`Chart created successfully for node ${node.name}`);
+              } catch (error) {
+                console.error(`Error creating chart for node ${node.name}:`, error);
+              }
+            });
+
+            setCharts(newCharts);
+            console.log(`Total charts created: ${Object.keys(newCharts).length}`);
+
+            // Cleanup on unmount
+            return () => {
+              Object.values(newCharts).forEach(chart => chart.destroy());
+            };
+          }, [data, chartPeriod, darkMode, collapsedSections.nodeStatus, cpuThreshold, memThreshold]);
+
           if (error) {
             return (
               <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-8">
@@ -375,35 +772,69 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               <div className="max-w-7xl mx-auto">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <ProxBalanceLogo size={48} />
+                    <div className="flex items-center gap-2">
+                      <ProxBalanceLogo size={96} />
                       <div>
                         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ProxBalance</h1>
                         <p className="text-sm text-gray-500 dark:text-gray-400">Cluster Optimization</p>
+                        {systemInfo && (
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-500">
+                              Branch: <span className="font-mono text-purple-600 dark:text-purple-400">{systemInfo.branch}</span>
+                            </span>
+                            <span className="text-xs text-gray-400 dark:text-gray-600">|</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-500">
+                              Commit: <span className="font-mono">{systemInfo.commit}</span>
+                            </span>
+                            {systemInfo.updates_available && (
+                              <>
+                                <span className="text-xs text-gray-400 dark:text-gray-600">|</span>
+                                <span className="text-xs text-yellow-600 dark:text-yellow-400 font-semibold">
+                                  {systemInfo.commits_behind} update{systemInfo.commits_behind > 1 ? 's' : ''} available
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <button 
+                      {systemInfo && systemInfo.updates_available && (
+                        <button
+                          onClick={() => setShowUpdateModal(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-yellow-600 dark:bg-yellow-500 text-white rounded hover:bg-yellow-700 dark:hover:bg-yellow-600"
+                          title={`${systemInfo.commits_behind} update(s) available`}
+                        >
+                          <RefreshCw size={18} />
+                          Update Available
+                        </button>
+                      )}
+                      <a
+                        href="https://github.com/Pr0zak/ProxBalance"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        title="View on GitHub"
+                      >
+                        <GitHub size={20} className="text-gray-700 dark:text-gray-300" />
+                      </a>
+                      <button
+                        onClick={toggleDarkMode}
+                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                      >
+                        {darkMode ? <Sun size={20} className="text-yellow-500" /> : <Moon size={20} className="text-gray-700" />}
+                      </button>
+                      <button
                         onClick={() => setShowSettings(true)}
                         className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
                         title="Settings"
                       >
                         <Settings size={20} className="text-gray-700 dark:text-gray-300" />
                       </button>
-                      <button 
-                        onClick={toggleDarkMode} 
-                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
-                        title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                      >
-                        {darkMode ? <Sun size={20} className="text-yellow-500" /> : <Moon size={20} className="text-gray-700" />}
-                      </button>
-                      <button onClick={handleRefresh} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400">
-                        <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                        Refresh
-                      </button>
                     </div>
                   </div>
-                  
+
                   {lastUpdate && (
                     <div className="flex items-center gap-3 mb-4 text-xs text-gray-500 dark:text-gray-500">
                       <div className="flex items-center gap-1">
@@ -411,9 +842,18 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         <span>UI refreshed: <span className="font-semibold text-gray-700 dark:text-gray-300">{formatCSTTime(lastUpdate)} CST</span></span>
                       </div>
                       {backendCollected && (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <Server size={12} />
                           <span>Data collected: <span className="font-semibold text-green-600 dark:text-green-400">{formatCSTTime(backendCollected)} CST</span></span>
+                          <button
+                            onClick={handleRefresh}
+                            disabled={loading}
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                            title="Refresh cluster data from Proxmox"
+                          >
+                            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+                            Refresh Data
+                          </button>
                         </div>
                       )}
                       {config && (
@@ -455,27 +895,60 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{data.summary.ignored_guests + data.summary.excluded_guests}</p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">CPU Threshold:</label>
-                      <input type="range" min="40" max="90" value={cpuThreshold} onChange={(e) => setCpuThreshold(Number(e.target.value))} className="w-32" />
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{cpuThreshold}%</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Memory Threshold:</label>
-                      <input type="range" min="50" max="95" value={memThreshold} onChange={(e) => setMemThreshold(Number(e.target.value))} className="w-32" />
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{memThreshold}%</span>
-                    </div>
-                  </div>
                 </div>
 
                 {(ignoredGuests.length > 0 || excludeGuests.length > 0 || violations.length > 0) && (
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Tag size={24} className="text-purple-600 dark:text-purple-400" />
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Tagged Guests & Affinity Rules</h2>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Tag size={24} className="text-purple-600 dark:text-purple-400" />
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Tagged Guests & Affinity Rules</h2>
+                        <button
+                          onClick={() => toggleSection('taggedGuests')}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          title={collapsedSections.taggedGuests ? "Expand section" : "Collapse section"}
+                        >
+                          {collapsedSections.taggedGuests ? (
+                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                          ) : (
+                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                          )}
+                        </button>
+                      </div>
                     </div>
 
+                    {collapsedSections.taggedGuests ? (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {violations.length > 0 && (
+                          <div className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded">
+                            <AlertTriangle size={18} className="text-red-600 dark:text-red-400" />
+                            <div>
+                              <div className="font-semibold text-red-900 dark:text-red-300">Violations</div>
+                              <div className="text-sm text-red-700 dark:text-red-400">{violations.length} issue{violations.length !== 1 ? 's' : ''}</div>
+                            </div>
+                          </div>
+                        )}
+                        {ignoredGuests.length > 0 && (
+                          <div className="flex items-center gap-3 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded">
+                            <Shield size={18} className="text-yellow-600 dark:text-yellow-400" />
+                            <div>
+                              <div className="font-semibold text-gray-900 dark:text-white">Ignored Guests</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">{ignoredGuests.length} guest{ignoredGuests.length !== 1 ? 's' : ''}</div>
+                            </div>
+                          </div>
+                        )}
+                        {excludeGuests.length > 0 && (
+                          <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded">
+                            <Shield size={18} className="text-blue-600 dark:text-blue-400" />
+                            <div>
+                              <div className="font-semibold text-gray-900 dark:text-white">Affinity Rules</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">{excludeGuests.length} guest{excludeGuests.length !== 1 ? 's' : ''}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                    <>
                     {violations.length > 0 && (
                       <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded">
                         <div className="flex items-center gap-2 mb-3">
@@ -553,39 +1026,161 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         </div>
                       )}
                     </div>
+                    </>
+                    )}
                   </div>
                 )}
 
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                  <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Node Status</h2>
-                  <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Node Status</h2>
+                      <button
+                        onClick={() => toggleSection('nodeStatus')}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        title={collapsedSections.nodeStatus ? "Expand section" : "Collapse section"}
+                      >
+                        {collapsedSections.nodeStatus ? (
+                          <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                        ) : (
+                          <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-gray-600 dark:text-gray-400">Grid:</label>
+                        <div className="flex gap-1">
+                          {[1, 2, 3, 4].map(cols => (
+                            <button
+                              key={cols}
+                              onClick={() => setNodeGridColumns(cols)}
+                              className={`px-3 py-1 text-sm rounded transition-colors ${
+                                nodeGridColumns === cols
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                              title={`${cols} column${cols > 1 ? 's' : ''}`}
+                            >
+                              {cols}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-gray-600 dark:text-gray-400">Chart Period:</label>
+                        <select
+                          value={chartPeriod}
+                          onChange={(e) => setChartPeriod(e.target.value)}
+                          className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="1h">1 Hour</option>
+                          <option value="6h">6 Hours</option>
+                          <option value="12h">12 Hours</option>
+                          <option value="24h">24 Hours</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {collapsedSections.nodeStatus ? (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                      {Object.values(data.nodes).map(node => (
+                        <div key={node.name} className="border border-gray-200 dark:border-gray-700 rounded p-3 hover:shadow-md transition-shadow">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{node.name}</h3>
+                            <span className={`w-2 h-2 rounded-full ${node.status === 'online' ? 'bg-green-500' : 'bg-red-500'}`} title={node.status}></span>
+                          </div>
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">CPU:</span>
+                              <span className={`font-semibold ${(node.cpu_percent || 0) > cpuThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                {(node.cpu_percent || 0).toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 dark:text-gray-400">Memory:</span>
+                              <span className={`font-semibold ${(node.mem_percent || 0) > memThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                {(node.mem_percent || 0).toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-1 border-t border-gray-200 dark:border-gray-600">
+                              <span className="text-gray-600 dark:text-gray-400">Guests:</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">{node.guests?.length || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                  <div className={`grid gap-4 transition-all duration-300 ease-in-out ${
+                    nodeGridColumns === 1 ? 'grid-cols-1' :
+                    nodeGridColumns === 2 ? 'grid-cols-1 lg:grid-cols-2' :
+                    nodeGridColumns === 3 ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' :
+                    'grid-cols-1 md:grid-cols-2 xl:grid-cols-4'
+                  }`}>
                     {Object.values(data.nodes).map(node => (
                       <div key={node.name} className="border border-gray-200 dark:border-gray-700 rounded p-4">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{node.name}</h3>
                           <span className={`text-sm font-medium ${node.status === 'online' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{node.status}</span>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                          <div><span className="text-gray-600 dark:text-gray-400">CPU:</span> <span className={`font-semibold ${node.metrics.current_cpu > cpuThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{node.metrics.current_cpu.toFixed(1)}%</span></div>
-                          <div><span className="text-gray-600 dark:text-gray-400">Memory:</span> <span className={`font-semibold ${node.metrics.current_mem > memThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{node.metrics.current_mem.toFixed(1)}%</span></div>
-                          <div><span className="text-gray-600 dark:text-gray-400">Cores:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.cpu_cores}</span></div>
-                          <div><span className="text-gray-600 dark:text-gray-400">Guests:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.guests.length}</span></div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-4">
+                          <div><span className="text-gray-600 dark:text-gray-400">CPU:</span> <span className={`font-semibold ${(node.cpu_percent || 0) > cpuThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{(node.cpu_percent || 0).toFixed(1)}%</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Memory:</span> <span className={`font-semibold ${(node.mem_percent || 0) > memThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{(node.mem_percent || 0).toFixed(1)}%</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Cores:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.cpu_cores || 0}</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Guests:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.guests?.length || 0}</span></div>
                         </div>
+                        {node.trend_data && node.trend_data.length > 0 && (
+                          <div className="mt-4" style={{height: '200px'}}>
+                            <canvas id={`chart-${node.name}`}></canvas>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Migration Recommendations</h2>
-                    {recommendations.length > 0 && (
-                      <button onClick={executeBatchMigration} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:bg-gray-400">
-                        <Play size={18} />
-                        Execute All ({recommendations.length})
-                      </button>
-                    )}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Migration Recommendations</h2>
+                        <button
+                          onClick={() => toggleSection('recommendations')}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          title={collapsedSections.recommendations ? "Expand section" : "Collapse section"}
+                        >
+                          {collapsedSections.recommendations ? (
+                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                          ) : (
+                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                          )}
+                        </button>
+                      </div>
+                      {recommendations.length > 0 && (
+                        <button onClick={executeBatchMigration} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:bg-gray-400">
+                          <Play size={18} />
+                          Migrate All ({recommendations.length})
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-4">
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">CPU Threshold:</label>
+                        <input type="range" min="40" max="90" value={cpuThreshold} onChange={(e) => setCpuThreshold(Number(e.target.value))} className="w-32" />
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{cpuThreshold}%</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Memory Threshold:</label>
+                        <input type="range" min="50" max="95" value={memThreshold} onChange={(e) => setMemThreshold(Number(e.target.value))} className="w-32" />
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{memThreshold}%</span>
+                      </div>
+                    </div>
                   </div>
+                  {!collapsedSections.recommendations && (
+                  <div className="transition-all duration-300 ease-in-out">
                   {recommendations.length === 0 ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                       <CheckCircle size={48} className="mx-auto mb-2 text-green-500 dark:text-green-400" />
@@ -611,7 +1206,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   <span className="text-red-600 dark:text-red-400 font-medium">FROM:</span> {rec.source_node} → <span className="text-green-600 dark:text-green-400 font-medium">TO:</span> {rec.target_node}
                                 </div>
                                 <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                                  <span className="font-medium">Reason:</span> {rec.reason} | <span className="font-medium">Memory:</span> {rec.mem_gb.toFixed(1)} GB
+                                  <span className="font-medium">Reason:</span> {rec.reason} | <span className="font-medium">Memory:</span> {(rec.mem_gb || 0).toFixed(1)} GB
                                 </div>
                                 <div className="text-xs font-mono bg-gray-100 dark:bg-gray-900 p-1 rounded mt-1 text-gray-700 dark:text-gray-300">{rec.command}</div>
                               </div>
@@ -623,12 +1218,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 {status === 'running' ? (
                                   <>
                                     <RefreshCw size={16} className="animate-spin" />
-                                    Running
+                                    Starting...
                                   </>
                                 ) : status === 'success' ? (
                                   <>
                                     <CheckCircle size={16} />
-                                    Done
+                                    Started
                                   </>
                                 ) : status === 'failed' ? (
                                   <>
@@ -638,7 +1233,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 ) : (
                                   <>
                                     <Play size={16} />
-                                    Execute
+                                    Migrate
                                   </>
                                 )}
                               </button>
@@ -648,19 +1243,374 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       })}
                     </div>
                   )}
+                  </div>
+                  )}
                 </div>
+
+                {config?.ai_recommendations_enabled && aiEnabled && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">🤖 AI-Enhanced Recommendations</h2>
+                        <button
+                          onClick={() => toggleSection('aiRecommendations')}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          title={collapsedSections.aiRecommendations ? "Expand section" : "Collapse section"}
+                        >
+                          {collapsedSections.aiRecommendations ? (
+                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                          ) : (
+                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                          )}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Analysis Period:</label>
+                          <select
+                            value={aiAnalysisPeriod}
+                            onChange={(e) => setAiAnalysisPeriod(e.target.value)}
+                            className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                          >
+                            <option value="1h">Last Hour</option>
+                            <option value="6h">Last 6 Hours</option>
+                            <option value="24h">Last 24 Hours</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d">Last 30 Days</option>
+                          </select>
+                        </div>
+                        <button
+                          onClick={fetchAiRecommendations}
+                          disabled={loadingAi}
+                          className="flex items-center gap-2 px-4 py-2 bg-purple-600 dark:bg-purple-500 text-white rounded hover:bg-purple-700 dark:hover:bg-purple-600 disabled:bg-gray-400"
+                        >
+                          {loadingAi ? (
+                            <>
+                              <RefreshCw size={18} className="animate-spin" />
+                              Analyzing...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw size={18} />
+                              Get AI Analysis
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!collapsedSections.aiRecommendations && (
+                    <div className="transition-all duration-300 ease-in-out">
+                    {!aiRecommendations && !loadingAi && (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <Activity size={48} className="mx-auto mb-2" />
+                        <p className="font-medium">AI Analysis Available</p>
+                        <p className="text-sm">Click "Get AI Analysis" to receive AI-powered migration recommendations</p>
+                      </div>
+                    )}
+
+                    {aiRecommendations && !aiRecommendations.success && (
+                      <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded p-4">
+                        <div className="flex items-center gap-2 text-red-800 dark:text-red-200">
+                          <AlertCircle size={20} />
+                          <span className="font-medium">AI Analysis Error</span>
+                        </div>
+                        <p className="text-sm text-red-700 dark:text-red-300 mt-2">{aiRecommendations.error}</p>
+                      </div>
+                    )}
+
+                    {aiRecommendations && aiRecommendations.success && (
+                      <div className="space-y-4">
+                        {aiRecommendations.analysis && (
+                          <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Activity size={20} className="text-blue-600 dark:text-blue-400" />
+                              <span className="font-medium text-blue-900 dark:text-blue-200">Cluster Analysis</span>
+                            </div>
+                            <p className="text-sm text-blue-800 dark:text-blue-200">{aiRecommendations.analysis}</p>
+                          </div>
+                        )}
+
+                        {aiRecommendations.predicted_issues && aiRecommendations.predicted_issues.length > 0 && (
+                          <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <AlertTriangle size={20} className="text-yellow-600 dark:text-yellow-400" />
+                              <span className="font-medium text-yellow-900 dark:text-yellow-200">Predicted Issues</span>
+                            </div>
+                            <div className="space-y-2">
+                              {aiRecommendations.predicted_issues.map((issue, idx) => (
+                                <div key={idx} className="text-sm text-yellow-800 dark:text-yellow-200">
+                                  <span className="font-medium">{issue.node}</span> - {issue.prediction}
+                                  <span className="ml-2 text-xs">({((issue.confidence || 0) * 100).toFixed(0)}% confidence)</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {aiRecommendations.recommendations && aiRecommendations.recommendations.length === 0 && (
+                          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                            <CheckCircle size={48} className="mx-auto mb-2 text-green-500 dark:text-green-400" />
+                            <p className="font-medium">No AI Recommendations</p>
+                            <p className="text-sm">AI analysis found cluster is well-balanced</p>
+                          </div>
+                        )}
+
+                        {aiRecommendations.recommendations && aiRecommendations.recommendations.filter(rec => rec.priority !== 'skipped').length > 0 && (
+                          <div className="space-y-4">
+                            {aiRecommendations.recommendations.filter(rec => rec.priority !== 'skipped').map((rec, idx) => {
+                              const key = `ai-${rec.vmid}-${rec.target_node}`;
+                              const status = migrationStatus[key];
+
+                              const priorityColors = {
+                                high: 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-800 dark:text-red-200',
+                                medium: 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200',
+                                low: 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-800 dark:text-green-200'
+                              };
+
+                              const riskColor = rec.risk_score > 0.5 ? 'text-red-600 dark:text-red-400' :
+                                               rec.risk_score > 0.2 ? 'text-yellow-600 dark:text-yellow-400' :
+                                               'text-green-600 dark:text-green-400';
+
+                              return (
+                                <div key={idx} className={`border rounded-lg p-4 ${priorityColors[rec.priority] || priorityColors.medium}`}>
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <span className="font-bold text-lg">[{rec.type} {rec.vmid}] {rec.name}</span>
+                                        <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
+                                          rec.priority === 'high' ? 'bg-red-600 text-white' :
+                                          rec.priority === 'medium' ? 'bg-yellow-600 text-white' :
+                                          'bg-green-600 text-white'
+                                        }`}>
+                                          {rec.priority} Priority
+                                        </span>
+                                      </div>
+
+                                      <div className="text-sm mb-2">
+                                        <span className="font-semibold text-red-700 dark:text-red-300">FROM:</span> {rec.source_node}
+                                        <span className="mx-2">→</span>
+                                        <span className="font-semibold text-green-700 dark:text-green-300">TO:</span> {rec.target_node}
+                                      </div>
+
+                                      <div className="bg-white dark:bg-gray-800 rounded p-3 mb-2">
+                                        <div className="flex items-start gap-2 mb-1">
+                                          <Shield size={16} className="text-blue-600 dark:text-blue-400 mt-0.5" />
+                                          <div className="flex-1">
+                                            <span className="font-semibold text-sm">AI Reasoning:</span>
+                                            <p className="text-sm mt-1">{rec.reasoning}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 text-xs mb-2">
+                                        <AlertTriangle size={14} className={riskColor} />
+                                        <span className="font-medium">Risk Score:</span>
+                                        <span className={`font-bold ${riskColor}`}>{((rec.risk_score || 0) * 100).toFixed(0)}%</span>
+                                      </div>
+
+                                      {rec.estimated_impact && (
+                                        <div className="bg-green-50 dark:bg-green-900/30 rounded p-2 text-xs">
+                                          <span className="font-semibold">Expected Impact:</span> {rec.estimated_impact}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <button
+                                      onClick={() => {
+                                        // Use the AI-specific key format
+                                        const aiKey = `ai-${rec.vmid}-${rec.target_node}`;
+                                        setMigrationStatus(prev => ({ ...prev, [aiKey]: 'running' }));
+
+                                        fetch(`${API_BASE}/migrate`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            source_node: rec.source_node,
+                                            vmid: rec.vmid,
+                                            target_node: rec.target_node,
+                                            type: rec.type
+                                          })
+                                        })
+                                        .then(response => response.json())
+                                        .then(result => {
+                                          setMigrationStatus(prev => ({
+                                            ...prev,
+                                            [aiKey]: result.success ? 'success' : 'failed'
+                                          }));
+                                          if (result.success) {
+                                            alert(`Migration started for ${rec.type} ${rec.vmid} (${rec.name || 'unnamed'}).\n\nCheck Proxmox cluster task logs for migration status and progress.`);
+                                            setTimeout(() => fetchAnalysis(), 5000);
+                                          }
+                                        })
+                                        .catch(() => {
+                                          setMigrationStatus(prev => ({ ...prev, [aiKey]: 'failed' }));
+                                        });
+                                      }}
+                                      disabled={status === 'running' || status === 'success'}
+                                      className="px-4 py-2 bg-purple-600 dark:bg-purple-500 text-white rounded hover:bg-purple-700 dark:hover:bg-purple-600 disabled:bg-gray-400 flex items-center gap-2 shrink-0"
+                                    >
+                                      {status === 'running' ? (
+                                        <>
+                                          <RefreshCw size={16} className="animate-spin" />
+                                          Starting...
+                                        </>
+                                      ) : status === 'success' ? (
+                                        <>
+                                          <CheckCircle size={16} />
+                                          Started
+                                        </>
+                                      ) : status === 'failed' ? (
+                                        <>
+                                          <XCircle size={16} />
+                                          Failed
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Play size={16} />
+                                          Migrate
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
+            {showUpdateModal && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw size={24} className={updating ? "text-blue-600 dark:text-blue-400 animate-spin" : "text-blue-600 dark:text-blue-400"} />
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Update ProxBalance</h2>
+                    </div>
+                    {!updating && (
+                      <button
+                        onClick={() => setShowUpdateModal(false)}
+                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                      >
+                        <X size={20} className="text-gray-600 dark:text-gray-400" />
+                      </button>
+                    )}
+                  </div>
+
+                  {systemInfo && !updating && updateLog.length === 0 && (
+                    <div className="space-y-4">
+                      <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0">
+                            <RefreshCw size={24} className="text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-blue-900 dark:text-blue-200 mb-2">Update Available</h3>
+                            <div className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
+                              <p><span className="font-medium">Current Branch:</span> {systemInfo.branch}</p>
+                              <p><span className="font-medium">Current Commit:</span> {systemInfo.commit}</p>
+                              <p><span className="font-medium">Commits Behind:</span> {systemInfo.commits_behind}</p>
+                              <p><span className="font-medium">Last Updated:</span> {systemInfo.last_commit_date}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded p-4">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle size={20} className="text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+                          <div className="text-sm text-yellow-800 dark:text-yellow-300">
+                            <p className="font-semibold mb-1">This will:</p>
+                            <ul className="list-disc ml-4 space-y-1">
+                              <li>Pull the latest code from branch: <span className="font-mono">{systemInfo.branch}</span></li>
+                              <li>Update Python dependencies</li>
+                              <li>Restart ProxBalance services</li>
+                              <li>The page will automatically reload after update</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setShowUpdateModal(false)}
+                          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleUpdate}
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600"
+                        >
+                          <RefreshCw size={18} />
+                          Update Now
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {(updating || updateLog.length > 0) && (
+                    <div className="space-y-4">
+                      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
+                        <div className="font-mono text-sm space-y-1">
+                          {updateLog.map((line, idx) => (
+                            <div key={idx} className="text-gray-800 dark:text-gray-200">
+                              {line.includes('✓') ? (
+                                <span className="text-green-600 dark:text-green-400">{line}</span>
+                              ) : line.includes('Error') || line.includes('⚠') || line.includes('Failed') ? (
+                                <span className="text-red-600 dark:text-red-400">{line}</span>
+                              ) : line.includes('━') ? (
+                                <span className="text-blue-600 dark:text-blue-400">{line}</span>
+                              ) : (
+                                <span>{line}</span>
+                              )}
+                            </div>
+                          ))}
+                          {updating && (
+                            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                              <RefreshCw size={16} className="animate-spin" />
+                              <span>Updating...</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {!updating && (
+                        <div className="flex justify-end">
+                          <button
+                            onClick={() => {
+                              setShowUpdateModal(false);
+                              setUpdateLog([]);
+                            }}
+                            className="px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {showSettings && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
-                  <div className="flex items-center justify-between mb-6">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col my-8">
+                  <div className="flex items-center justify-between p-6 pb-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                     <div className="flex items-center gap-2">
                       <Settings size={24} className="text-blue-600 dark:text-blue-400" />
                       <h2 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
                     </div>
-                    <button 
+                    <button
                       onClick={() => setShowSettings(false)}
                       className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
                     >
@@ -668,7 +1618,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     </button>
                   </div>
 
-                  <div className="space-y-6">
+                  <div className="space-y-6 p-6 overflow-y-auto flex-1">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Backend Collection Interval
@@ -721,9 +1671,269 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         Current setup: UI refreshes every {tempUiInterval}m, data collected every {tempBackendInterval}m.
                       </p>
                     </div>
+
+                    <hr className="border-gray-300 dark:border-gray-600" />
+
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Proxmox API Configuration</h3>
+                      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            API Token ID
+                          </label>
+                          <input
+                            type="text"
+                            value={proxmoxTokenId}
+                            onChange={(e) => setProxmoxTokenId(e.target.value)}
+                            placeholder="root@pam!proxbalance"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Format: user@realm!tokenname (e.g., root@pam!proxbalance)
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            API Token Secret
+                          </label>
+                          <input
+                            type="password"
+                            value={proxmoxTokenSecret}
+                            onChange={(e) => setProxmoxTokenSecret(e.target.value)}
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            The UUID token secret from Proxmox
+                          </p>
+                        </div>
+                        <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3">
+                          <p className="text-sm text-blue-900 dark:text-blue-200">
+                            <strong>Tip:</strong> Use the installation script to automatically create an API token with proper permissions.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <hr className="border-gray-300 dark:border-gray-600" />
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        AI-Powered Recommendations
+                      </label>
+                      <div className="flex items-center mb-4">
+                        <input
+                          type="checkbox"
+                          checked={aiEnabled}
+                          onChange={(e) => setAiEnabled(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                          Enable AI-Enhanced Migration Recommendations
+                        </label>
+                      </div>
+                    </div>
+
+                    {aiEnabled && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            AI Provider
+                          </label>
+                          <select
+                            value={aiProvider}
+                            onChange={(e) => setAiProvider(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          >
+                            <option value="none">None</option>
+                            <option value="openai">OpenAI (GPT-4)</option>
+                            <option value="anthropic">Anthropic (Claude)</option>
+                            <option value="local">Local LLM (Ollama)</option>
+                          </select>
+                        </div>
+
+                        {aiProvider === 'openai' && (
+                          <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                            <h4 className="font-medium text-gray-900 dark:text-white">OpenAI Configuration</h4>
+                            <div>
+                              <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                API Key
+                              </label>
+                              <input
+                                type="password"
+                                value={openaiKey}
+                                onChange={(e) => setOpenaiKey(e.target.value)}
+                                placeholder="sk-..."
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-sm text-gray-700 dark:text-gray-300">
+                                  Model Name
+                                </label>
+                                <button
+                                  onClick={() => fetchAiModels('openai', openaiKey)}
+                                  disabled={!openaiKey || openaiLoadingModels}
+                                  className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                                >
+                                  {openaiLoadingModels ? 'Loading...' : 'Refresh Models'}
+                                </button>
+                              </div>
+                              {openaiAvailableModels.length > 0 ? (
+                                <>
+                                  <select
+                                    value={openaiModel}
+                                    onChange={(e) => setOpenaiModel(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  >
+                                    {openaiAvailableModels.map(model => (
+                                      <option key={model} value={model}>{model}</option>
+                                    ))}
+                                  </select>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Select from available models or enter custom name below
+                                  </p>
+                                  <input
+                                    type="text"
+                                    value={openaiModelCustom}
+                                    onChange={(e) => setOpenaiModelCustom(e.target.value)}
+                                    placeholder="Or enter custom model (e.g., gpt-4-0125-preview)"
+                                    className="w-full px-3 py-2 mt-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <input
+                                    type="text"
+                                    value={openaiModel}
+                                    onChange={(e) => setOpenaiModel(e.target.value)}
+                                    placeholder="gpt-4o"
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                  />
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <a href="https://platform.openai.com/docs/models" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                                      View available models
+                                    </a>
+                                    {' '}- Enter model name or click "Refresh Models" to fetch from API
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {aiProvider === 'anthropic' && (
+                          <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                            <h4 className="font-medium text-gray-900 dark:text-white">Anthropic Configuration</h4>
+                            <div>
+                              <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                API Key
+                              </label>
+                              <input
+                                type="password"
+                                value={anthropicKey}
+                                onChange={(e) => setAnthropicKey(e.target.value)}
+                                placeholder="sk-ant-..."
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                Model Name
+                              </label>
+                              <input
+                                type="text"
+                                value={anthropicModel}
+                                onChange={(e) => setAnthropicModel(e.target.value)}
+                                placeholder="claude-3-5-sonnet-20241022"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                              />
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                <a href="https://docs.anthropic.com/en/docs/about-claude/models" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                                  View available models
+                                </a>
+                                {' '}- Common: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022, claude-3-opus-20240229
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {aiProvider === 'local' && (
+                          <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                            <h4 className="font-medium text-gray-900 dark:text-white">Local LLM Configuration (Ollama)</h4>
+                            <div>
+                              <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                Base URL
+                              </label>
+                              <input
+                                type="text"
+                                value={localUrl}
+                                onChange={(e) => setLocalUrl(e.target.value)}
+                                placeholder="http://localhost:11434"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-sm text-gray-700 dark:text-gray-300">
+                                  Model Name
+                                </label>
+                                <button
+                                  onClick={() => fetchAiModels('local', null, localUrl)}
+                                  disabled={localLoadingModels}
+                                  className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                                >
+                                  {localLoadingModels ? 'Loading...' : 'Refresh Models'}
+                                </button>
+                              </div>
+                              {localAvailableModels.length > 0 ? (
+                                <>
+                                  <select
+                                    value={localModel}
+                                    onChange={(e) => setLocalModel(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  >
+                                    {localAvailableModels.map(model => (
+                                      <option key={model} value={model}>{model}</option>
+                                    ))}
+                                  </select>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Select from installed models or enter custom name below
+                                  </p>
+                                  <input
+                                    type="text"
+                                    value={localModelCustom}
+                                    onChange={(e) => setLocalModelCustom(e.target.value)}
+                                    placeholder="Or enter custom model (e.g., llama2, mistral, codellama)"
+                                    className="w-full px-3 py-2 mt-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <input
+                                    type="text"
+                                    value={localModel}
+                                    onChange={(e) => setLocalModel(e.target.value)}
+                                    placeholder="llama2"
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                  />
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                                      Browse Ollama models
+                                    </a>
+                                    {' '}- Enter model name or click "Refresh Models" to list installed models
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex gap-3 mt-6">
+                  <div className="flex gap-3 p-6 pt-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
                     <button
                       onClick={() => setShowSettings(false)}
                       className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"

@@ -19,7 +19,7 @@ This checks:
 - ✅ All service status (API, Collector, Nginx)
 - ✅ Data collection status and cache age
 - ✅ API health and endpoints
-- ✅ SSH connectivity to all cluster nodes
+- ✅ Proxmox API token validation and connectivity
 - ✅ Quick action commands
 
 ### Service Debugger
@@ -652,6 +652,209 @@ EOF'
 # Restart services
 pct exec <ctid> -- systemctl restart proxmox-balance proxmox-collector.timer
 ```
+
+---
+
+## 🤖 AI Recommendations Issues
+
+### AI recommendations not appearing
+
+**Problem:** AI features enabled but no recommendations showing.
+
+**Solutions:**
+```bash
+# 1. Verify AI is enabled in config
+pct exec <ctid> -- jq '.ai_enabled' /opt/proxmox-balance-manager/config.json
+# Should return: true
+
+# 2. Check AI provider is configured
+pct exec <ctid> -- jq '.ai_provider, .ai_api_key' /opt/proxmox-balance-manager/config.json
+
+# 3. Check API logs for AI errors
+pct exec <ctid> -- journalctl -u proxmox-balance -n 100 | grep -i "ai\|anthropic\|openai\|ollama"
+
+# 4. Test AI API connectivity manually
+# For OpenAI:
+curl https://api.openai.com/v1/models \
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+# For Anthropic:
+curl https://api.anthropic.com/v1/messages \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "content-type: application/json" \
+  -d '{"model":"claude-3-5-sonnet-20241022","max_tokens":10,"messages":[{"role":"user","content":"test"}]}'
+
+# For Ollama:
+curl http://<ollama-host>:11434/api/version
+```
+
+**Common Causes:**
+- Invalid or expired API key
+- Network connectivity issues
+- Ollama service not running
+- Insufficient API credits (OpenAI/Anthropic)
+- Model name incorrect or not available
+
+### Error: "AI API request failed"
+
+**Problem:** AI provider returns errors.
+
+**OpenAI Errors:**
+```bash
+# Error: 401 Unauthorized
+# - Check API key is correct
+# - Verify key hasn't been revoked at https://platform.openai.com/api-keys
+
+# Error: 429 Rate Limit Exceeded
+# - Reduce analysis frequency
+# - Upgrade API plan
+# - Wait and retry
+
+# Error: 500 Internal Server Error
+# - OpenAI service issue
+# - Try again later
+# - Switch to different provider temporarily
+```
+
+**Anthropic Errors:**
+```bash
+# Error: 401 authentication_error
+# - Check API key format
+# - Verify key at https://console.anthropic.com/settings/keys
+
+# Error: 429 rate_limit_error
+# - Reduce request frequency
+# - Check usage limits
+
+# Error: 529 overloaded_error
+# - Anthropic service overloaded
+# - Retry with exponential backoff
+```
+
+**Ollama Errors:**
+```bash
+# Error: Connection refused
+# Ollama service not running
+
+# Check Ollama status
+ssh <ollama-host> systemctl status ollama
+
+# Start Ollama
+ssh <ollama-host> systemctl start ollama
+
+# Error: Model not found
+# Pull the model
+
+ssh <ollama-host> ollama pull llama3.1:8b
+
+# List available models
+ssh <ollama-host> ollama list
+
+# Error: Out of memory
+# Model too large for available RAM
+# - Use smaller model (llama3.1:8b instead of :70b)
+# - Increase system RAM
+# - Use quantized models (fewer bits)
+```
+
+### Ollama connection issues
+
+**Problem:** Can't connect to Ollama from ProxBalance container.
+
+**Solutions:**
+```bash
+# 1. Verify Ollama is accessible from container
+pct exec <ctid> -- curl http://<ollama-host>:11434/api/version
+
+# 2. Check firewall on Ollama host
+# On Ollama host:
+ufw status
+# If blocking, allow ProxBalance container IP:
+ufw allow from <container-ip> to any port 11434
+
+# 3. Verify Ollama is listening on all interfaces
+# On Ollama host, check:
+ss -tlnp | grep 11434
+# Should show 0.0.0.0:11434 or *:11434
+
+# If only listening on 127.0.0.1, edit systemd service:
+# /etc/systemd/system/ollama.service
+# Add: Environment="OLLAMA_HOST=0.0.0.0:11434"
+systemctl daemon-reload
+systemctl restart ollama
+
+# 4. Test model inference
+ssh <ollama-host> 'ollama run llama3.1:8b "test"'
+```
+
+### AI recommendations are irrelevant or poor quality
+
+**Problem:** AI suggests migrations that don't make sense.
+
+**Solutions:**
+
+1. **Adjust analysis time period:**
+   - Short period (1h) = only recent trends, may miss patterns
+   - Long period (7d) = comprehensive but may include old data
+   - Recommended: 24h for most clusters
+
+2. **Ensure sufficient historical data:**
+   ```bash
+   # Check RRD data availability in cache
+   pct exec <ctid> -- jq '.nodes | .[].trend_data | length' /opt/proxmox-balance-manager/cluster_cache.json
+
+   # Should show many data points (varies by period)
+   # If low, wait for more data collection cycles
+   ```
+
+3. **Try different AI model:**
+   - GPT-4: Most accurate, highest cost
+   - Claude 3.5 Sonnet: Balanced accuracy/cost
+   - GPT-3.5: Faster, lower cost, less accurate
+   - Ollama llama3.1:70b: Best local model (if hardware allows)
+   - Ollama llama3.1:8b: Faster local model, less accurate
+
+4. **Review AI reasoning:**
+   - AI recommendations include detailed reasoning
+   - Read the explanation to understand why migration was suggested
+   - May reveal insights about your cluster patterns
+
+### AI recommendations include non-existent nodes
+
+**Problem:** AI hallucinates node names or recommends migrations to nodes that don't exist.
+
+**Solution:**
+
+This should be prevented by the smart filtering feature in v2.0, but if it occurs:
+
+```bash
+# 1. Verify current filtering is working
+pct exec <ctid> -- journalctl -u proxmox-balance -n 200 | grep "Filtered out"
+
+# Should show lines like:
+# "Filtered out 2 AI recommendations (hallucinated nodes or self-migrations)"
+
+# 2. Check if issue persists after filtering
+# View AI recommendations in web UI
+# Any with target_node not in your cluster = bug, please report
+
+# 3. Temporarily disable AI
+# In Settings, toggle off "Enable AI Recommendations"
+# Use traditional recommendations until issue resolved
+
+# 4. Report the issue
+# Open GitHub issue with:
+# - AI provider and model used
+# - Cluster configuration (node names)
+# - Example of bad recommendation
+```
+
+**Note:** v2.0+ includes validation that:
+- Filters recommendations where source == target
+- Filters recommendations with target nodes not in cluster
+- Prevents self-migrations
+- Reports filtering statistics in logs
 
 ---
 
