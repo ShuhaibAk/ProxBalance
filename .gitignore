@@ -17,8 +17,10 @@ instance/
 .webassets-cache
 
 # Cache files
+cache.json
 cluster_cache.json
 cluster_cache.json.tmp
+dev-cache/cache.json
 
 # IDE
 .vscode/
@@ -33,12 +35,9 @@ cluster_cache.json.tmp
 *.log.*
 
 # Configuration (with sensitive data)
+config.json
 config.local.json
-
-# SSH keys
-*.pub
-id_*
-known_hosts
+dev-cache/config.json
 
 # Backup files
 *.backup

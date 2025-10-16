@@ -13,7 +13,7 @@
 
 **Automated cluster load balancing and intelligent VM/CT migration for Proxmox VE**
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Usage](#-usage) • [Documentation](#-documentation)
+[Quick Start](#quick-start) • [Features](#features) • [Documentation](docs/README.md) • [AI Features](docs/AI_FEATURES.md) • [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ---
 
@@ -42,10 +42,12 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
 
 - **Real-time Monitoring** - Track CPU, memory, and load across all nodes
 - **Smart Recommendations** - Migration suggestions based on historical data
+- **AI-Powered Analysis** (v2.0) - Optional AI recommendations using GPT-4, Claude, or local LLMs
 - **Anti-Affinity Rules** - Tag-based system to enforce workload separation
 - **One-Click Migrations** - Execute individual or batch migrations from the web UI
 - **Zero Downtime** - Online migration for VMs, restart migration for containers
 - **Dark Mode** - Beautiful, modern interface with light/dark themes
+- **Enhanced Installer** (v2.0) - Beautiful visual interface with progress tracking
 
 ---
 
@@ -64,6 +66,12 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
   - Uses historical averages when available, falls back to current metrics
   - Considers both CPU and memory thresholds
   - Selects smallest guests first for efficient rebalancing
+- **AI-Powered Analysis** (Optional) - Advanced migration recommendations
+  - **Multiple AI Provider Support**: OpenAI (GPT-4), Anthropic (Claude), Local LLM (Ollama)
+  - **Configurable Time Periods**: Analyze cluster trends over 1 hour, 6 hours, 24 hours, or 7 days
+  - **Context-Aware Recommendations**: AI analyzes historical patterns, node capabilities, and workload characteristics
+  - **Smart Filtering**: Prevents hallucinated recommendations and self-migrations
+  - **Detailed Reasoning**: Each AI recommendation includes explanation of why it was suggested
 - **Anti-affinity enforcement** to prevent conflicting workloads on same nodes
   - Validates exclusion groups before suggesting migrations
   - Prevents migrations that would violate affinity rules
@@ -85,7 +93,7 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
   - `exclude_<group>` - Anti-affinity groups (prevents guests with same tag from being on same node)
 - **Customizable thresholds** for CPU (40-90%) and memory (50-95%)
 - **Flexible scheduling** with adjustable collection intervals (5-240 minutes)
-- **SSH-based architecture** using ed25519 keys for secure, direct Proxmox control
+- **API-based architecture** using Proxmox API tokens for secure, fast communication
 - **Automatic configuration validation** with detailed error messages
 - **Dynamic timer updates** - collection intervals update systemd timer in real-time
 
@@ -110,15 +118,21 @@ ProxBalance is a comprehensive web-based cluster balance analyzer and automated 
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
 ```
 
+**The enhanced installer v2.0** features:
+- 🎨 **Beautiful visual interface** with colors, animations, and progress indicators
+- ⚡ **Real-time progress tracking** with spinning status icons
+- 📊 **Detailed installation steps** showing exactly what's happening
+- ✅ **Smart validation** with comprehensive error checking
+
 The installer will:
 1. **Auto-detect your cluster nodes** using multiple methods (corosync.conf, /etc/pve/nodes/, pvecm, pvesh)
 2. **Create an unprivileged LXC container** (default ID: next available, auto-incremented)
 3. **Configure networking** - DHCP (auto-detected) or static IP
-4. **Install all dependencies** - Python 3.8+, Flask, Gunicorn, Nginx, jq, curl, git
-5. **Setup SSH keys** - Generate ed25519 keys and distribute to all nodes in parallel
+4. **Install all dependencies** - Python 3.8+, Flask, Gunicorn, Nginx, jq, curl, git (with detailed progress)
+5. **Setup API authentication** - Create Proxmox API token with appropriate permissions
 6. **Deploy and start all services** - API, collector timer, and web server
-7. **Trigger initial data collection** - Background collection starts immediately
-8. **Verify installation** - Tests SSH connectivity and service status
+7. **Wait for initial data collection** - Monitors collection progress with animations (up to 3 attempts, 60s each)
+8. **Verify installation** - Tests API connectivity and service status
 
 #### Manual Install
 
@@ -137,12 +151,15 @@ The installer automatically configures most settings, but you should verify:
 
 3. **Verify cluster detection**
    - Check that all nodes appear in the dashboard
-   - Verify SSH connectivity to all nodes
+   - Verify API connectivity is working
 
 4. **Adjust settings** (optional)
-   - Click ⚙️ Settings icon
+   - Click ⚙️ Settings icon (positioned at top-right corner)
    - Customize collection intervals (default: 60 min)
    - Customize UI refresh intervals (default: 15 min)
+   - Enable AI-powered migration recommendations (optional)
+   - Configure AI provider (OpenAI, Anthropic, or Ollama)
+   - Select analysis time period (1h, 6h, 24h, or 7d)
 
 ### Quick Health Check
 
@@ -154,10 +171,36 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main
 
 This provides a comprehensive health report including:
 - Container status
-- Service status
+- Service status (API, collector timer, web server)
 - Cache age and content
-- API health
-- SSH connectivity to all nodes
+- API health checks
+- Proxmox API token validation and connectivity test
+
+---
+
+## 📚 Documentation
+
+### Complete Documentation Index
+
+**➡️ [Documentation Home](docs/README.md)** - Complete documentation index with table of contents
+
+### Quick Links
+
+| Document | Description |
+|----------|-------------|
+| **[Installation Guide](docs/INSTALL.md)** | Complete installation instructions, AI setup, security hardening |
+| **[Troubleshooting](docs/TROUBLESHOOTING.md)** | Solutions to common issues, diagnostic commands |
+| **[AI Features](docs/AI_FEATURES.md)** | AI-powered recommendations setup and usage |
+| **[AI Quick Setup](docs/AI_INSTALL.md)** | Fast configuration for OpenAI, Anthropic, Ollama |
+| **[Contributing](docs/CONTRIBUTING.md)** | How to contribute to ProxBalance |
+| **[Docker Dev](docs/DOCKER_DEV.md)** | Local development environment setup |
+
+### Topics
+
+- **Getting Started**: [Quick Start](#quick-start) • [Installation](docs/INSTALL.md) • [Configuration](#configuration)
+- **Features**: [Cluster Monitoring](#cluster-monitoring) • [Intelligent Balancing](#intelligent-balancing) • [AI Features](docs/AI_FEATURES.md)
+- **Usage**: [Tagging Guests](#tagging-guests) • [API Endpoints](#api-endpoints) • [Usage Guide](#usage)
+- **Help**: [Troubleshooting](docs/TROUBLESHOOTING.md) • [GitHub Issues](https://github.com/Pr0zak/ProxBalance/issues) • [Discussions](https://github.com/Pr0zak/ProxBalance/discussions)
 
 ---
 
@@ -171,19 +214,90 @@ Location: `/opt/proxmox-balance-manager/config.json`
 {
   "collection_interval_minutes": 60,
   "ui_refresh_interval_minutes": 15,
-  "proxmox_host": "10.0.0.3"
+  "proxmox_host": "10.0.0.3",
+  "proxmox_port": 8006,
+  "proxmox_api_token_id": "root@pam!proxbalance",
+  "proxmox_api_token_secret": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "ai_provider": "openai",
+  "ai_api_key": "sk-...",
+  "ai_model": "gpt-4",
+  "ai_analysis_period": "24h"
 }
 ```
 
-### Configuration Options
+### Core Configuration Options
 
 | Option | Description | Default | Range |
 |--------|-------------|---------|-------|
 | `collection_interval_minutes` | How often to collect cluster data | 60 | 5-240 |
 | `ui_refresh_interval_minutes` | How often the UI auto-refreshes | 15 | 5-120 |
 | `proxmox_host` | Primary Proxmox host IP | Auto-detected | Any valid IP/hostname |
+| `proxmox_port` | Proxmox API port | 8006 | Any valid port |
+| `proxmox_api_token_id` | API token ID (format: user@realm!tokenname) | Set by installer | - |
+| `proxmox_api_token_secret` | API token secret | Set by installer | - |
 
 **Note:** Set UI interval ≤ backend interval for best experience.
+
+### AI Provider Configuration (Optional)
+
+ProxBalance supports optional AI-powered migration recommendations through multiple providers:
+
+#### Supported AI Providers
+
+| Provider | Description | API Key Required | Cost |
+|----------|-------------|------------------|------|
+| **OpenAI** | GPT-4/GPT-3.5 models | Yes | Pay-per-use |
+| **Anthropic** | Claude 3.5 Sonnet/Haiku | Yes | Pay-per-use |
+| **Ollama** | Local LLM (self-hosted) | No | Free |
+
+#### AI Configuration Options
+
+| Option | Description | Default | Options |
+|--------|-------------|---------|---------|
+| `ai_enabled` | Enable AI recommendations | false | true/false |
+| `ai_provider` | AI provider to use | openai | openai, anthropic, ollama |
+| `ai_api_key` | API key (OpenAI/Anthropic) | - | Your API key |
+| `ai_model` | Model name | gpt-4 | See provider docs |
+| `ai_base_url` | Ollama base URL | http://localhost:11434 | Any valid URL |
+| `ai_analysis_period` | Historical data timeframe | 24h | 1h, 6h, 24h, 7d |
+
+#### Configuring AI via Web Interface
+
+1. Click ⚙️ Settings icon (top-right)
+2. Scroll to "AI-Enhanced Migration Recommendations"
+3. Toggle "Enable AI Recommendations"
+4. Select your AI provider from dropdown
+5. Enter required credentials:
+   - **OpenAI**: Enter API key (from https://platform.openai.com/api-keys)
+   - **Anthropic**: Enter API key (from https://console.anthropic.com/settings/keys)
+   - **Ollama**: Enter base URL (default: http://localhost:11434)
+6. Select analysis time period (1 hour, 6 hours, 24 hours, or 7 days)
+7. Click "Save Settings"
+
+#### Setting Up Ollama (Local LLM)
+
+For self-hosted AI recommendations without API costs:
+
+```bash
+# Install Ollama on a server with GPU (recommended) or CPU
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull a recommended model (adjust based on your hardware)
+ollama pull llama3.1:8b  # Smaller, faster (8GB RAM)
+ollama pull llama3.1:70b # Larger, more accurate (48GB+ RAM)
+
+# In ProxBalance settings:
+# - AI Provider: Ollama
+# - Base URL: http://<ollama-server-ip>:11434
+# - Model: llama3.1:8b (or your chosen model)
+```
+
+**Benefits of AI Recommendations:**
+- Analyzes historical trends over configurable time periods
+- Considers workload patterns and node capabilities
+- Provides detailed reasoning for each recommendation
+- Helps prevent migrations during peak usage times
+- Identifies optimal target nodes based on resource trends
 
 ### Updating Configuration
 
@@ -245,8 +359,13 @@ curl http://<container-ip>/api/health
 # Get cluster analysis
 curl http://<container-ip>/api/analyze
 
-# Get migration recommendations
+# Get migration recommendations (traditional)
 curl -X POST http://<container-ip>/api/recommendations \
+  -H "Content-Type: application/json" \
+  -d '{"cpu_threshold": 60, "mem_threshold": 70}'
+
+# Get AI-powered recommendations (v2.0)
+curl -X POST http://<container-ip>/api/ai-recommendations \
   -H "Content-Type: application/json" \
   -d '{"cpu_threshold": 60, "mem_threshold": 70}'
 
@@ -281,7 +400,12 @@ curl -X POST http://<container-ip>/api/config \
   -H "Content-Type: application/json" \
   -d '{
     "collection_interval_minutes": 30,
-    "ui_refresh_interval_minutes": 15
+    "ui_refresh_interval_minutes": 15,
+    "ai_enabled": true,
+    "ai_provider": "anthropic",
+    "ai_api_key": "sk-ant-...",
+    "ai_model": "claude-3-5-sonnet-20241022",
+    "ai_analysis_period": "24h"
   }'
 ```
 
@@ -306,8 +430,8 @@ pct exec <ctid> -- systemctl start proxmox-collector.service
 # Restart all services
 pct exec <ctid> -- systemctl restart proxmox-balance proxmox-collector.timer nginx
 
-# Check SSH connectivity to nodes
-pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ssh root@$node "echo OK"; done'
+# Trigger manual data collection
+pct exec <ctid> -- systemctl start proxmox-collector.service
 ```
 ---
 
@@ -353,9 +477,17 @@ pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ss
 ┌─────────────────────────────────────────────────────┐
 │              Flask API (Gunicorn)                   │
 │         Port 5000 - REST endpoints                  │
-└────────────────────┬────────────────────────────────┘
-                     │
-                     ▼
+│              + AI Provider Layer                    │
+└─────┬───────────────────────────────────────────┬───┘
+      │                                           │
+      │  ┌────────────────────────────────────┐  │
+      │  │  AI Providers (Optional)           │  │
+      │  │  - OpenAI (GPT-4)                  │  │
+      │  │  - Anthropic (Claude)              │  │
+      │  │  - Ollama (Local LLM)              │  │
+      │  └────────────────────────────────────┘  │
+      │                                           │
+      ▼                                           ▼
 ┌─────────────────────────────────────────────────────┐
 │          cluster_cache.json (Cache)                 │
 │         (Read by API, written by collector)         │
@@ -364,13 +496,13 @@ pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ss
                      ▼
 ┌─────────────────────────────────────────────────────┐
 │       Background Collector (systemd timer)          │
-│    Runs every N minutes, collects via SSH           │
+│    Runs every N minutes, collects via API           │
 └────────────────────┬────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────┐
-│            Proxmox Cluster (SSH)                    │
-│        pvesh commands to nodes via SSH              │
+│       Proxmox Cluster (API w/ Token Auth)           │
+│        Proxmox API calls via proxmoxer library      │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -378,10 +510,11 @@ pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ss
 
 - **Frontend**: React with Tailwind CSS (single-page application in index.html)
 - **Backend API**: Flask + Gunicorn (Python 3.8+) on port 5000
+- **AI Provider Layer**: ai_provider.py - Abstraction for OpenAI, Anthropic, and Ollama (optional)
 - **Web Server**: Nginx (reverse proxy + static files) on port 80
-- **Data Collector**: Python script (collector.py) with systemd timer
+- **Data Collector**: Python script (collector_api.py) with systemd timer
 - **Cache**: JSON file (cluster_cache.json) with atomic writes for fast API responses
-- **Communication**: SSH with ed25519 keys (passwordless key-based auth)
+- **Communication**: Proxmox API with token-based authentication via proxmoxer library
 - **Configuration Manager**: update_timer.py dynamically updates systemd timers
 - **Settings CLI**: manage_settings.sh for command-line configuration management
 
@@ -391,17 +524,20 @@ pct exec <ctid> -- bash -c 'for node in pve1 pve2 pve3; do echo -n "$node: "; ss
 
 ```
 ProxBalance/
-├── app.py                      # Flask API server (8 endpoints)
-├── collector.py                # Background data collector with RRD analysis
+├── app.py                      # Flask API server (REST endpoints)
+├── ai_provider.py              # AI provider abstraction (OpenAI, Anthropic, Ollama)
+├── collector_api.py            # Background data collector with RRD analysis (API-based)
 ├── index.html                  # React web interface (single-page app)
 ├── config.json                 # Runtime configuration file
 ├── config.example.json         # Example configuration template
 ├── manage_settings.sh          # Settings CLI tool
 ├── update_timer.py             # Dynamic systemd timer updater
-├── install.sh                  # Automated installer with node auto-detection
-├── bootstrap-install.sh        # Bootstrap installer (downloads and runs install.sh)
+├── install.sh                  # Automated installer v2.0 with visual enhancements
 ├── check-status.sh             # Comprehensive status checker script
 ├── debug-services.sh           # Service debugger tool
+├── create_api_token.sh         # Helper script to create Proxmox API tokens
+├── test_api_token.sh           # Test API token connectivity
+├── post_update.sh              # Post-update script for upgrades
 ├── systemd/
 │   ├── proxmox-balance.service       # Flask API systemd service
 │   ├── proxmox-collector.service     # Data collector service
@@ -409,23 +545,29 @@ ProxBalance/
 ├── nginx/
 │   └── proxmox-balance               # Nginx reverse proxy config
 ├── docs/
+│   ├── README.md                     # Documentation index and table of contents
 │   ├── INSTALL.md                    # Detailed installation guide
-│   └── TROUBLESHOOTING.md            # Comprehensive troubleshooting guide
+│   ├── TROUBLESHOOTING.md            # Comprehensive troubleshooting guide
+│   ├── AI_FEATURES.md                # AI recommendations documentation
+│   ├── AI_INSTALL.md                 # Quick AI setup guide
+│   ├── CONTRIBUTING.md               # Contribution guidelines
+│   ├── DOCKER_DEV.md                 # Docker development environment
+│   └── images/                       # Screenshots and documentation images
 ├── assets/
 │   ├── logo.svg                      # ProxBalance logo
 │   └── favicon.svg                   # Browser favicon
 ├── LICENSE                     # MIT License
-├── CONTRIBUTING.md             # Contribution guidelines
-└── README.md                   # This file
+└── README.md                   # This file (you are here)
 ```
 
 ---
 
 ## 🔒 Security
 
-ProxBalance uses SSH key-based authentication to communicate with Proxmox nodes:
+ProxBalance uses Proxmox API tokens for authentication:
 
-- **No passwords stored** - All authentication via SSH keys
+- **No passwords stored** - All authentication via API tokens
+- **Token-based auth** - Separate token secret, not shared with user password
 - **Unprivileged container** - Runs as unprivileged LXC
 - **Local network only** - Designed for internal cluster networks
 - **API on localhost** - Nginx proxies, no direct external access to Flask
@@ -436,7 +578,7 @@ ProxBalance uses SSH key-based authentication to communicate with Proxmox nodes:
 2. **Implement firewall rules** to restrict web interface access
 3. **Consider SSL/TLS** with Let's Encrypt if exposing externally
 4. **Regular audits** - Review migration logs for unexpected activity
-5. **SSH key rotation** - Periodically regenerate SSH keys
+5. **API token rotation** - Periodically regenerate API tokens
 6. **Network isolation** - Run on management VLAN if possible
 
 ### Optional Security Hardening
@@ -494,34 +636,30 @@ pct exec <ctid> -- systemctl restart proxmox-balance
 pct exec <ctid> -- journalctl -u proxmox-balance -n 50
 ```
 
-#### SSH connectivity issues
+#### API connectivity issues
 
 ```bash
-# Test SSH from container
-pct exec <ctid> -- ssh root@<node-name> "echo OK"
+# Check API token configuration
+pct exec <ctid> -- cat /opt/proxmox-balance-manager/config.json | jq '.proxmox_api_token_id, .proxmox_api_token_secret'
 
-# Check SSH key exists
-pct exec <ctid> -- ls -la /root/.ssh/id_ed25519*
+# Test API connection from container
+pct exec <ctid> -- python3 -c "from proxmoxer import ProxmoxAPI; print('API test successful')"
 
-# Regenerate SSH key if needed
-pct exec <ctid> -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
-
-# Get public key to add to nodes
-pct exec <ctid> -- cat /root/.ssh/id_ed25519.pub
+# View collector logs for API errors
+pct exec <ctid> -- journalctl -u proxmox-collector -n 50
 ```
 
 #### Migrations failing
 
 ```bash
-# Verify guest exists on source node
-ssh root@<source-node> "pct list | grep <vmid>"  # for CT
-ssh root@<source-node> "qm list | grep <vmid>"   # for VM
+# Check migration logs in container
+pct exec <ctid> -- journalctl -u proxmox-balance -n 50 | grep migrate
 
-# Check for locks
-ssh root@<source-node> "pct config <vmid> | grep lock"
+# Verify API token has migration permissions
+# Token needs Administrator or VM.Allocate + VM.Migrate privileges
 
-# View Proxmox task log
-ssh root@<source-node> "pvesh get /nodes/<source-node>/tasks"
+# Check cluster task log via web UI
+# Proxmox UI -> Datacenter -> Tasks
 ```
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions and comprehensive troubleshooting guides.
@@ -543,7 +681,7 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions an
 
 - **Container Idle**: ~200MB RAM, <5% CPU
 - **During Collection**: ~50-100MB RAM spike, 10-20% CPU for 30-60 seconds
-- **Network**: Minimal (SSH queries only, ~100KB per collection)
+- **Network**: Minimal (API queries only, ~100KB per collection)
 - **Storage**: <100MB total, cache file grows with cluster size
 
 ### Optimization Tips
@@ -557,41 +695,88 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions an
 
 ## 📝 Version History
 
-### Latest Version: 1.1.0 (January 2025)
+### Latest Version: 2.0.0 (January 2025) - AI-Powered & Enhanced Installer
 
-**Core Features:**
-- Real-time cluster monitoring with historical RRD data analysis (1-hour timeframe)
+**🤖 AI-Powered Migration Recommendations (New):**
+- Multiple AI provider support: OpenAI (GPT-4), Anthropic (Claude), Ollama (local LLM)
+- Configurable analysis time periods: 1h, 6h, 24h, 7d
+- Context-aware recommendations analyzing historical trends and workload patterns
+- Smart filtering to prevent hallucinated nodes and self-migrations
+- Detailed reasoning explanations for each AI recommendation
+- Cost-effective local LLM option via Ollama
+
+**🎨 Enhanced Installer v2.0 (New):**
+- Beautiful visual interface with colors, animations, and ASCII art
+- Real-time progress tracking with spinning status indicators (braille characters)
+- Detailed dependency installation progress (package lists, Python, Nginx, utilities)
+- Smart initial data collection with progress monitoring (3 retry attempts, 60s timeout)
+- Enhanced error messages and validation
+- Improved user prompts with better formatting
+
+**🔧 Core Features:**
+- Real-time cluster monitoring with configurable historical RRD data analysis (1h-7d timeframes)
 - Intelligent migration recommendations using averages when available
 - Tag-based anti-affinity rules (`ignore`, `exclude_<group>`)
 - Batch migration support with async, non-blocking execution
 - Configurable collection intervals (5-240 minutes) with dynamic systemd timer updates
 - Modern React-based web UI with dark/light mode support
 
-**Installation & Deployment:**
-- Automated installer with multi-method cluster node auto-detection
-- Parallel SSH key distribution to all cluster nodes
-- Bootstrap installer for one-command deployment
-- Unprivileged LXC container deployment
-- Automatic IP detection (DHCP) with static IP option
+**🖥️ UI Improvements:**
+- Larger, more prominent ProxBalance logo (96px) in dashboard header
+- GitHub icon and link integration (https://github.com/Pr0zak/ProxBalance)
+- Settings icon repositioned to top-right corner
+- Improved grid layout options for node status (1-4 column layouts)
+- Collapsible sections for Node Status and Tagged Guests (collapsed by default)
+- Mini status view when sections collapsed
+- CPU/Memory threshold sliders integrated into node charts
+- Enhanced chart rendering with period selectors
 
-**API & Backend:**
-- 8 REST API endpoints (health, analyze, refresh, recommendations, migrate, migrate/batch, config GET/POST)
+**🔐 Authentication & API:**
+- Proxmox API token-only authentication (SSH removed)
+- Enhanced API token permissions with clear documentation
+- 8 REST API endpoints including AI recommendations endpoint
 - Flask + Gunicorn WSGI server on port 5000
 - Nginx reverse proxy on port 80
 - Cached data architecture with atomic JSON writes
 - Configuration validation with detailed error messages
 
-**Administration Tools:**
-- Comprehensive status checker (check-status.sh)
+**📦 Installation & Deployment:**
+- Automated installer v2.0 with enhanced visual design
+- Multi-method cluster node auto-detection (corosync, pvesh, pvecm)
+- Proxmox API token setup with automatic token creation
+- Bootstrap installer for one-command deployment
+- Unprivileged LXC container deployment
+- Automatic IP detection (DHCP) with static IP option
+
+**🛠️ Administration Tools:**
+- Enhanced status checker (check-status.sh) with API-only focus
 - Service debugger (debug-services.sh)
 - Settings management CLI (manage_settings.sh)
 - Web-based settings configuration with auto-restart
+- AI provider configuration via web interface
 
-**Security:**
-- SSH-based communication using ed25519 keys
+**🔒 Security:**
+- API token-based authentication only (no SSH)
 - Unprivileged container architecture
 - No stored passwords or credentials
 - Local network design
+- Optional SSL/TLS support
+
+---
+
+### Version 1.1.0 (January 2025) - Initial Release
+
+**Core Features:**
+- Real-time cluster monitoring with historical RRD data analysis
+- Intelligent migration recommendations
+- Tag-based anti-affinity rules
+- Batch migration support
+- Modern web UI with dark/light mode
+
+**Installation:**
+- Automated installer v1.1
+- API token authentication
+- Unprivileged LXC deployment
 
 ---
 
@@ -608,7 +793,7 @@ Open an [issue](https://github.com/Pr0zak/ProxBalance/issues) with:
 We'd love to hear your ideas! Open a [feature request](https://github.com/Pr0zak/ProxBalance/issues/new) or start a [discussion](https://github.com/Pr0zak/ProxBalance/discussions).
 
 ### 🤝 Want to Contribute?
-Contributions are welcome! See our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
+Contributions are welcome! See our [CONTRIBUTING.md](docs/CONTRIBUTING.md) guide.
 
 ### 📣 Share Your Experience
 Using ProxBalance? Share your setup:

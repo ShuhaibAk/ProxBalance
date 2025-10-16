@@ -1,5 +1,0 @@
-{
-  "collection_interval_minutes": 60,
-  "ui_refresh_interval_minutes": 15,
-  "proxmox_host": "CHANGE_ME"
-}

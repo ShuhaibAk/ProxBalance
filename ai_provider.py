@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""AI Provider abstraction layer for ProxBalance migration recommendations"""
+
+import json
+import requests
+from typing import Dict, List, Optional, Any
+from abc import ABC, abstractmethod
+
+
+class AIProvider(ABC):
+    """Abstract base class for AI providers"""
+
+    @abstractmethod
+    def get_recommendations(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate migration recommendations based on cluster metrics"""
+        pass
+
+    def _build_prompt(self, metrics: Dict[str, Any]) -> str:
+        """Build analysis prompt from metrics - shared by all providers"""
+        # Extract valid node names and guest info for the prompt
+        nodes = metrics.get("nodes", {})
+        guests = metrics.get("guests", {})
+        valid_nodes = list(nodes.keys())
+
+        # Identify guests that should be excluded from recommendations
+        ignored_guests = []
+        exclude_groups = set()
+        for vmid, guest in guests.items():
+            tags = guest.get("tags", {})
+            if tags.get("has_ignore", False):
+                ignored_guests.append(f"{vmid} ({guest.get('name', 'unknown')})")
+            for group in tags.get("exclude_groups", []):
+                exclude_groups.add(group)
+
+        # Get sample guest for example (not ignored)
+        sample_vmid = None
+        for vmid, guest in guests.items():
+            if not guest.get("tags", {}).get("has_ignore", False):
+                sample_vmid = vmid
+                sample_guest = guest
+                break
+
+        if not sample_vmid:
+            sample_vmid = list(guests.keys())[0] if guests else "100"
+            sample_guest = guests.get(sample_vmid, {})
+
+        sample_name = sample_guest.get("name", "example-vm")
+        sample_node = sample_guest.get("node", valid_nodes[0] if valid_nodes else "node1")
+        example_target = valid_nodes[1] if len(valid_nodes) > 1 else valid_nodes[0] if valid_nodes else "node2"
+
+        analysis_period = metrics.get("period_description", "last 24 hours")
+
+        ignore_section = ""
+        if ignored_guests:
+            ignore_section = f"\n\nIGNORED GUESTS (DO NOT RECOMMEND MIGRATION):\n{', '.join(ignored_guests)}"
+
+        exclude_section = ""
+        if exclude_groups:
+            exclude_section = f"\n\nEXCLUDE GROUPS: Guests in these groups have affinity rules: {', '.join(exclude_groups)}"
+
+        return f"""Analyze this Proxmox cluster state and provide migration recommendations.
+
+╔════════════════════════════════════════════════════════════════════╗
+║ ABSOLUTE FILTERING RULES - MUST BE FOLLOWED WITHOUT EXCEPTION     ║
+╠════════════════════════════════════════════════════════════════════╣
+║ 1. NEVER recommend guests with tags.has_ignore = true             ║
+║ 2. Skip ignored guests completely - do not mention them at all    ║
+║ 3. Even if an ignored guest causes imbalance, DO NOT recommend it ║
+║ 4. Ignored guests are marked as such for critical operational     ║
+║    reasons and MUST NOT be moved under any circumstances          ║
+╚════════════════════════════════════════════════════════════════════╝
+
+IMPORTANT: Only use node names that exist in the cluster data provided below.
+Valid nodes in this cluster: {', '.join(valid_nodes)}
+
+Analysis Time Frame: {analysis_period}
+Focus your analysis on resource trends and patterns over the {analysis_period}.
+
+Cluster Metrics:
+{json.dumps(metrics, indent=2)}{ignore_section}{exclude_section}
+
+Please analyze:
+1. Current resource utilization (CPU, memory, load)
+2. Resource trends and patterns over the {analysis_period}
+3. Workload distribution across nodes
+4. Anti-affinity compliance (check tags.exclude_groups - guests in same group MUST be on different nodes)
+5. Predicted resource constraints based on observed trends
+
+CRITICAL BALANCING RULES - MIGRATIONS MUST REDUCE LOAD:
+- ONLY recommend migrations that move FROM high-load TO low-load nodes
+- Target nodes MUST have LOWER utilization than source nodes
+- DO NOT migrate TO a node with >60% CPU utilization (HARD LIMIT)
+- DO NOT migrate TO a node with >70% memory utilization (HARD LIMIT)
+- DO NOT migrate FROM low-utilization nodes TO high-utilization nodes
+- Target must have BOTH lower CPU AND lower memory than source
+- The goal is to REDUCE peak loads and improve balance
+- Moving from 20% CPU to 60% CPU is WRONG - do not recommend
+
+ANTI-AFFINITY RULES:
+- Guests in the same exclude_group MUST be on DIFFERENT nodes (this is correct behavior)
+- ONLY report as "violation" if guests in the same exclude_group are on the SAME node
+- DO NOT report compliant configurations as violations
+
+GUEST FILTERING REQUIREMENTS:
+- NEVER recommend migration for guests with tags.has_ignore = true
+- DO NOT recommend moving guests with exclude_groups tags unless it resolves an affinity violation
+- Only recommend migrations that meaningfully improve cluster balance or fix actual violations
+- NEVER recommend moving TO an already heavily loaded node (>60% CPU or >70% memory)
+
+Provide recommendations in this JSON format:
+{{
+  "success": true,
+  "analysis": "Brief summary of cluster state",
+  "recommendations": [
+    {{
+      "vmid": {sample_vmid},
+      "name": "{sample_name}",
+      "source_node": "{sample_node}",
+      "target_node": "{example_target}",
+      "type": "VM",
+      "priority": "high|medium|low",
+      "reasoning": "Why this migration is recommended",
+      "risk_score": 0.1,
+      "estimated_impact": "Expected improvement"
+    }}
+  ],
+  "predicted_issues": [
+    {{
+      "node": "{valid_nodes[0] if valid_nodes else 'node1'}",
+      "metric": "cpu",
+      "prediction": "Will exceed 80% in next 2 hours",
+      "confidence": 0.85
+    }}
+  ]
+}}
+
+CRITICAL REMINDERS BEFORE GENERATING RESPONSE:
+1. Filter OUT any guest where tags.has_ignore = true - do not include in recommendations array
+2. Use actual VM/CT names from the guests data, not placeholders like "VM-name"
+3. Use only the node names listed above: {', '.join(valid_nodes)}
+4. Double-check: Is tags.has_ignore = true? If YES, skip this guest entirely
+5. Ignored guests CANNOT be recommended even if they cause imbalance
+
+VALIDATION CHECKLIST - Review each recommendation before including it:
+For each migration you want to recommend, verify:
+□ Is target_node CPU% < source_node CPU%? (If NO, reject - do not include)
+□ Is target_node Memory% < source_node Memory%? (If NO, reject - do not include)
+□ Is target_node CPU% < 60%? (If NO, reject - do not include)
+□ Is target_node Memory% < 70%? (If NO, reject - do not include)
+□ Does tags.has_ignore = true? (If YES, reject - do not include)
+
+If ANY checkbox fails, DO NOT include that migration in your recommendations array.
+Do not include rejected migrations with priority "skipped" - omit them completely.
+
+Return valid JSON only."""
+
+
+class OpenAIProvider(AIProvider):
+    """OpenAI GPT provider"""
+
+    def __init__(self, api_key: str, model: str = "gpt-4", base_url: str = "https://api.openai.com/v1"):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip('/')
+
+    def get_recommendations(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate recommendations using OpenAI API"""
+
+        prompt = self._build_prompt(metrics)
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert Proxmox cluster administrator analyzing resource utilization and providing migration recommendations."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.3,
+            "response_format": {"type": "json_object"}
+        }
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+            return json.loads(content)
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "recommendations": []
+            }
+
+
+class AnthropicProvider(AIProvider):
+    """Anthropic Claude provider"""
+
+    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022", base_url: str = "https://api.anthropic.com/v1"):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip('/')
+
+    def get_recommendations(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate recommendations using Anthropic API"""
+
+        prompt = self._build_prompt(metrics)
+
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "temperature": 0.3,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/messages",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            content = result['content'][0]['text']
+
+            # Extract JSON from response (Claude might wrap it in markdown)
+            if '```json' in content:
+                content = content.split('```json')[1].split('```')[0].strip()
+            elif '```' in content:
+                content = content.split('```')[1].split('```')[0].strip()
+
+            return json.loads(content)
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "recommendations": []
+            }
+
+
+class LocalLLMProvider(AIProvider):
+    """Local LLM provider (Ollama)"""
+
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama2"):
+        self.base_url = base_url.rstrip('/')
+        self.model = model
+
+    def get_recommendations(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate recommendations using local LLM (Ollama)"""
+
+        prompt = self._build_prompt(metrics)
+
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json"
+        }
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=60
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            content = result.get('response', '{}')
+            return json.loads(content)
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "recommendations": []
+            }
+
+
+class AIProviderFactory:
+    """Factory for creating AI provider instances"""
+
+    @staticmethod
+    def create_provider(config: Dict[str, Any]) -> Optional[AIProvider]:
+        """Create AI provider based on configuration"""
+
+        provider_type = config.get('ai_provider', 'none').lower()
+
+        if provider_type == 'none' or not config.get('ai_recommendations_enabled', False):
+            return None
+
+        ai_config = config.get('ai_config', {})
+
+        if provider_type == 'openai':
+            openai_config = ai_config.get('openai', {})
+            api_key = openai_config.get('api_key', '')
+            if not api_key:
+                raise ValueError("OpenAI API key is required")
+            return OpenAIProvider(
+                api_key=api_key,
+                model=openai_config.get('model', 'gpt-4'),
+                base_url=openai_config.get('base_url', 'https://api.openai.com/v1')
+            )
+
+        elif provider_type == 'anthropic':
+            anthropic_config = ai_config.get('anthropic', {})
+            api_key = anthropic_config.get('api_key', '')
+            if not api_key:
+                raise ValueError("Anthropic API key is required")
+            return AnthropicProvider(
+                api_key=api_key,
+                model=anthropic_config.get('model', 'claude-3-5-sonnet-20241022'),
+                base_url=anthropic_config.get('base_url', 'https://api.anthropic.com/v1')
+            )
+
+        elif provider_type == 'local':
+            local_config = ai_config.get('local', {})
+            return LocalLLMProvider(
+                base_url=local_config.get('base_url', 'http://localhost:11434'),
+                model=local_config.get('model', 'llama2')
+            )
+
+        else:
+            raise ValueError(f"Unknown AI provider: {provider_type}")

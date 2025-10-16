@@ -24,7 +24,7 @@ Before installing ProxBalance, ensure you have:
 - **Proxmox VE 7.0+** (tested on 7.x and 8.x)
 - **Root access** to Proxmox host
 - **Network connectivity** between container and all nodes
-- **SSH access** to all Proxmox nodes (installer automatically distributes keys in parallel)
+- **API access** to Proxmox (installer automatically creates API tokens)
 
 ### Resource Requirements
 
@@ -43,7 +43,7 @@ Before installing ProxBalance, ensure you have:
 - Container needs network access to all Proxmox nodes
 - DHCP server (recommended) or ability to configure static IP
 - Port 80 available for web interface
-- SSH (port 22) access to all nodes
+- Port 8006 (Proxmox API) access from container to all nodes
 
 ---
 
@@ -55,7 +55,11 @@ Before installing ProxBalance, ensure you have:
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
 ```
 
-**That's it!** The installer handles everything automatically.
+**That's it!** The enhanced installer v2.0 handles everything automatically with:
+- 🎨 Beautiful visual interface with colors and animations
+- ⚡ Real-time progress tracking with spinning status indicators
+- 📊 Detailed installation steps showing exactly what's happening
+- ✅ Smart validation and comprehensive error checking
 
 ### Installation Time
 - **Small clusters** (1-4 nodes): ~3-5 minutes
@@ -116,17 +120,19 @@ The automated installer performs these steps:
 6. ✅ Detects container IP address
 
 ### Phase 3: Dependency Installation (1-2 minutes)
-1. ✅ Updates package repositories (apt-get update)
-2. ✅ Installs system packages:
+1. ✅ Updates package repositories with progress spinner
+2. ✅ Installs Python 3, venv, and pip with real-time progress
+3. ✅ Installs Nginx web server with progress indicator
+4. ✅ Installs utilities (curl, jq, git) with detailed feedback
+5. ✅ System packages installed:
    - Python 3 (3.8+ from Debian 12)
    - python3-venv (virtual environment)
    - python3-pip (package manager)
    - Nginx web server (reverse proxy)
    - curl (API testing)
    - jq (JSON parsing)
-   - openssh-client (SSH connectivity)
    - git (repository cloning)
-3. ✅ Cleans up package cache (reduces container size)
+6. ✅ Cleans up package cache (reduces container size)
 
 ### Phase 4: ProxBalance Installation (1 minute)
 1. ✅ Clones ProxBalance repository from GitHub to /opt/proxmox-balance-manager
@@ -158,22 +164,20 @@ The automated installer performs these steps:
    - Proxies port 80 → 127.0.0.1:5000
 5. ✅ Enables services to start on boot (systemctl enable)
 
-### Phase 6: SSH Key Setup (1-2 minutes)
-1. ✅ Generates ed25519 SSH key pair in container (/root/.ssh/id_ed25519)
-   - Uses ed25519 algorithm (modern, secure, fast)
-   - No passphrase (-N "")
-   - Quiet mode (-q)
-2. ✅ **Automatically distributes to all detected nodes** (parallel execution with timeout)
-   - Creates /root/.ssh/ directory if needed
-   - Appends public key to authorized_keys
-   - Sets proper permissions (700 for .ssh/, 600 for authorized_keys)
-   - 10-second timeout per node
-   - Background jobs for parallel processing
-3. ✅ Tests SSH connectivity from Proxmox host to each node
-4. ✅ Tests SSH connectivity from container to each node
-   - Verifies passwordless SSH works
-   - Tests basic command execution ("echo OK")
-5. ✅ Reports success/failure for each node with color-coded output
+### Phase 6: API Authentication Setup (1-2 minutes)
+1. ✅ Creates Proxmox API token (root@pam!proxbalance)
+   - Uses pvesh to create token with full privileges
+   - Sets privilege separation to 0 for Administrator access
+   - Generates unique secret automatically
+2. ✅ **Saves API token to configuration**
+   - Stores token ID and secret in config.json
+   - Securely transfers to container
+   - Removes temporary token file after transfer
+3. ✅ Tests API connectivity from container
+   - Verifies token authentication works
+   - Tests basic API call (/api2/json/version)
+   - Confirms cluster access
+4. ✅ Reports API token creation success with token ID
 
 ### Phase 7: Service Startup (30 seconds)
 1. ✅ Starts Flask API service
@@ -182,15 +186,19 @@ The automated installer performs these steps:
 4. ✅ Verifies all services are running
 
 ### Phase 8: Initial Data Collection (2-5 minutes)
-1. ✅ Triggers first cluster data collection (systemctl start proxmox-collector.service)
-2. ✅ Runs in background (non-blocking, doesn't hold up installer)
-3. ✅ Web interface becomes available immediately (shows "loading" state)
-4. ✅ Data appears when collection completes:
-   - Collects cluster resources via pvesh
-   - Gathers RRD data (1-hour timeframe) for each node
+1. ✅ Triggers first cluster data collection with progress monitoring
+2. ✅ Shows detailed progress with animation and status updates
+3. ✅ Waits for collection to complete (up to 60 seconds per attempt)
+4. ✅ Retries up to 3 times if collection fails or times out
+5. ✅ Monitors both service status and cache file creation
+6. ✅ Data collection process:
+   - Connects to Proxmox API using token authentication
+   - Collects cluster resources via API
+   - Gathers RRD data (1-hour to 7-day timeframe configurable) for each node
    - Fetches guest configurations and tags
    - Writes to cluster_cache.json with atomic rename
    - Takes 30-90 seconds depending on cluster size
+7. ✅ Displays success confirmation or detailed error messages
 
 ### Phase 9: Completion
 1. ✅ Displays access information
@@ -276,7 +284,6 @@ apt-get install -y \
   nginx \
   curl \
   jq \
-  openssh-client \
   git
 
 # Exit container
@@ -336,9 +343,11 @@ EOF'
 **Configuration Options:**
 - `collection_interval_minutes` (5-240): How often to collect cluster data
 - `ui_refresh_interval_minutes` (5-120): How often UI auto-refreshes
-- `proxmox_host`: Primary Proxmox node IP or hostname for SSH connections
+- `proxmox_host`: Primary Proxmox node IP or hostname for API connections
+- `proxmox_api_token_id`: API token ID (format: user@realm!tokenname)
+- `proxmox_api_token_secret`: API token secret
 
-**Note:** The automated installer auto-detects `proxmox_host` using multiple methods. Manual installation requires you to set this value.
+**Note:** The automated installer auto-detects `proxmox_host` and creates API tokens automatically. Manual installation requires you to create a token and configure these values.
 
 ### Step 6: Setup System Services
 
@@ -368,8 +377,8 @@ systemctl enable nginx.service
    - Reads from cluster_cache.json
 
 2. **proxmox-collector.service**
-   - Runs collector.py script
-   - Collects data via SSH to proxmox_host
+   - Runs collector_api.py script
+   - Collects data via Proxmox API
    - Uses pvesh commands for cluster data
    - Writes to cluster_cache.json atomically
 
@@ -413,50 +422,69 @@ systemctl restart nginx
 - Access log: /var/log/nginx/access.log
 - Error log: /var/log/nginx/error.log
 
-### Step 8: Setup SSH Keys
+### Step 8: Setup API Authentication
 
 ```bash
-# Generate ed25519 SSH key in container (no passphrase)
-pct exec $CTID -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
+# Create Proxmox API token (run on Proxmox host)
+TOKEN_USER="root@pam"
+TOKEN_NAME="proxbalance"
 
-# Get the public key
-echo "=== SSH Public Key ==="
-pct exec $CTID -- cat /root/.ssh/id_ed25519.pub
-echo "======================"
+# Create the API token
+pvesh create /access/users/${TOKEN_USER}/token/${TOKEN_NAME} \
+  --comment "ProxBalance automated monitoring" \
+  --privsep 0
 
-# Add to each Proxmox node manually:
-# Method 1: Copy-paste to each node
-ssh root@node1 "mkdir -p /root/.ssh && echo 'PASTE_PUBLIC_KEY_HERE' >> /root/.ssh/authorized_keys"
-ssh root@node2 "mkdir -p /root/.ssh && echo 'PASTE_PUBLIC_KEY_HERE' >> /root/.ssh/authorized_keys"
+# The output will show:
+# {
+#    "full-tokenid" : "root@pam!proxbalance",
+#    "value" : "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# }
 
-# Method 2: Use loop (replace with your node names)
-for node in pve1 pve2 pve3 pve4; do
-  echo "Adding key to $node..."
-  pct exec $CTID -- cat /root/.ssh/id_ed25519.pub | \
-    ssh root@$node "mkdir -p /root/.ssh && cat >> /root/.ssh/authorized_keys"
-done
+# Save the token secret - you'll need it for config.json
+TOKEN_SECRET="<paste-secret-from-output>"
 
-# Test connectivity from container
-pct exec $CTID -- bash -c '
-for node in pve1 pve2 pve3 pve4; do
-  echo -n "Testing $node: "
-  ssh -o StrictHostKeyChecking=no root@$node "echo OK"
-done
-'
+# Update config.json in container
+pct exec $CTID -- bash -c "cat > /opt/proxmox-balance-manager/config.json <<EOF
+{
+  \"collection_interval_minutes\": 60,
+  \"ui_refresh_interval_minutes\": 15,
+  \"proxmox_host\": \"<your-proxmox-host>\",
+  \"proxmox_port\": 8006,
+  \"proxmox_auth_method\": \"api_token\",
+  \"proxmox_api_token_id\": \"root@pam!proxbalance\",
+  \"proxmox_api_token_secret\": \"${TOKEN_SECRET}\",
+  \"proxmox_verify_ssl\": false
+}
+EOF"
+
+# Test API connectivity from container
+pct exec $CTID -- python3 -c "
+from proxmoxer import ProxmoxAPI
+proxmox = ProxmoxAPI(
+    '<your-proxmox-host>',
+    user='root@pam',
+    token_name='proxbalance',
+    token_value='${TOKEN_SECRET}',
+    port=8006,
+    verify_ssl=False
+)
+print('API Token Test:', proxmox.version.get())
+"
 ```
 
-**SSH Key Details:**
-- Algorithm: ed25519 (modern, secure, fast - better than RSA)
-- Key size: 256-bit (equivalent to ~3072-bit RSA)
-- Location: /root/.ssh/id_ed25519 (private), /root/.ssh/id_ed25519.pub (public)
-- No passphrase: Required for automated SSH connections
-- StrictHostKeyChecking=no: Auto-accepts host keys (internal network trust)
+**API Token Details:**
+- Token ID: root@pam!proxbalance (user@realm!tokenname format)
+- Privileges: Administrator access (privsep=0)
+- No expiration: Token remains valid until manually deleted
+- Secure: Token secret is separate from user password
+- Revocable: Can be deleted without affecting user account
 
-**Why ed25519?**
-- Faster key generation and verification
-- Smaller key size (easier to manage)
-- More resistant to timing attacks
-- Modern and recommended by security experts
+**Why API Tokens?**
+- More secure than password authentication
+- Faster than SSH (5-10x performance improvement)
+- Fine-grained permission control
+- Easy to rotate and revoke
+- No SSH key management needed
 
 ### Step 9: Start Services
 
@@ -519,7 +547,7 @@ This comprehensive check verifies:
 - ✅ All service status
 - ✅ Data collection status
 - ✅ API health
-- ✅ SSH connectivity to all nodes
+- ✅ API token connectivity test
 
 ### 2. Configure Collection Intervals
 
@@ -611,7 +639,59 @@ curl -X POST http://<container-ip>/api/refresh
 - `exclude_` prefix required for anti-affinity groups
 - Exact match required (exclude_db ≠ exclude_database)
 
-### 4. Adjust Thresholds
+### 4. Configure AI Recommendations (Optional)
+
+ProxBalance v2.0 supports optional AI-powered migration recommendations.
+
+#### Enable AI Features
+
+1. Click ⚙️ **Settings** icon (top-right corner)
+2. Scroll to **AI-Enhanced Migration Recommendations**
+3. Toggle **Enable AI Recommendations**
+4. Select your **AI Provider**:
+   - **OpenAI** (GPT-4) - Requires API key from https://platform.openai.com/api-keys
+   - **Anthropic** (Claude) - Requires API key from https://console.anthropic.com/settings/keys
+   - **Ollama** (Local LLM) - Self-hosted, no API key needed
+5. Enter required credentials based on provider
+6. Select **Analysis Time Period**:
+   - 1 hour - Fast, recent trends only
+   - 6 hours - Balanced view
+   - 24 hours - Full day pattern (recommended)
+   - 7 days - Long-term trends
+7. Click **Save Settings**
+
+#### Setting Up Ollama (Local LLM)
+
+For cost-free AI recommendations using a self-hosted LLM:
+
+```bash
+# On a server with GPU (recommended) or powerful CPU:
+
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull a model (choose based on your hardware)
+ollama pull llama3.1:8b     # Smaller, faster (requires ~8GB RAM)
+ollama pull llama3.1:70b    # Larger, more accurate (requires 48GB+ RAM)
+ollama pull mistral:7b      # Alternative lightweight model
+
+# Verify Ollama is running
+curl http://localhost:11434/api/version
+
+# In ProxBalance settings:
+# - AI Provider: Ollama
+# - Base URL: http://<ollama-server-ip>:11434
+# - Model: llama3.1:8b (or your chosen model)
+```
+
+**Benefits of AI Recommendations:**
+- Analyzes historical usage patterns over your selected timeframe
+- Considers workload characteristics and node capabilities
+- Provides detailed reasoning for each recommendation
+- Helps identify optimal migration timing
+- Prevents migrations during peak usage periods
+
+### 5. Adjust Thresholds
 
 In the web interface:
 - Use **CPU Threshold** slider (40-90%)
@@ -621,9 +701,10 @@ In the web interface:
 - Use **Memory Threshold** slider (50-95%)
   - Default: 70%
   - Adjust based on your workload patterns
+- CPU/Memory threshold lines appear on node charts as you adjust
 - Recommendations update automatically as you adjust
 
-### 5. Test a Migration
+### 6. Test a Migration
 
 Before using in production, test with a non-critical guest:
 
@@ -644,9 +725,6 @@ Restrict access to the web interface:
 ```bash
 # Install UFW
 pct exec $CTID -- apt-get install -y ufw
-
-# Allow SSH (important!)
-pct exec $CTID -- ufw allow ssh
 
 # Allow web interface only from your network
 pct exec $CTID -- ufw allow from 10.0.0.0/24 to any port 80
@@ -676,30 +754,7 @@ pct exec $CTID -- certbot --nginx -d your-domain.com --non-interactive --agree-t
 pct exec $CTID -- systemctl list-timers | grep certbot
 ```
 
-### 3. Restrict SSH Access
-
-Configure SSH to only accept connections from cluster nodes:
-
-```bash
-# Edit SSH config in container
-pct exec $CTID -- bash -c 'cat >> /root/.ssh/config <<EOF
-
-# Proxmox cluster nodes
-Host pve* 10.0.0.*
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-    LogLevel ERROR
-    
-# Deny all other hosts
-Host *
-    User root
-EOF'
-
-# Set proper permissions
-pct exec $CTID -- chmod 600 /root/.ssh/config
-```
-
-### 4. Enable Automatic Updates (Optional)
+### 3. Enable Automatic Updates (Optional)
 
 ```bash
 # Install unattended-upgrades
@@ -731,11 +786,11 @@ After installation, verify everything is working:
 - [ ] Guest counts are correct
 - [ ] CPU/Memory metrics are showing
 
-### SSH Connectivity
-- [ ] SSH works from container to all nodes
-- [ ] Test: `pct exec $CTID -- ssh root@<node> "echo OK"`
-- [ ] No password prompts (key-based auth)
-- [ ] pvesh commands work from container
+### API Connectivity
+- [ ] API token is configured in config.json
+- [ ] Test: `pct exec $CTID -- python3 -c "from proxmoxer import ProxmoxAPI; print('OK')"`
+- [ ] Container can reach Proxmox API (port 8006)
+- [ ] API calls work from collector
 
 ### Functionality
 - [ ] Tags are recognized (if configured)
@@ -779,31 +834,38 @@ df -h
 pct start $CTID --debug
 ```
 
-### Issue: SSH authentication fails
+### Issue: API authentication fails
 
-**Symptoms:** Cannot SSH from container to nodes
+**Symptoms:** Data collection fails, API errors in logs
 
 **Solutions:**
 ```bash
-# Verify SSH key exists
-pct exec $CTID -- ls -la /root/.ssh/
+# Verify API token configuration
+pct exec $CTID -- cat /opt/proxmox-balance-manager/config.json | jq '.proxmox_api_token_id, .proxmox_api_token_secret'
 
-# Check key permissions
-pct exec $CTID -- chmod 700 /root/.ssh
-pct exec $CTID -- chmod 600 /root/.ssh/id_ed25519
-pct exec $CTID -- chmod 644 /root/.ssh/id_ed25519.pub
+# Check if token exists in Proxmox
+pvesh get /access/users/root@pam/token/proxbalance
 
-# Regenerate if needed
-pct exec $CTID -- ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q
+# Recreate token if needed
+pvesh delete /access/users/root@pam/token/proxbalance
+pvesh create /access/users/root@pam/token/proxbalance --comment "ProxBalance" --privsep 0
 
-# Get public key
-pct exec $CTID -- cat /root/.ssh/id_ed25519.pub
+# Update config.json with new token secret
+# (Edit the config file with the new token values)
 
-# Add to each node
-ssh root@<node> "echo 'PASTE_KEY_HERE' >> /root/.ssh/authorized_keys"
-
-# Test connection with verbose output
-pct exec $CTID -- ssh -vvv root@<node> "echo OK"
+# Test API connectivity
+pct exec $CTID -- python3 -c "
+from proxmoxer import ProxmoxAPI
+proxmox = ProxmoxAPI(
+    '<proxmox-host>',
+    user='root@pam',
+    token_name='proxbalance',
+    token_value='<token-secret>',
+    port=8006,
+    verify_ssl=False
+)
+print('API Version:', proxmox.version.get())
+"
 ```
 
 ### Issue: Python dependencies fail to install
