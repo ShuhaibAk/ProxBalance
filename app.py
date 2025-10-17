@@ -1327,6 +1327,213 @@ def update_system():
             "log": update_log if 'update_log' in locals() else []
         }), 500
 
+@app.route("/api/system/branches", methods=["GET"])
+def list_branches():
+    """List all available git branches"""
+    try:
+        # Fetch latest branch info from remote
+        subprocess.run(
+            [GIT_CMD, "fetch", "origin"],
+            cwd=GIT_REPO_PATH,
+            capture_output=True,
+            timeout=10
+        )
+
+        # Get current branch
+        result = subprocess.run(
+            [GIT_CMD, "-C", GIT_REPO_PATH, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        current_branch = result.stdout.strip() if result.returncode == 0 else "unknown"
+
+        # Get all remote branches
+        result = subprocess.run(
+            [GIT_CMD, "-C", GIT_REPO_PATH, "branch", "-r", "--format=%(refname:short)"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode != 0:
+            raise Exception(f"Failed to list branches: {result.stderr}")
+
+        branches = []
+        for line in result.stdout.strip().split('\n'):
+            if line and not line.endswith('/HEAD'):
+                # Remove 'origin/' prefix
+                branch_name = line.replace('origin/', '', 1)
+
+                # Get last commit message for this branch
+                commit_result = subprocess.run(
+                    [GIT_CMD, "-C", GIT_REPO_PATH, "log", "-1", "--format=%s", f"origin/{branch_name}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                last_commit = commit_result.stdout.strip() if commit_result.returncode == 0 else ""
+
+                branches.append({
+                    "name": branch_name,
+                    "current": branch_name == current_branch,
+                    "last_commit": last_commit
+                })
+
+        return jsonify({
+            "success": True,
+            "branches": branches
+        })
+
+    except Exception as e:
+        print(f"Error listing branches: {str(e)}", file=sys.stderr)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/api/system/switch-branch", methods=["POST"])
+def switch_branch():
+    """Switch to a different git branch"""
+    try:
+        data = request.get_json()
+        target_branch = data.get('branch')
+
+        if not target_branch:
+            return jsonify({
+                "success": False,
+                "error": "Branch name is required"
+            }), 400
+
+        update_log = []
+
+        # Get current branch
+        result = subprocess.run(
+            [GIT_CMD, "-C", GIT_REPO_PATH, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        current_branch = result.stdout.strip() if result.returncode == 0 else "unknown"
+
+        if current_branch == target_branch:
+            return jsonify({
+                "success": False,
+                "error": f"Already on branch {target_branch}"
+            }), 400
+
+        update_log.append(f"Switching from {current_branch} to {target_branch}...")
+
+        # Fetch latest changes
+        update_log.append("Fetching latest changes from GitHub...")
+        result = subprocess.run(
+            [GIT_CMD, "fetch", "origin"],
+            cwd=GIT_REPO_PATH,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            raise Exception(f"Failed to fetch: {result.stderr}")
+
+        # Stash any local changes
+        result = subprocess.run(
+            [GIT_CMD, "stash"],
+            cwd=GIT_REPO_PATH,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0 and "No local changes to save" not in result.stdout:
+            update_log.append("Stashed local changes")
+
+        # Checkout the target branch
+        update_log.append(f"Checking out branch {target_branch}...")
+        result = subprocess.run(
+            [GIT_CMD, "checkout", target_branch],
+            cwd=GIT_REPO_PATH,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode != 0:
+            raise Exception(f"Failed to checkout branch: {result.stderr}")
+
+        # Pull latest changes for the new branch
+        update_log.append(f"Pulling latest changes for {target_branch}...")
+        result = subprocess.run(
+            [GIT_CMD, "pull", "origin", target_branch],
+            cwd=GIT_REPO_PATH,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            raise Exception(f"Failed to pull: {result.stderr}")
+
+        update_log.append(f"✓ Switched to branch {target_branch}")
+
+        # Copy index.html to web root
+        update_log.append("Updating web interface...")
+        html_src = os.path.join(GIT_REPO_PATH, "index.html")
+        html_dst = "/var/www/html/index.html"
+        if os.path.exists(html_src):
+            import shutil
+            shutil.copy(html_src, html_dst)
+            update_log.append("✓ Updated web interface")
+
+        # Update Python dependencies if requirements changed
+        update_log.append("Checking Python dependencies...")
+        requirements_file = os.path.join(GIT_REPO_PATH, "requirements.txt")
+        if os.path.exists(requirements_file):
+            result = subprocess.run(
+                ["/usr/bin/pip3", "install", "-q", "-r", requirements_file],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode == 0:
+                update_log.append("✓ Dependencies updated")
+            else:
+                update_log.append(f"⚠ Warning: pip install had issues: {result.stderr}")
+
+        # Restart services
+        update_log.append("Restarting ProxBalance services...")
+        systemctl_cmd = "/usr/bin/systemctl"
+        restart_commands = [
+            ([systemctl_cmd, "restart", "proxmox-balance"], "API service"),
+            ([systemctl_cmd, "restart", "proxmox-collector.timer"], "Collector timer")
+        ]
+
+        for cmd, name in restart_commands:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                update_log.append(f"✓ Restarted {name}")
+            else:
+                if "API service" in name:
+                    update_log.append(f"ℹ API service will restart automatically (reload page to see changes)")
+                else:
+                    update_log.append(f"⚠ Failed to restart {name}")
+
+        update_log.append(f"✓ Branch switch complete! Now on {target_branch}")
+
+        return jsonify({
+            "success": True,
+            "message": f"Successfully switched to branch {target_branch}",
+            "log": update_log,
+            "new_branch": target_branch
+        })
+
+    except Exception as e:
+        print(f"Branch switch error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "log": update_log if 'update_log' in locals() else []
+        }), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
