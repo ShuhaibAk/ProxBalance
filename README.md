@@ -161,6 +161,23 @@ The installer automatically configures most settings, but you should verify:
    - Configure AI provider (OpenAI, Anthropic, or Ollama)
    - Select analysis time period (1h, 6h, 24h, or 7d)
 
+### Upgrading from v1.x to v2.0
+
+If you have an existing ProxBalance v1.x installation, you can upgrade to v2.0:
+
+```bash
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/upgrade-to-v2.sh)" _ <container-id>
+```
+
+The upgrade script will:
+- Backup your current configuration
+- Update code to v2.0
+- Install new dependencies
+- Update systemd services
+- Preserve your existing settings
+
+**Note:** v2.0 requires Proxmox API tokens. After upgrading, you'll need to configure API access. See [Installation Guide](docs/INSTALL.md) for details.
+
 ### Quick Health Check
 
 Run the status checker script:
