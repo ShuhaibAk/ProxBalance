@@ -434,6 +434,61 @@ detect_proxmox_nodes() {
     
     msg_ok "Using manually entered host: ${GN}${PROXMOX_HOST}${CL}"
   fi
+
+  # Verify connectivity to Proxmox host
+  verify_proxmox_connectivity
+}
+
+verify_proxmox_connectivity() {
+  msg_info "Verifying connectivity to Proxmox host: ${PROXMOX_HOST}"
+
+  # Try to reach the Proxmox API
+  local max_attempts=3
+  local attempt=1
+  local connected=false
+
+  while [ $attempt -le $max_attempts ]; do
+    if curl -k -s -m 5 "https://${PROXMOX_HOST}:8006/api2/json/version" >/dev/null 2>&1; then
+      connected=true
+      break
+    fi
+
+    if [ $attempt -lt $max_attempts ]; then
+      msg_warn "Attempt $attempt/$max_attempts failed, retrying..."
+      sleep 2
+    fi
+
+    ((attempt++))
+  done
+
+  if [ "$connected" = true ]; then
+    msg_ok "Successfully connected to Proxmox API at ${GN}${PROXMOX_HOST}:8006${CL}"
+  else
+    msg_error "Cannot reach Proxmox API at ${PROXMOX_HOST}:8006"
+    echo ""
+    echo -e "${YW}Please verify:${CL}"
+    echo -e "  1. The host ${PROXMOX_HOST} is correct"
+    echo -e "  2. The Proxmox host is online and reachable"
+    echo -e "  3. Port 8006 is accessible"
+    echo -e "  4. No firewall is blocking the connection"
+    echo ""
+    read -p "Do you want to enter a different host? [y/N]: " retry
+
+    if [[ "$retry" =~ ^[Yy]$ ]]; then
+      read -p "Enter Proxmox host IP/hostname: " PROXMOX_HOST
+
+      if [ -z "$PROXMOX_HOST" ]; then
+        msg_error "Proxmox host is required. Installation cannot continue."
+        exit 1
+      fi
+
+      # Recursively verify the new host
+      verify_proxmox_connectivity
+    else
+      msg_error "Installation cannot continue without connectivity to Proxmox host"
+      exit 1
+    fi
+  fi
 }
 
 show_summary() {
