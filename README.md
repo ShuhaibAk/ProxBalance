@@ -11,9 +11,13 @@
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg?style=for-the-badge)](https://www.python.org/downloads/)
 [![Proxmox](https://img.shields.io/badge/Proxmox-VE_7%2B-orange.svg?style=for-the-badge)](https://www.proxmox.com/)
 
-**Automated cluster load balancing and intelligent VM/CT migration for Proxmox VE**
+**Cluster balance analyzer and intelligent VM/CT migration for Proxmox VE**
 
 [Quick Start](#quick-start) • [Features](#features) • [Documentation](docs/README.md) • [AI Features](docs/AI_FEATURES.md) • [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+---
+
+<img src="docs/images/pb_showcase.gif" alt="ProxBalance Showcase" />
 
 ---
 
@@ -452,30 +456,6 @@ pct exec <ctid> -- systemctl start proxmox-collector.service
 ```
 ---
 
-## 📸 Screenshots
-
-### Main Dashboard
-![ProxBalance Dashboard](docs/images/dashboard.png)
-*Main dashboard showing cluster status, resource metrics, and migration recommendations*
-
-### Node Status & Resource Monitoring
-![Node Status](docs/images/node-status.png)
-*Real-time view of all cluster nodes with CPU, memory, cores, and guest distribution*
-
-### Migration Recommendations
-![Migration Recommendations](docs/images/recommendations.png)
-*Intelligent migration suggestions with detailed reasoning and one-click execution*
-
-### Tagged Guests & Affinity Rules
-![Tagged Guests](docs/images/tagged-guests.png)
-*Visual management of ignored guests and anti-affinity groups for workload separation*
-
-### Settings Configuration
-![Settings Panel](docs/images/settings.png)
-*Easy configuration of collection intervals, UI refresh rates, and thresholds*
-
----
-
 ## 🏗️ Architecture
 
 ```
@@ -778,22 +758,6 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions an
 - No stored passwords or credentials
 - Local network design
 - Optional SSL/TLS support
-
----
-
-### Version 1.1.0 (January 2025) - Initial Release
-
-**Core Features:**
-- Real-time cluster monitoring with historical RRD data analysis
-- Intelligent migration recommendations
-- Tag-based anti-affinity rules
-- Batch migration support
-- Modern web UI with dark/light mode
-
-**Installation:**
-- Automated installer v1.1
-- API token authentication
-- Unprivileged LXC deployment
 
 ---
 
