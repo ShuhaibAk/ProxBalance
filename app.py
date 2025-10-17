@@ -1231,15 +1231,32 @@ def update_system():
             if result.returncode == 0 and "No local changes to save" not in result.stdout:
                 update_log.append("Stashed local changes")
 
-            # Pull changes
+            # Pull changes with fast-forward only first
             result = subprocess.run(
-                [GIT_CMD, "pull", "origin", current_branch],
+                [GIT_CMD, "pull", "--ff-only", "origin", current_branch],
                 cwd=GIT_REPO_PATH,
                 capture_output=True,
                 text=True
             )
+
+            # If fast-forward fails (divergent branches), reset to remote
             if result.returncode != 0:
-                raise Exception(f"Git pull failed: {result.stderr}")
+                if "divergent branches" in result.stderr or "Need to specify how to reconcile" in result.stderr or "Not possible to fast-forward" in result.stderr:
+                    update_log.append("Detected divergent branches - resetting to remote...")
+
+                    # Hard reset to match remote branch
+                    result = subprocess.run(
+                        [GIT_CMD, "reset", "--hard", f"origin/{current_branch}"],
+                        cwd=GIT_REPO_PATH,
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode != 0:
+                        raise Exception(f"Git reset failed: {result.stderr}")
+
+                    update_log.append("✓ Reset to match remote branch")
+                else:
+                    raise Exception(f"Git pull failed: {result.stderr}")
 
             update_log.append(f"✓ Updated to latest commit on {current_branch}")
 
