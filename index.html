@@ -551,6 +551,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           // Render charts when data changes or chart period changes
           useEffect(() => {
             if (!data || !data.nodes) return;
+            // Skip chart initialization when node status section is collapsed
+            if (collapsedSections.nodeStatus) return;
             if (typeof Chart === 'undefined') {
               console.error('Chart.js is not loaded');
               return;
