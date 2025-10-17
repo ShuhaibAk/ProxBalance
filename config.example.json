@@ -22,7 +22,7 @@
     },
     "local": {
       "base_url": "http://localhost:11434",
-      "model": "llama2"
+      "model": "llama3.1:8b"
     }
   }
 }

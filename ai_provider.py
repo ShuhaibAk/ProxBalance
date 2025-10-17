@@ -345,7 +345,7 @@ class AnthropicProvider(AIProvider):
 class LocalLLMProvider(AIProvider):
     """Local LLM provider (Ollama)"""
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama2"):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.1:8b"):
         self.base_url = base_url.rstrip('/')
         self.model = model
 
@@ -421,7 +421,7 @@ class AIProviderFactory:
             local_config = ai_config.get('local', {})
             return LocalLLMProvider(
                 base_url=local_config.get('base_url', 'http://localhost:11434'),
-                model=local_config.get('model', 'llama2')
+                model=local_config.get('model', 'llama3.1:8b')
             )
 
         else:

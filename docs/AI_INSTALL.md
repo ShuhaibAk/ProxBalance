@@ -97,8 +97,13 @@ pct enter <ctid>
 # Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
 
-# Pull a model (this will take a few minutes)
-ollama pull llama2
+# Pull a recommended model (this will take a few minutes)
+# Choose one based on your hardware:
+ollama pull llama3.1:8b        # Recommended - Best balance of quality/speed
+# OR
+ollama pull qwen2.5:7b         # Alternative - Good for structured output
+# OR
+ollama pull mistral:7b         # Alternative - Fast and capable
 
 # Start Ollama service (if not auto-started)
 systemctl enable ollama
@@ -114,7 +119,7 @@ curl http://localhost:11434/api/tags
 2. Enable AI recommendations
 3. Select "Local LLM (Ollama)"
 4. Base URL: `http://localhost:11434`
-5. Model: `llama2` (or `mistral`, `codellama`, etc.)
+5. Model: `llama3.1:8b` (or `qwen2.5:7b`, `mistral:7b`, etc.)
 6. Save Settings
 
 ### Alternative: Run Ollama on Different Server
