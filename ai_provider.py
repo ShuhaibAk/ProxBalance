@@ -25,10 +25,10 @@ class AIProvider(ABC):
         for node_name, node_data in nodes.items():
             summarized_nodes[node_name] = {
                 "cpu_percent": node_data.get("cpu_percent", 0),
-                "memory_percent": node_data.get("memory_percent", 0),
+                "memory_percent": node_data.get("mem_percent", node_data.get("memory_percent", 0)),
                 "status": node_data.get("status", "unknown"),
-                "total_memory_gb": round(node_data.get("total_memory", 0) / (1024**3), 1),
-                "total_cpu_cores": node_data.get("total_cpu", 0)
+                "total_memory_gb": node_data.get("total_mem_gb", round(node_data.get("total_memory", 0) / (1024**3), 1)),
+                "total_cpu_cores": node_data.get("cpu_cores", node_data.get("total_cpu", 0))
             }
 
         # Summarize guest data - keep only running VMs/CTs with essential fields
