@@ -568,7 +568,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
             Object.values(data.nodes).forEach(node => {
               if (!node.trend_data || node.trend_data.length === 0) {
-                console.log(`No trend data for node ${node.name}`);
                 return;
               }
 
@@ -592,11 +591,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               );
 
               if (filteredData.length === 0) {
-                console.log(`No filtered data for node ${node.name} with period ${chartPeriod}`);
                 return;
               }
-
-              console.log(`Creating chart for node ${node.name} with ${filteredData.length} data points`);
 
               const ctx = canvas.getContext('2d');
               const isDark = darkMode;
@@ -720,14 +716,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   }
                 }
               });
-              console.log(`Chart created successfully for node ${node.name}`);
               } catch (error) {
                 console.error(`Error creating chart for node ${node.name}:`, error);
               }
             });
 
             setCharts(newCharts);
-            console.log(`Total charts created: ${Object.keys(newCharts).length}`);
 
             // Cleanup on unmount
             return () => {
