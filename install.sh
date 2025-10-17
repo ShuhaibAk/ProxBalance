@@ -573,23 +573,9 @@ install_dependencies() {
 install_proxbalance() {
   msg_info "Installing ProxBalance"
 
-  # Allow override via environment variable, otherwise detect from script source
+  # Allow override via environment variable, otherwise use main branch
   if [ -z "${PROXBALANCE_BRANCH:-}" ]; then
-    echo ""
-    msg_info "Branch not specified via PROXBALANCE_BRANCH environment variable"
-    msg_info "Attempting to detect branch by checking for AI feature files..."
-
-    # Try to detect branch by checking if AI provider exists
-    echo "Testing: https://raw.githubusercontent.com/Pr0zak/ProxBalance/feature/ai-migration-recommendations/ai_provider.py"
-
-    if curl -sf --max-time 10 "https://raw.githubusercontent.com/Pr0zak/ProxBalance/feature/ai-migration-recommendations/ai_provider.py" >/dev/null 2>&1; then
-      PROXBALANCE_BRANCH="feature/ai-migration-recommendations"
-      msg_ok "✓ Detected AI feature branch exists in repository"
-    else
-      msg_info "AI feature branch not detected or curl failed, defaulting to main"
-      PROXBALANCE_BRANCH="main"
-    fi
-    echo ""
+    PROXBALANCE_BRANCH="main"
   fi
 
   msg_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

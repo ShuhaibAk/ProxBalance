@@ -1,62 +1,25 @@
 # Installing ProxBalance with AI Features
 
-## Quick Install (Feature Branch)
+## Quick Install
 
-To install ProxBalance with AI-powered migration recommendations, you **must** explicitly specify the feature branch using an environment variable:
-
-### Required Installation Command
+To install ProxBalance with AI-powered migration recommendations:
 
 ```bash
-PROXBALANCE_BRANCH=feature/ai-migration-recommendations bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/feature/ai-migration-recommendations/install.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
 ```
-
-**Why is this required?**
-
-The installer cannot automatically detect which URL was used to download the script because it comes through stdin via wget. Without the environment variable, the installer will attempt to auto-detect the branch by checking if AI feature files exist in the repository, but this may fail due to network issues or rate limiting.
-
-**Setting the environment variable ensures you get the AI features.**
 
 ### What the Installer Does:
 
 1. Creates an LXC container with ProxBalance
-2. Clones the specified branch (AI feature branch in this case)
+2. Clones the main branch with all features including AI
 3. Installs all dependencies including AI support (`requests` library)
 4. Copies the AI-enabled index.html to /var/www/html/
-5. Verifies file sizes and checks for AI features
-6. Configures all services
-7. Sets up SSH keys across cluster nodes
+5. Configures all services
+6. Sets up Proxmox API authentication
 
-### Installation Verification
+## AI Features Included
 
-During installation, you should see clear output indicating the correct branch was cloned:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Installing from branch: feature/ai-migration-recommendations
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Git clone starting...
-Repository: https://github.com/Pr0zak/ProxBalance.git
-Branch: feature/ai-migration-recommendations
-
-✓ Git clone completed
-Current branch: feature/ai-migration-recommendations
-
-Verifying AI feature files...
-  ✓ ai_provider.py found
-  index.html size: 67890 bytes
-  ✓ index.html size verified for AI feature branch
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branch verification: PASSED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-**If branch verification fails**, the installer will exit with a clear error message showing what went wrong. This ensures you never accidentally install the wrong version.
-
-## What's New in AI Features
-
-This branch includes:
+ProxBalance includes:
 - **OpenAI GPT-4 integration** - Cloud-based AI recommendations
 - **Anthropic Claude 3.5 Sonnet** - Advanced AI analysis
 - **Local LLM support** - Self-hosted models via Ollama
@@ -186,58 +149,21 @@ Each recommendation shows:
 - **Best Time** - Optimal execution timing
 - **Expected Impact** - Predicted improvement
 
-## Comparison: Main vs Feature Branch
+## ProxBalance Features
 
-| Feature | Main Branch | AI Feature Branch |
-|---------|-------------|-------------------|
-| Basic recommendations | ✅ | ✅ |
-| Threshold-based alerts | ✅ | ✅ |
-| Anti-affinity rules | ✅ | ✅ |
-| **AI-powered analysis** | ❌ | ✅ |
-| **Natural language reasoning** | ❌ | ✅ |
-| **Risk assessment** | ❌ | ✅ |
-| **Predictive analytics** | ❌ | ✅ |
-| **Multi-dimensional optimization** | ❌ | ✅ |
-| **OpenAI integration** | ❌ | ✅ |
-| **Anthropic Claude integration** | ❌ | ✅ |
-| **Local LLM support** | ❌ | ✅ |
-
-## Switching Between Branches
-
-### Currently on Main, Want AI Features
-
-```bash
-# On Proxmox host
-pct stop <ctid>
-pct destroy <ctid>
-
-# Install feature branch
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/feature/ai-migration-recommendations/install.sh)"
-```
-
-### Update Existing Installation
-
-```bash
-# Enter container
-pct enter <ctid>
-
-# Navigate to install directory
-cd /opt/proxmox-balance-manager
-
-# Fetch and checkout feature branch
-git fetch origin
-git checkout feature/ai-migration-recommendations
-git pull
-
-# Install new dependency
-source venv/bin/activate
-pip install requests
-deactivate
-
-# Restart services
-systemctl restart proxmox-balance
-systemctl restart proxmox-collector.timer
-```
+| Feature | Included |
+|---------|----------|
+| Basic recommendations | ✅ |
+| Threshold-based alerts | ✅ |
+| Anti-affinity rules | ✅ |
+| **AI-powered analysis** | ✅ |
+| **Natural language reasoning** | ✅ |
+| **Risk assessment** | ✅ |
+| **Predictive analytics** | ✅ |
+| **Multi-dimensional optimization** | ✅ |
+| **OpenAI integration** | ✅ |
+| **Anthropic Claude integration** | ✅ |
+| **Local LLM support** | ✅ |
 
 ## Cost Considerations
 
@@ -326,20 +252,8 @@ For more details, see:
 - [Main Installation Guide](docs/INSTALL.md)
 - [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 
-## When Will This Be in Main?
-
-This feature branch will be merged to `main` after:
-1. Testing and validation
-2. User feedback
-3. Any necessary bug fixes
-
-Once merged, the standard installation command will include all AI features:
-```bash
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
-```
-
 ---
 
 **Questions or Issues?**
 - GitHub Issues: https://github.com/Pr0zak/ProxBalance/issues
-- Feature Branch: https://github.com/Pr0zak/ProxBalance/tree/feature/ai-migration-recommendations
+- Repository: https://github.com/Pr0zak/ProxBalance
