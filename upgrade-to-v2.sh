@@ -125,12 +125,131 @@ msg_info "Checking configuration..."
 HAS_PROXMOX_HOST=$(pct exec "$CTID" -- jq -e '.proxmox_host' /opt/proxmox-balance-manager/config.json >/dev/null 2>&1 && echo "yes" || echo "no")
 HAS_API_TOKEN=$(pct exec "$CTID" -- jq -e '.proxmox_api_token_id' /opt/proxmox-balance-manager/config.json >/dev/null 2>&1 && echo "yes" || echo "no")
 
-if [ "$HAS_PROXMOX_HOST" = "no" ]; then
-    msg_warn "Configuration needs updating for v2.0"
+# Configure API token if needed
+if [ "$HAS_API_TOKEN" = "no" ]; then
     echo ""
-    echo -e "  ${INFO} v2.0 requires Proxmox API token authentication"
-    echo -e "  ${INFO} Please configure your Proxmox host and API token"
+    msg_warn "v2.0 requires Proxmox API token authentication"
     echo ""
+    echo -e "  ${BL}Would you like to automatically configure API access now?${CL}"
+    echo -e "  ${DIM}(This will create a Proxmox API token and update config.json)${CL}"
+    echo ""
+    echo -e "  ${BL}1)${CL} ${GN}Yes${CL} ${DIM}- Configure automatically (recommended)${CL}"
+    echo -e "  ${BL}2)${CL} ${YW}No${CL} ${DIM}- Configure manually later${CL}"
+    echo ""
+    read -p "Select option [1-2] (default: 1): " config_choice
+    config_choice=${config_choice:-1}
+
+    if [ "$config_choice" = "1" ]; then
+        # Get Proxmox host IP
+        PROXMOX_HOST=$(hostname -I | awk '{print $1}')
+        echo ""
+        echo -e "${CY}▶${CL} Proxmox host IP (default: ${PROXMOX_HOST}): "
+        read custom_host
+        PROXMOX_HOST=${custom_host:-$PROXMOX_HOST}
+
+        # Token configuration
+        TOKEN_USER="root@pam"
+        TOKEN_NAME="proxbalance"
+        API_TOKEN_ID="${TOKEN_USER}!${TOKEN_NAME}"
+
+        # Permission selection
+        echo ""
+        msg_info "Select API Token Permissions"
+        echo ""
+        echo -e "  ${BL}1)${CL} ${GN}Minimal${CL} ${DIM}(Read-only - Monitoring only)${CL}"
+        echo -e "     ${DIM}✓ View cluster resources and statistics${CL}"
+        echo -e "     ${DIM}✗ Cannot perform migrations${CL}"
+        echo ""
+        echo -e "  ${BL}2)${CL} ${YW}Full${CL} ${DIM}(Read + Migrate - Recommended)${CL}"
+        echo -e "     ${DIM}✓ View cluster resources and statistics${CL}"
+        echo -e "     ${DIM}✓ Perform automated live migrations${CL}"
+        echo ""
+        read -p "Select permission level [1-2] (default: 2): " perm_choice
+        perm_choice=${perm_choice:-2}
+
+        case $perm_choice in
+            1)
+                TOKEN_COMMENT="ProxBalance monitoring (read-only)"
+                TOKEN_PERMS="minimal"
+                msg_info "Using minimal permissions (read-only)"
+                ;;
+            2)
+                TOKEN_COMMENT="ProxBalance with migration support"
+                TOKEN_PERMS="full"
+                msg_info "Using full permissions (with migration)"
+                ;;
+            *)
+                TOKEN_COMMENT="ProxBalance monitoring (read-only)"
+                TOKEN_PERMS="minimal"
+                msg_warn "Invalid selection, using minimal permissions"
+                ;;
+        esac
+
+        # Check if token already exists
+        if pvesh get /access/users/${TOKEN_USER}/token/${TOKEN_NAME} &>/dev/null; then
+            msg_warn "API token 'proxbalance' already exists"
+            echo ""
+            echo -e "  ${BL}1)${CL} Delete and create new token"
+            echo -e "  ${BL}2)${CL} Skip token creation (configure manually)"
+            echo ""
+            read -p "Select option [1-2] (default: 1): " token_choice
+            token_choice=${token_choice:-1}
+
+            if [ "$token_choice" = "1" ]; then
+                msg_info "Deleting existing token..."
+                pvesh delete /access/users/${TOKEN_USER}/token/${TOKEN_NAME} 2>/dev/null || true
+            else
+                msg_info "Skipping token creation"
+                HAS_API_TOKEN="skip"
+            fi
+        fi
+
+        # Create new token
+        if [ "$HAS_API_TOKEN" != "skip" ]; then
+            msg_info "Creating new API token..."
+            token_result=$(pvesh create /access/users/${TOKEN_USER}/token/${TOKEN_NAME} \
+                --comment "$TOKEN_COMMENT" \
+                --privsep 0 2>&1)
+
+            # Extract token secret (try multiple methods)
+            API_TOKEN_SECRET=""
+            API_TOKEN_SECRET=$(echo "$token_result" | grep -E '^\|\s*value\s*\|' | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' 2>/dev/null | head -n1)
+            if [ -z "$API_TOKEN_SECRET" ]; then
+                API_TOKEN_SECRET=$(echo "$token_result" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' 2>/dev/null | head -n1)
+            fi
+
+            if [ -n "$API_TOKEN_SECRET" ]; then
+                msg_ok "API token created successfully"
+
+                # Configure permissions
+                msg_info "Configuring API permissions..."
+                if [ "$TOKEN_PERMS" = "minimal" ]; then
+                    pvesh set /access/acl --path / --roles PVEAuditor --tokens "${API_TOKEN_ID}" 2>/dev/null || true
+                    msg_ok "Minimal permissions applied"
+                else
+                    pvesh set /access/acl --path / --roles PVEVMAdmin --tokens "${API_TOKEN_ID}" 2>/dev/null || true
+                    msg_ok "Full permissions applied (includes VM.Migrate)"
+                fi
+
+                # Update config.json
+                msg_info "Updating configuration..."
+                pct exec "$CTID" -- jq \
+                    --arg host "$PROXMOX_HOST" \
+                    --arg token_id "$API_TOKEN_ID" \
+                    --arg token_secret "$API_TOKEN_SECRET" \
+                    '.proxmox_host = $host | .proxmox_port = 8006 | .proxmox_api_token_id = $token_id | .proxmox_api_token_secret = $token_secret' \
+                    /opt/proxmox-balance-manager/config.json > /tmp/config.json.tmp
+                pct exec "$CTID" -- mv /tmp/config.json.tmp /opt/proxmox-balance-manager/config.json
+                msg_ok "Configuration updated"
+                HAS_API_TOKEN="yes"
+            else
+                msg_error "Failed to extract API token from response"
+                HAS_API_TOKEN="no"
+            fi
+        fi
+    else
+        msg_info "Skipping automatic configuration"
+    fi
 fi
 
 # Start services
