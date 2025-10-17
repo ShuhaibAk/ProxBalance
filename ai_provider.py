@@ -15,11 +15,55 @@ class AIProvider(ABC):
         """Generate migration recommendations based on cluster metrics"""
         pass
 
-    def _build_prompt(self, metrics: Dict[str, Any]) -> str:
-        """Build analysis prompt from metrics - shared by all providers"""
-        # Extract valid node names and guest info for the prompt
+    def _summarize_metrics(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Summarize metrics to reduce token count for AI analysis"""
         nodes = metrics.get("nodes", {})
         guests = metrics.get("guests", {})
+
+        # Summarize node data - keep only essential fields
+        summarized_nodes = {}
+        for node_name, node_data in nodes.items():
+            summarized_nodes[node_name] = {
+                "cpu_percent": node_data.get("cpu_percent", 0),
+                "memory_percent": node_data.get("memory_percent", 0),
+                "status": node_data.get("status", "unknown"),
+                "total_memory_gb": round(node_data.get("total_memory", 0) / (1024**3), 1),
+                "total_cpu_cores": node_data.get("total_cpu", 0)
+            }
+
+        # Summarize guest data - keep only running VMs/CTs with essential fields
+        summarized_guests = {}
+        for vmid, guest_data in guests.items():
+            # Skip stopped/template guests to save tokens
+            if guest_data.get("status") not in ["running", "paused"]:
+                continue
+
+            summarized_guests[vmid] = {
+                "name": guest_data.get("name", f"vm-{vmid}"),
+                "node": guest_data.get("node", "unknown"),
+                "type": guest_data.get("type", "qemu"),
+                "status": guest_data.get("status", "unknown"),
+                "cpu_percent": guest_data.get("cpu_percent", 0),
+                "memory_percent": guest_data.get("memory_percent", 0),
+                "memory_gb": round(guest_data.get("memory", 0) / (1024**3), 1),
+                "tags": guest_data.get("tags", {})
+            }
+
+        return {
+            "nodes": summarized_nodes,
+            "guests": summarized_guests,
+            "summary": metrics.get("summary", {}),
+            "period_description": metrics.get("period_description", "last 24 hours")
+        }
+
+    def _build_prompt(self, metrics: Dict[str, Any]) -> str:
+        """Build analysis prompt from metrics - shared by all providers"""
+        # Summarize metrics first to reduce token count
+        summarized = self._summarize_metrics(metrics)
+
+        # Extract valid node names and guest info for the prompt
+        nodes = summarized.get("nodes", {})
+        guests = summarized.get("guests", {})
         valid_nodes = list(nodes.keys())
 
         # Identify guests that should be excluded from recommendations
@@ -77,7 +121,7 @@ Analysis Time Frame: {analysis_period}
 Focus your analysis on resource trends and patterns over the {analysis_period}.
 
 Cluster Metrics:
-{json.dumps(metrics, indent=2)}{ignore_section}{exclude_section}
+{json.dumps(summarized, indent=2)}{ignore_section}{exclude_section}
 
 Please analyze:
 1. Current resource utilization (CPU, memory, load)
@@ -259,8 +303,37 @@ class AnthropicProvider(AIProvider):
             elif '```' in content:
                 content = content.split('```')[1].split('```')[0].strip()
 
-            return json.loads(content)
+            # Try to parse JSON, with fallback for common issues
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as je:
+                # Try to fix common JSON issues
+                # Remove trailing commas before } or ]
+                import re
+                fixed_content = re.sub(r',(\s*[}\]])', r'\1', content)
+                try:
+                    return json.loads(fixed_content)
+                except:
+                    # If still failing, return error with original content snippet
+                    return {
+                        "success": False,
+                        "error": f"Invalid JSON from AI: {str(je)}. Content preview: {content[:500]}",
+                        "recommendations": []
+                    }
 
+        except requests.exceptions.HTTPError as e:
+            # Get detailed error from Anthropic API
+            error_detail = str(e)
+            try:
+                error_json = e.response.json()
+                error_detail = f"{e.response.status_code} {error_json.get('error', {}).get('type', 'Unknown')}: {error_json.get('error', {}).get('message', str(e))}"
+            except:
+                pass
+            return {
+                "success": False,
+                "error": error_detail,
+                "recommendations": []
+            }
         except Exception as e:
             return {
                 "success": False,
