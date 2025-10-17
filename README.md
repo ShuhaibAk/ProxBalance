@@ -19,6 +19,59 @@
 
 <img src="docs/images/pb_showcase.gif" alt="ProxBalance Showcase" />
 
+### 📸 Feature Highlights
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="33%">
+        <a href="docs/images/dashboard-0.png" target="_blank">
+          <img src="docs/images/dashboard-0.png" alt="Dashboard Overview" width="250"/>
+        </a>
+        <br/>
+        <b>Dashboard Overview</b>
+      </td>
+      <td align="center" width="33%">
+        <a href="docs/images/tags-0.png" target="_blank">
+          <img src="docs/images/tags-0.png" alt="Tag Management" width="250"/>
+        </a>
+        <br/>
+        <b>Tag Management</b>
+      </td>
+      <td align="center" width="33%">
+        <a href="docs/images/clustermap.png" target="_blank">
+          <img src="docs/images/clustermap.png" alt="Cluster Map" width="250"/>
+        </a>
+        <br/>
+        <b>Cluster Map</b>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="33%">
+        <a href="docs/images/nodestatus.png" target="_blank">
+          <img src="docs/images/nodestatus.png" alt="Node Status" width="250"/>
+        </a>
+        <br/>
+        <b>Node Status</b>
+      </td>
+      <td align="center" width="33%">
+        <a href="docs/images/ai_recomendation.png" target="_blank">
+          <img src="docs/images/ai_recomendation.png" alt="AI Recommendations" width="250"/>
+        </a>
+        <br/>
+        <b>AI Recommendations</b>
+      </td>
+      <td align="center" width="33%">
+        <a href="docs/images/ai_settings.png" target="_blank">
+          <img src="docs/images/ai_settings.png" alt="AI Settings" width="250"/>
+        </a>
+        <br/>
+        <b>AI Settings</b>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ---
 
 ### 🎯 Install in One Command
