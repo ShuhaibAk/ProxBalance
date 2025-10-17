@@ -195,13 +195,32 @@ def check_for_updates():
                     )
                     commits_behind = int(result.stdout.strip()) if result.returncode == 0 else 0
 
+                    # Get changelog (commit messages)
+                    changelog = []
+                    if update_available:
+                        result = subprocess.run(
+                            [GIT_CMD, '-C', GIT_REPO_PATH, 'log', '--oneline', '--no-decorate',
+                             f'HEAD..origin/{current_branch}'],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.strip().split('\n'):
+                                if line:
+                                    parts = line.split(' ', 1)
+                                    if len(parts) == 2:
+                                        changelog.append({
+                                            "commit": parts[0],
+                                            "message": parts[1]
+                                        })
+
                     return {
                         "update_available": update_available,
                         "current_version": f"{current_branch}@{local_commit}",
                         "latest_version": f"{current_branch}@{remote_commit}",
                         "update_type": "branch",
                         "branch": current_branch,
-                        "commits_behind": commits_behind
+                        "commits_behind": commits_behind,
+                        "changelog": changelog
                     }
 
         return {
