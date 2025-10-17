@@ -1331,9 +1331,9 @@ def update_system():
 def list_branches():
     """List all available git branches"""
     try:
-        # Fetch latest branch info from remote
+        # Fetch latest branch info from remote and prune deleted branches
         subprocess.run(
-            [GIT_CMD, "fetch", "origin"],
+            [GIT_CMD, "fetch", "--prune", "origin"],
             cwd=GIT_REPO_PATH,
             capture_output=True,
             timeout=10
