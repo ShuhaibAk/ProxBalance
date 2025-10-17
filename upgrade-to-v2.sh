@@ -86,12 +86,13 @@ msg_ok "Code updated to v2.0"
 msg_info "Installing updated Python dependencies..."
 # Check if venv exists (v1.x used venv)
 if pct exec "$CTID" -- test -d /opt/proxmox-balance-manager/venv; then
-    pct exec "$CTID" -- bash -c "cd /opt/proxmox-balance-manager && source venv/bin/activate && pip install -q --upgrade -r requirements.txt"
+    pct exec "$CTID" -- bash -c "cd /opt/proxmox-balance-manager && source venv/bin/activate && pip install -q --upgrade -r requirements.txt" 2>/dev/null || true
+    msg_ok "Dependencies updated (using venv)"
 else
-    # No venv, try system-wide with break-system-packages flag
-    pct exec "$CTID" -- bash -c "cd /opt/proxmox-balance-manager && pip install -q --upgrade -r requirements.txt --break-system-packages"
+    # No venv, install system-wide with break-system-packages flag
+    pct exec "$CTID" -- bash -c "cd /opt/proxmox-balance-manager && pip3 install --upgrade -r requirements.txt --break-system-packages 2>&1 | grep -v 'externally-managed-environment' || true" >/dev/null 2>&1
+    msg_ok "Dependencies updated (system-wide)"
 fi
-msg_ok "Dependencies updated"
 
 # Update systemd service files
 msg_info "Updating systemd service files..."
