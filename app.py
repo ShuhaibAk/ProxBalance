@@ -861,8 +861,13 @@ def get_ai_models():
 
         elif provider == 'anthropic':
             # Anthropic doesn't provide a public models endpoint
-            # Return empty list - users should use custom model field
-            models = []
+            # Return static list of current models
+            models = [
+                "claude-sonnet-4-5-20250929",
+                "claude-haiku-4-5-20251001",
+                "claude-3-7-sonnet-20250219",
+                "claude-3-5-haiku-20241022"
+            ]
 
         elif provider == 'local':
             # Fetch Ollama models
