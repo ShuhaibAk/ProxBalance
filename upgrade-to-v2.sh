@@ -67,8 +67,8 @@ msg_ok "ProxBalance installation detected"
 # Backup current config
 msg_info "Creating backup of current configuration..."
 if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/config.json; then
-    pct exec "$CTID" -- cp /opt/proxmox-balance-manager/config.json /opt/proxmox-balance-manager/config.json.backup
-    msg_ok "Configuration backed up to config.json.backup"
+    pct exec "$CTID" -- cp /opt/proxmox-balance-manager/config.json /tmp/proxbalance_config_backup.json
+    msg_ok "Configuration backed up to /tmp"
 fi
 
 # Stop services
@@ -82,6 +82,12 @@ msg_ok "Services stopped"
 msg_info "Pulling latest code from GitHub..."
 pct exec "$CTID" -- bash -c "cd /opt/proxmox-balance-manager && git fetch origin && git reset --hard origin/main"
 msg_ok "Code updated to v2.0"
+
+# Restore config from backup
+if pct exec "$CTID" -- test -f /tmp/proxbalance_config_backup.json; then
+    pct exec "$CTID" -- cp /tmp/proxbalance_config_backup.json /opt/proxmox-balance-manager/config.json
+    msg_ok "Configuration restored from backup"
+fi
 
 # Install new dependencies
 msg_info "Installing updated Python dependencies..."
