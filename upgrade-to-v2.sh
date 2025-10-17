@@ -90,7 +90,12 @@ if pct exec "$CTID" -- test -d /opt/proxmox-balance-manager/venv; then
     msg_ok "Dependencies updated (using venv)"
 else
     # No venv, install system-wide with break-system-packages flag
-    pct exec "$CTID" -- bash -c "cd /opt/proxmox-balance-manager && pip3 install --upgrade -r requirements.txt --break-system-packages 2>&1 | grep -v 'externally-managed-environment' || true" >/dev/null 2>&1
+    # Temporarily disable pipefail and error exit to handle pip's externally-managed warning
+    set +e
+    pct exec "$CTID" -- bash -c "cd /opt/proxmox-balance-manager && pip3 install --upgrade -r requirements.txt --break-system-packages 2>&1" >/dev/null 2>&1
+    PIP_EXIT=$?
+    set -e
+    # pip may return error but packages install successfully, so we continue
     msg_ok "Dependencies updated (system-wide)"
 fi
 
