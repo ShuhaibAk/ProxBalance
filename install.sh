@@ -366,11 +366,25 @@ detect_proxmox_nodes() {
   local nodes=""
   local detection_method=""
   
-  # Method 1: corosync.conf
+  # Method 1: corosync.conf - Parse nodelist section for actual nodes
   if [ -f /etc/pve/corosync.conf ]; then
-    nodes=$(grep -oP '(?<=name: ).*' /etc/pve/corosync.conf 2>/dev/null | grep -v '^Cluster$' | sort -u | xargs)
+    # Extract nodes from nodelist section only, using ring0_addr (IP) or name field
+    # First try to get ring0_addr (most reliable - actual IPs)
+    nodes=$(awk '/nodelist {/,/^}/ {if ($1 == "ring0_addr:") print $2}' /etc/pve/corosync.conf 2>/dev/null | tr -d '"' | sort -u | xargs)
+
+    # If no ring0_addr found, try to get node names from nodelist section only
+    if [ -z "$nodes" ]; then
+      nodes=$(awk '/nodelist {/,/^}/ {
+        if (in_node && $1 == "name:") {
+          print $2
+        }
+        if ($1 == "node" && $2 == "{") in_node=1
+        if (in_node && $1 == "}") in_node=0
+      }' /etc/pve/corosync.conf 2>/dev/null | tr -d '"' | sort -u | xargs)
+    fi
+
     if [ -n "$nodes" ]; then
-      detection_method="corosync.conf"
+      detection_method="corosync.conf (nodelist)"
     fi
   fi
   
@@ -400,10 +414,27 @@ detect_proxmox_nodes() {
   if [ -n "$nodes" ]; then
     DETECTED_NODES=$(echo "$nodes" | tr ' ' ',')
     msg_ok "Detected nodes via ${YW}${detection_method}${CL}: ${GN}${DETECTED_NODES}${CL}"
-    
-    # Use first node as primary host
-    PROXMOX_HOST=$(echo "$nodes" | awk '{print $1}')
-    msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
+
+    # Try to identify the local node (the node running this script)
+    local local_hostname=$(hostname -s)
+    local local_fqdn=$(hostname -f 2>/dev/null)
+    local local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+
+    # Check if local hostname, fqdn, or IP matches any detected node
+    PROXMOX_HOST=""
+    for node in $nodes; do
+      if [ "$node" = "$local_hostname" ] || [ "$node" = "$local_fqdn" ] || [ "$node" = "$local_ip" ]; then
+        PROXMOX_HOST="$node"
+        msg_ok "Using local node as primary host: ${GN}${PROXMOX_HOST}${CL}"
+        break
+      fi
+    done
+
+    # If local node not found in list, use first detected node
+    if [ -z "$PROXMOX_HOST" ]; then
+      PROXMOX_HOST=$(echo "$nodes" | awk '{print $1}')
+      msg_ok "Primary host: ${GN}${PROXMOX_HOST}${CL}"
+    fi
     
     # Try to get IP if hostname was detected
     if [[ ! "$PROXMOX_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
