@@ -116,6 +116,13 @@ def get_version_info():
         )
         git_describe = result.stdout.strip() if result.returncode == 0 else "unknown"
 
+        # Get last commit date
+        result = subprocess.run(
+            [GIT_CMD, '-C', GIT_REPO_PATH, 'log', '-1', '--format=%cd', '--date=short'],
+            capture_output=True, text=True, timeout=5
+        )
+        last_commit_date = result.stdout.strip() if result.returncode == 0 else "unknown"
+
         # Determine if on a release version (tag matches HEAD)
         on_release = False
         if latest_tag:
@@ -131,7 +138,8 @@ def get_version_info():
             "commit": current_commit[:8],
             "branch": current_branch,
             "latest_tag": latest_tag,
-            "on_release": on_release
+            "on_release": on_release,
+            "last_commit_date": last_commit_date
         }
     except Exception as e:
         print(f"Error getting version info: {str(e)}")
@@ -1075,69 +1083,6 @@ def get_ai_recommendations():
 
 
 @app.route("/api/system/info", methods=["GET"])
-def get_system_info():
-    """Get system information including current branch and version"""
-    try:
-        # Get current git branch
-        result = subprocess.run(
-            [GIT_CMD, "branch", "--show-current"],
-            cwd=GIT_REPO_PATH,
-            capture_output=True,
-            text=True
-        )
-        current_branch = result.stdout.strip() if result.returncode == 0 else "unknown"
-
-        # Get current commit hash
-        result = subprocess.run(
-            [GIT_CMD, "rev-parse", "--short", "HEAD"],
-            cwd=GIT_REPO_PATH,
-            capture_output=True,
-            text=True
-        )
-        commit_hash = result.stdout.strip() if result.returncode == 0 else "unknown"
-
-        # Get last commit date
-        result = subprocess.run(
-            [GIT_CMD, "log", "-1", "--format=%cd", "--date=short"],
-            cwd=GIT_REPO_PATH,
-            capture_output=True,
-            text=True
-        )
-        last_commit_date = result.stdout.strip() if result.returncode == 0 else "unknown"
-
-        # Check if there are updates available
-        subprocess.run(
-            [GIT_CMD, "fetch", "origin"],
-            cwd=GIT_REPO_PATH,
-            capture_output=True
-        )
-
-        result = subprocess.run(
-            [GIT_CMD, "rev-list", "--count", f"HEAD..origin/{current_branch}"],
-            cwd=GIT_REPO_PATH,
-            capture_output=True,
-            text=True
-        )
-        commits_behind = int(result.stdout.strip()) if result.returncode == 0 else 0
-
-        return jsonify({
-            "success": True,
-            "branch": current_branch,
-            "commit": commit_hash,
-            "last_commit_date": last_commit_date,
-            "updates_available": commits_behind > 0,
-            "commits_behind": commits_behind
-        })
-
-    except Exception as e:
-        print(f"System info error: {str(e)}", file=sys.stderr)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-
-@app.route("/api/system/info", methods=["GET"])
 def system_info():
     """Get system information including version and update status"""
     try:
@@ -1152,11 +1097,13 @@ def system_info():
             "branch": version_info['branch'],
             "latest_tag": version_info['latest_tag'],
             "on_release": version_info['on_release'],
+            "last_commit_date": version_info['last_commit_date'],
             "updates_available": update_info.get('update_available', False),
             "update_type": update_info.get('update_type'),
             "current_version": update_info.get('current_version'),
             "latest_version": update_info.get('latest_version'),
-            "commits_behind": update_info.get('commits_behind', 0)
+            "commits_behind": update_info.get('commits_behind', 0),
+            "changelog": update_info.get('changelog', [])
         }
 
         return jsonify(system_data)
