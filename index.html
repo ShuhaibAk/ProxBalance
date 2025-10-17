@@ -152,6 +152,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [collapsedSections, setCollapsedSections] = useState(() => {
             const saved = localStorage.getItem('collapsedSections');
             return saved ? JSON.parse(saved) : {
+              clusterMap: false,
               nodeStatus: true,
               recommendations: false,
               aiRecommendations: false,
@@ -1081,9 +1082,170 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   </div>
                 )}
 
+                {data && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Server size={24} className="text-blue-600 dark:text-blue-400" />
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Cluster Map</h2>
+                        <button
+                          onClick={() => toggleSection('clusterMap')}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          title={collapsedSections.clusterMap ? "Expand section" : "Collapse section"}
+                        >
+                          {collapsedSections.clusterMap ? (
+                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                          ) : (
+                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!collapsedSections.clusterMap && (
+                      <div className="relative" style={{minHeight: '400px'}}>
+                        <div className="flex flex-wrap gap-8 justify-center items-start py-8">
+                          {Object.values(data.nodes).map(node => {
+                            const nodeGuests = Object.values(data.guests || {}).filter(g => g.node === node.name && g.status === 'running');
+                            const maxResources = Math.max(...Object.values(data.guests || {}).map(g => {
+                              const cpuUsage = g.cpu_current || 0;
+                              const memPercent = g.mem_max_gb > 0 ? ((g.mem_used_gb || 0) / g.mem_max_gb) * 100 : 0;
+                              return cpuUsage + memPercent;
+                            }), 1);
+
+                            return (
+                              <div key={node.name} className="flex flex-col items-center gap-4">
+                                {/* Host Node */}
+                                <div className="relative group">
+                                  <div className={`w-32 h-40 rounded-lg border-4 flex flex-col items-center justify-between p-2 overflow-hidden ${
+                                    node.status === 'online'
+                                      ? 'bg-gray-50 dark:bg-gray-900 border-blue-500 dark:border-blue-600'
+                                      : 'bg-gray-100 dark:bg-gray-800 border-gray-400 dark:border-gray-600'
+                                  }`}>
+                                    {/* Node header */}
+                                    <div className="flex flex-col items-center z-10">
+                                      <Server size={28} className={node.status === 'online' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'} />
+                                      <div className="text-sm font-bold text-gray-900 dark:text-white mt-1">{node.name}</div>
+                                      <div className="text-xs text-gray-600 dark:text-gray-400">{nodeGuests.length} guests</div>
+                                    </div>
+
+                                    {/* Capacity indicators */}
+                                    <div className="w-full space-y-2 z-10">
+                                      {/* CPU Bar */}
+                                      <div className="relative">
+                                        <div className="text-xs mb-1">
+                                          <span className="text-gray-600 dark:text-gray-400 font-medium">CPU</span>
+                                        </div>
+                                        <div className="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                              (node.cpu_percent || 0) > 80 ? 'bg-red-500' :
+                                              (node.cpu_percent || 0) > 60 ? 'bg-yellow-500' :
+                                              'bg-green-500'
+                                            }`}
+                                            style={{width: `${Math.min(100, node.cpu_percent || 0)}%`}}
+                                          ></div>
+                                        </div>
+                                      </div>
+
+                                      {/* Memory Bar */}
+                                      <div className="relative">
+                                        <div className="text-xs mb-1">
+                                          <span className="text-gray-600 dark:text-gray-400 font-medium">MEM</span>
+                                        </div>
+                                        <div className="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                              (node.mem_percent || 0) > 80 ? 'bg-red-500' :
+                                              (node.mem_percent || 0) > 70 ? 'bg-yellow-500' :
+                                              'bg-blue-500'
+                                            }`}
+                                            style={{width: `${Math.min(100, node.mem_percent || 0)}%`}}
+                                          ></div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Host tooltip */}
+                                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                    <div><strong>{node.name}</strong></div>
+                                    <div>CPU: {(node.cpu_percent || 0).toFixed(1)}%</div>
+                                    <div>Memory: {(node.mem_percent || 0).toFixed(1)}%</div>
+                                    <div>Cores: {node.cpu_cores || 0}</div>
+                                  </div>
+                                </div>
+
+                                {/* Connection line */}
+                                {nodeGuests.length > 0 && (
+                                  <div className="w-0.5 h-8 bg-gradient-to-b from-blue-400 to-transparent dark:from-blue-600"></div>
+                                )}
+
+                                {/* Guests */}
+                                <div className="flex flex-wrap gap-3 justify-center max-w-xs">
+                                  {nodeGuests.map(guest => {
+                                    const cpuUsage = guest.cpu_current || 0;
+                                    const memPercent = guest.mem_max_gb > 0 ? ((guest.mem_used_gb || 0) / guest.mem_max_gb) * 100 : 0;
+                                    const resourceUsage = cpuUsage + memPercent;
+                                    const sizeRatio = maxResources > 0 ? (resourceUsage / maxResources) : 0.3;
+                                    const size = Math.max(30, Math.min(80, 30 + (sizeRatio * 50)));
+
+                                    const getGuestColor = () => {
+                                      const guestType = (guest.type || '').toUpperCase();
+                                      if (guestType === 'CT' || guestType === 'LXC') return 'bg-green-500 dark:bg-green-600';
+                                      if (guestType === 'VM' || guestType === 'QEMU') return 'bg-purple-500 dark:bg-purple-600';
+                                      return 'bg-gray-500 dark:bg-gray-600';
+                                    };
+
+                                    return (
+                                      <div key={guest.vmid} className="relative group">
+                                        <div
+                                          className={`rounded-full ${getGuestColor()} flex items-center justify-center text-white font-bold shadow-lg hover:shadow-xl transition-all cursor-pointer`}
+                                          style={{width: `${size}px`, height: `${size}px`, fontSize: `${Math.max(10, size/4)}px`}}
+                                        >
+                                          {guest.vmid}
+                                        </div>
+
+                                        {/* Guest tooltip */}
+                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                          <div><strong>{guest.name || `Guest ${guest.vmid}`}</strong></div>
+                                          <div>Type: {((guest.type || '').toUpperCase() === 'VM' || (guest.type || '').toUpperCase() === 'QEMU') ? 'VM' : 'Container'}</div>
+                                          <div>CPU: {cpuUsage.toFixed(1)}%</div>
+                                          <div>Memory: {memPercent.toFixed(1)}% ({(guest.mem_used_gb || 0).toFixed(1)} / {(guest.mem_max_gb || 0).toFixed(1)} GB)</div>
+                                          <div>Status: {guest.status}</div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Legend */}
+                        <div className="flex items-center justify-center gap-6 mt-6 text-xs text-gray-600 dark:text-gray-400">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-purple-500 dark:bg-purple-600"></div>
+                            <span>VM</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-green-500 dark:bg-green-600"></div>
+                            <span>Container</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span>Circle size = CPU + Memory usage</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
+                      <HardDrive size={24} className="text-cyan-600 dark:text-cyan-400" />
                       <h2 className="text-xl font-bold text-gray-900 dark:text-white">Node Status</h2>
                       <button
                         onClick={() => toggleSection('nodeStatus')}
@@ -1196,6 +1358,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
+                        <Activity size={24} className="text-orange-600 dark:text-orange-400" />
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Migration Recommendations</h2>
                         <button
                           onClick={() => toggleSection('recommendations')}
