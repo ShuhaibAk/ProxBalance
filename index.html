@@ -113,7 +113,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [aiProvider, setAiProvider] = useState('none');
           const [aiEnabled, setAiEnabled] = useState(false);
           const [openaiKey, setOpenaiKey] = useState('');
-          const [openaiModel, setOpenaiModel] = useState('gpt-4');
+          const [openaiModel, setOpenaiModel] = useState('gpt-4o');
           const [openaiModelCustom, setOpenaiModelCustom] = useState('');
           const [openaiAvailableModels, setOpenaiAvailableModels] = useState([]);
           const [openaiLoadingModels, setOpenaiLoadingModels] = useState(false);
@@ -198,7 +198,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 if (result.config.ai_config) {
                   if (result.config.ai_config.openai) {
                     setOpenaiKey(result.config.ai_config.openai.api_key || '');
-                    setOpenaiModel(result.config.ai_config.openai.model || 'gpt-4');
+                    setOpenaiModel(result.config.ai_config.openai.model || 'gpt-4o');
                   }
                   if (result.config.ai_config.anthropic) {
                     setAnthropicKey(result.config.ai_config.anthropic.api_key || '');
@@ -1798,7 +1798,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     type="text"
                                     value={openaiModelCustom}
                                     onChange={(e) => setOpenaiModelCustom(e.target.value)}
-                                    placeholder="Or enter custom model (e.g., gpt-4-0125-preview)"
+                                    placeholder="Or enter custom model (e.g., gpt-4o-mini, o1-preview)"
                                     className="w-full px-3 py-2 mt-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
                                   />
                                 </>

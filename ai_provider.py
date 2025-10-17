@@ -158,7 +158,7 @@ Return valid JSON only."""
 class OpenAIProvider(AIProvider):
     """OpenAI GPT provider"""
 
-    def __init__(self, api_key: str, model: str = "gpt-4", base_url: str = "https://api.openai.com/v1"):
+    def __init__(self, api_key: str, model: str = "gpt-4o", base_url: str = "https://api.openai.com/v1"):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip('/')
@@ -213,7 +213,7 @@ class OpenAIProvider(AIProvider):
 class AnthropicProvider(AIProvider):
     """Anthropic Claude provider"""
 
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022", base_url: str = "https://api.anthropic.com/v1"):
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5-20250929", base_url: str = "https://api.anthropic.com/v1"):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip('/')
@@ -329,7 +329,7 @@ class AIProviderFactory:
                 raise ValueError("OpenAI API key is required")
             return OpenAIProvider(
                 api_key=api_key,
-                model=openai_config.get('model', 'gpt-4'),
+                model=openai_config.get('model', 'gpt-4o'),
                 base_url=openai_config.get('base_url', 'https://api.openai.com/v1')
             )
 
@@ -340,7 +340,7 @@ class AIProviderFactory:
                 raise ValueError("Anthropic API key is required")
             return AnthropicProvider(
                 api_key=api_key,
-                model=anthropic_config.get('model', 'claude-3-5-sonnet-20241022'),
+                model=anthropic_config.get('model', 'claude-sonnet-4-5-20250929'),
                 base_url=anthropic_config.get('base_url', 'https://api.anthropic.com/v1')
             )
 
