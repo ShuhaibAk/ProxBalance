@@ -275,9 +275,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             document.documentElement.classList.toggle('dark');
           };
 
-          const formatCSTTime = (date) => {
+          const formatLocalTime = (date) => {
             return new Date(date).toLocaleString('en-US', {
-              timeZone: 'America/Chicago',
               year: 'numeric',
               month: 'short',
               day: 'numeric',
@@ -286,6 +285,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               second: '2-digit',
               hour12: true
             });
+          };
+
+          const getTimezoneAbbr = () => {
+            const date = new Date();
+            const timeZoneName = date.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
+            return timeZoneName;
           };
 
           const handleRefresh = async () => {
@@ -884,12 +889,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     <div className="flex items-center gap-3 mb-4 text-xs text-gray-500 dark:text-gray-500">
                       <div className="flex items-center gap-1">
                         <Clock size={12} />
-                        <span>UI refreshed: <span className="font-semibold text-gray-700 dark:text-gray-300">{formatCSTTime(lastUpdate)} CST</span></span>
+                        <span>UI refreshed: <span className="font-semibold text-gray-700 dark:text-gray-300">{formatLocalTime(lastUpdate)} {getTimezoneAbbr()}</span></span>
                       </div>
                       {backendCollected && (
                         <div className="flex items-center gap-2">
                           <Server size={12} />
-                          <span>Data collected: <span className="font-semibold text-green-600 dark:text-green-400">{formatCSTTime(backendCollected)} CST</span></span>
+                          <span>Data collected: <span className="font-semibold text-green-600 dark:text-green-400">{formatLocalTime(backendCollected)} {getTimezoneAbbr()}</span></span>
                           <button
                             onClick={handleRefresh}
                             disabled={loading}
