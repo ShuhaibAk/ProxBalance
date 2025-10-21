@@ -1239,9 +1239,13 @@ setup_api_token_auth() {
       else
         # Full permissions (read + migrate)
         # IMPORTANT: Both USER and TOKEN need permissions (even with privsep=0)
+        # IMPORTANT: Both PVEAuditor and PVEVMAdmin roles are required
+        #            PVEVMAdmin alone doesn't include all Sys.Audit permissions
         # Add to USER account
+        pvesh set /access/acl --path / --roles PVEAuditor --users "${TOKEN_USER}" --propagate 1 2>/dev/null || true
         pvesh set /access/acl --path / --roles PVEVMAdmin --users "${TOKEN_USER}" --propagate 1 2>/dev/null || true
         # Add to TOKEN
+        pvesh set /access/acl --path / --roles PVEAuditor --tokens "${API_TOKEN_ID}" --propagate 1 2>/dev/null || true
         pvesh set /access/acl --path / --roles PVEVMAdmin --tokens "${API_TOKEN_ID}" --propagate 1 2>/dev/null || true
         msg_ok "Full permissions applied (includes VM.Migrate for automated migrations)"
         echo -e "     ${GN}✓${CL} This token can perform live migrations"
@@ -1329,6 +1333,37 @@ cat > /etc/motd <<'MOTD'
 
 MOTD
 EOF
+
+  # Configure auto-login for console if no password was set
+  if [ "$PASSWORD_TYPE" = "none" ]; then
+    pct exec "$CTID" -- bash <<'AUTOLOGIN_EOF'
+mkdir -p /etc/systemd/system/container-getty@1.service.d
+cat > /etc/systemd/system/container-getty@1.service.d/override.conf <<'AUTOLOGIN_CONF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud pts/%I 115200,38400,9600 $TERM
+AUTOLOGIN_CONF
+systemctl daemon-reload
+systemctl restart container-getty@1.service 2>/dev/null || true
+AUTOLOGIN_EOF
+  fi
+
+  # Add MOTD display to shell profiles
+  pct exec "$CTID" -- bash <<'PROFILE_EOF'
+# Add to .bashrc
+if ! grep -q "cat /etc/motd" /root/.bashrc 2>/dev/null; then
+  echo "" >> /root/.bashrc
+  echo "# Display ProxBalance MOTD" >> /root/.bashrc
+  echo '[ -f /etc/motd ] && cat /etc/motd' >> /root/.bashrc
+fi
+
+# Add to .profile
+if ! grep -q "cat /etc/motd" /root/.profile 2>/dev/null; then
+  echo "" >> /root/.profile
+  echo "# Display ProxBalance MOTD" >> /root/.profile
+  echo '[ -f /etc/motd ] && cat /etc/motd' >> /root/.profile
+fi
+PROFILE_EOF
 
   msg_ok "Console message configured"
 }
