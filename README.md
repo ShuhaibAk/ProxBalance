@@ -33,6 +33,7 @@ ProxBalance is a web-based cluster analyzer and migration manager for Proxmox VE
 
 - **Real-Time Monitoring** - CPU, memory, IOWait, and load metrics across all nodes
 - **Cluster Map** - Visual representation with 4 view modes (Usage, Allocated, Disk I/O, Network)
+- **Node Maintenance Mode** - Evacuate VMs/CTs before maintenance with storage validation
 - **Smart Recommendations** - Intelligent migration suggestions based on historical data
 - **AI-Powered Analysis** - Optional AI recommendations using OpenAI, Anthropic, or Ollama
 - **Anti-Affinity Rules** - Tag-based system to enforce workload separation
@@ -112,6 +113,23 @@ Once installed, open `http://<container-ip>` in your browser.
 ---
 
 ## 🔧 Basic Usage
+
+### Node Maintenance Mode
+
+Put nodes into maintenance mode before performing updates or hardware changes:
+
+1. **Navigate to Node Maintenance** section in the web UI
+2. **Toggle Maintenance Mode** for the target node
+3. **Plan Evacuation** - Review migration plan with storage validation
+4. **Execute Evacuation** - Migrate all VMs/CTs to healthy nodes
+5. **Perform Maintenance** - Node is now excluded from load balancing and AI recommendations
+6. **Disable Maintenance Mode** when complete
+
+**Features:**
+- Pre-migration storage validation prevents compatibility errors
+- Automatic target node selection based on available resources
+- Real-time evacuation progress tracking
+- Nodes in maintenance excluded from AI recommendations
 
 ### Tagging Guests
 

@@ -4,13 +4,16 @@ Proxmox Balance Manager - Flask API (with caching)
 Reads from cache file for fast responses
 """
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 import subprocess
 import json
 import os
 import sys
 import shutil
+import time
+import threading
+import uuid
 from datetime import datetime
 from typing import Dict, List
 from ai_provider import AIProviderFactory
@@ -31,6 +34,35 @@ else:
 CACHE_FILE = os.path.join(BASE_PATH, 'cluster_cache.json')
 CONFIG_FILE = os.path.join(BASE_PATH, 'config.json')
 GIT_CMD = '/usr/bin/git'
+
+# Global evacuation tracking using file-based storage for multi-worker compatibility
+SESSIONS_DIR = os.path.join(BASE_PATH, 'evacuation_sessions')
+if not os.path.exists(SESSIONS_DIR):
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+
+def _get_session_file(session_id):
+    """Get the file path for a session"""
+    return os.path.join(SESSIONS_DIR, f"{session_id}.json")
+
+def _read_session(session_id):
+    """Read session from file"""
+    session_file = _get_session_file(session_id)
+    if os.path.exists(session_file):
+        try:
+            with open(session_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error reading session {session_id}: {e}", file=sys.stderr)
+    return None
+
+def _write_session(session_id, session_data):
+    """Write session to file"""
+    session_file = _get_session_file(session_id)
+    try:
+        with open(session_file, 'w') as f:
+            json.dump(session_data, f)
+    except Exception as e:
+        print(f"Error writing session {session_id}: {e}", file=sys.stderr)
 
 @app.route('/')
 def index():
@@ -346,17 +378,19 @@ def get_recommendations():
         data = request.json or {}
         cpu_threshold = float(data.get("cpu_threshold", 60.0))
         mem_threshold = float(data.get("mem_threshold", 70.0))
-        
+        maintenance_nodes = set(data.get("maintenance_nodes", []))
+
         cache_data = read_cache()
         if not cache_data:
             return jsonify({"success": False, "error": "No data available"}), 503
-        
+
         try:
             recommendations = generate_recommendations(
                 cache_data.get('nodes', {}),
                 cache_data.get('guests', {}),
                 cpu_threshold,
-                mem_threshold
+                mem_threshold,
+                maintenance_nodes
             )
         except Exception as e:
             print(f"Error in generate_recommendations: {str(e)}", file=sys.stderr)
@@ -376,14 +410,20 @@ def get_recommendations():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, mem_threshold: float) -> List[Dict]:
+def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, mem_threshold: float, maintenance_nodes: set = None) -> List[Dict]:
     """Generate migration recommendations"""
+    if maintenance_nodes is None:
+        maintenance_nodes = set()
+
     recommendations = []
     # Track guests that will be on each node after pending migrations
     pending_target_guests = {}
 
     overloaded = []
     for node_name, node in nodes.items():
+        # Skip nodes in maintenance mode as sources for overload detection
+        if node_name in maintenance_nodes:
+            continue
         try:
             # Support both old format (with metrics object) and new format (direct fields)
             metrics = node.get("metrics", {})
@@ -427,7 +467,8 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, me
         
         for tgt_name, tgt_node in nodes.items():
             try:
-                if tgt_name == src_node or tgt_node.get("status") != "online":
+                # Skip same node, offline nodes, and nodes in maintenance mode
+                if tgt_name == src_node or tgt_node.get("status") != "online" or tgt_name in maintenance_nodes:
                     continue
 
                 # Support both old format (with metrics object) and new format (direct fields)
@@ -710,6 +751,800 @@ def execute_batch_migration():
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/nodes/evacuate/status/<session_id>", methods=["GET"])
+def get_evacuation_status(session_id):
+    """Get the status of an ongoing evacuation"""
+    session = _read_session(session_id)
+    if not session:
+        return jsonify({"success": False, "error": "Session not found"}), 404
+
+    # Return session data
+    return jsonify({
+        "success": True,
+        "session_id": session_id,
+        "status": session.get("status"),
+        "progress": session.get("progress", {}),
+        "results": session.get("results", []),
+        "error": session.get("error"),
+        "completed": session.get("completed", False)
+    })
+
+@app.route("/api/nodes/<node>/storage", methods=["GET"])
+def get_node_storage(node):
+    """Get all available storage on a specific node"""
+    try:
+        proxmox = get_proxmox_client()
+
+        # Get all storage for the node
+        storage_list = proxmox.nodes(node).storage.get()
+
+        # Filter for storage that is enabled and available
+        available_storage = []
+        for storage in storage_list:
+            storage_id = storage.get('storage')
+            enabled = storage.get('enabled', 1)
+            active = storage.get('active', 0)
+
+            # Only include enabled and active storage
+            if enabled and active:
+                available_storage.append({
+                    'storage': storage_id,
+                    'type': storage.get('type'),
+                    'content': storage.get('content', '').split(','),
+                    'available': storage.get('avail', 0),
+                    'used': storage.get('used', 0),
+                    'total': storage.get('total', 0),
+                    'shared': storage.get('shared', 0)
+                })
+
+        return jsonify({
+            "success": True,
+            "node": node,
+            "storage": available_storage
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/storage/verify", methods=["POST"])
+def verify_storage_availability():
+    """Verify that storage volumes are available on target nodes
+
+    Request body:
+    {
+        "source_node": "pve1",
+        "target_nodes": ["pve2", "pve3"],
+        "guests": [100, 101, 102]
+    }
+    """
+    try:
+        data = request.get_json()
+        source_node = data.get('source_node')
+        target_nodes = data.get('target_nodes', [])
+        guest_vmids = data.get('guests', [])
+
+        if not source_node or not target_nodes:
+            return jsonify({"success": False, "error": "Missing required parameters"}), 400
+
+        proxmox = get_proxmox_client()
+
+        # Get storage info for all target nodes
+        target_storage_map = {}
+        for target_node in target_nodes:
+            try:
+                storage_list = proxmox.nodes(target_node).storage.get()
+                # Create set of available storage IDs
+                available = set()
+                for storage in storage_list:
+                    if storage.get('enabled', 1) and storage.get('active', 0):
+                        available.add(storage.get('storage'))
+                target_storage_map[target_node] = available
+            except Exception as e:
+                print(f"Error getting storage for {target_node}: {e}", file=sys.stderr)
+                target_storage_map[target_node] = set()
+
+        # Check each guest's storage requirements
+        guest_storage_info = []
+        for vmid in guest_vmids:
+            try:
+                # Try to get guest config (qemu or lxc)
+                guest_config = None
+                guest_type = None
+                try:
+                    guest_config = proxmox.nodes(source_node).qemu(vmid).config.get()
+                    guest_type = "qemu"
+                except:
+                    try:
+                        guest_config = proxmox.nodes(source_node).lxc(vmid).config.get()
+                        guest_type = "lxc"
+                    except:
+                        guest_storage_info.append({
+                            "vmid": vmid,
+                            "type": "unknown",
+                            "storage_volumes": [],
+                            "compatible_targets": [],
+                            "incompatible_targets": target_nodes,
+                            "error": "Cannot determine guest type"
+                        })
+                        continue
+
+                # Extract storage from config
+                storage_volumes = set()
+
+                # Check all config keys for storage references
+                for key, value in guest_config.items():
+                    # Disk keys like scsi0, ide0, virtio0, mp0, rootfs
+                    if any(key.startswith(prefix) for prefix in ['scsi', 'ide', 'virtio', 'sata', 'mp', 'rootfs']):
+                        # Value format is typically "storage:vm-disk-id" or "storage:subvol-id"
+                        if isinstance(value, str) and ':' in value:
+                            storage_id = value.split(':')[0]
+                            storage_volumes.add(storage_id)
+
+                # Find which targets have all required storage
+                compatible_targets = []
+                incompatible_targets = []
+
+                for target_node in target_nodes:
+                    target_storage = target_storage_map.get(target_node, set())
+                    missing_storage = storage_volumes - target_storage
+
+                    if not missing_storage:
+                        compatible_targets.append(target_node)
+                    else:
+                        incompatible_targets.append({
+                            "node": target_node,
+                            "missing_storage": list(missing_storage)
+                        })
+
+                guest_storage_info.append({
+                    "vmid": vmid,
+                    "type": guest_type,
+                    "storage_volumes": list(storage_volumes),
+                    "compatible_targets": compatible_targets,
+                    "incompatible_targets": incompatible_targets
+                })
+
+            except Exception as e:
+                guest_storage_info.append({
+                    "vmid": vmid,
+                    "type": "unknown",
+                    "storage_volumes": [],
+                    "compatible_targets": [],
+                    "incompatible_targets": target_nodes,
+                    "error": str(e)
+                })
+
+        return jsonify({
+            "success": True,
+            "source_node": source_node,
+            "target_storage": {node: list(storage) for node, storage in target_storage_map.items()},
+            "guests": guest_storage_info
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/nodes/evacuate", methods=["POST"])
+def evacuate_node():
+    """Evacuate all VMs/CTs from a node"""
+    try:
+        data = request.json
+        source_node = data.get("node")
+        maintenance_nodes = set(data.get("maintenance_nodes", []))
+        confirm = data.get("confirm", False)
+        guest_actions = data.get("guest_actions", {})  # Actions per guest (migrate/ignore/poweroff)
+
+        if not source_node:
+            return jsonify({"success": False, "error": "Missing node parameter"}), 400
+
+        # Load cluster data to find guests on the node
+        if not os.path.exists(CACHE_FILE):
+            return jsonify({"success": False, "error": "No cluster data available"}), 500
+
+        with open(CACHE_FILE, 'r') as f:
+            cluster_data = json.load(f)
+
+        # Access nodes as dictionary
+        nodes = cluster_data.get('nodes', {})
+
+        if source_node not in nodes:
+            return jsonify({"success": False, "error": f"Node {source_node} not found"}), 404
+
+        source_node_data = nodes[source_node]
+        guest_vmids = source_node_data.get('guests', [])
+
+        if not guest_vmids:
+            return jsonify({"success": False, "error": f"No guests found on node {source_node}"}), 400
+
+        print(f"Found {len(guest_vmids)} guests on {source_node}: {guest_vmids}", file=sys.stderr)
+
+        # Get available target nodes (excluding source and maintenance nodes)
+        available_nodes = []
+        for node_name, node_data in nodes.items():
+            if (node_name != source_node and
+                node_data.get('status') == 'online' and
+                node_name not in maintenance_nodes):
+                available_nodes.append({
+                    'node': node_name,
+                    'cpu': node_data.get('cpu_percent', 0),
+                    'mem': node_data.get('mem_percent', 0)
+                })
+
+        if not available_nodes:
+            return jsonify({"success": False, "error": "No available target nodes for evacuation"}), 400
+
+        print(f"Available target nodes: {[n['node'] for n in available_nodes]}", file=sys.stderr)
+
+        # Setup Proxmox API
+        config = load_config()
+        from proxmoxer import ProxmoxAPI
+
+        token_id = config.get('proxmox_api_token_id', '')
+        token_secret = config.get('proxmox_api_token_secret', '')
+        proxmox_host = config.get('proxmox_host', 'localhost')
+        proxmox_port = config.get('proxmox_port', 8006)
+        verify_ssl = config.get('proxmox_verify_ssl', False)
+
+        if not token_id or not token_secret:
+            return jsonify({
+                "success": False,
+                "error": "API token not configured"
+            }), 500
+
+        user, token_name = token_id.split('!', 1)
+        proxmox = ProxmoxAPI(
+            proxmox_host,
+            user=user,
+            token_name=token_name,
+            token_value=token_secret,
+            port=proxmox_port,
+            verify_ssl=verify_ssl
+        )
+
+        # Generate migration plan first
+        migration_plan = []
+
+        # Track pending assignments to distribute load evenly
+        pending_counts = {n['node']: 0 for n in available_nodes}
+
+        # Get storage info for all available target nodes
+        target_storage_map = {}
+        for node_info in available_nodes:
+            node = node_info['node']
+            try:
+                storage_list = proxmox.nodes(node).storage.get()
+                # Create set of available storage IDs
+                available_storage = set()
+                for storage in storage_list:
+                    if storage.get('enabled', 1) and storage.get('active', 0):
+                        available_storage.add(storage.get('storage'))
+                target_storage_map[node] = available_storage
+            except Exception as e:
+                print(f"Warning: Could not get storage for {node}: {e}", file=sys.stderr)
+                target_storage_map[node] = set()
+
+        for idx, vmid in enumerate(guest_vmids):
+            try:
+                # Determine guest type and get config
+                guest_type = None
+                guest_config = None
+                guest_status = None
+
+                try:
+                    guest_config = proxmox.nodes(source_node).qemu(vmid).config.get()
+                    guest_status = proxmox.nodes(source_node).qemu(vmid).status.current.get()
+                    guest_type = "qemu"
+                except:
+                    try:
+                        guest_config = proxmox.nodes(source_node).lxc(vmid).config.get()
+                        guest_status = proxmox.nodes(source_node).lxc(vmid).status.current.get()
+                        guest_type = "lxc"
+                    except Exception as e:
+                        migration_plan.append({
+                            "vmid": vmid,
+                            "name": f"Unknown-{vmid}",
+                            "type": "unknown",
+                            "status": "unknown",
+                            "target": None,
+                            "will_restart": False,
+                            "skipped": True,
+                            "skip_reason": f"Cannot determine type: {str(e)}"
+                        })
+                        continue
+
+                # Get guest details - for LXC prefer hostname, for QEMU prefer name
+                if guest_type == "lxc":
+                    guest_name = (
+                        guest_config.get('hostname') or
+                        guest_config.get('name') or
+                        guest_config.get('description') or
+                        f'CT-{vmid}'
+                    )
+                else:  # qemu
+                    guest_name = (
+                        guest_config.get('name') or
+                        guest_config.get('description') or
+                        f'VM-{vmid}'
+                    )
+
+                # Clean up description if it has newlines (use first line only)
+                if '\n' in str(guest_name):
+                    guest_name = str(guest_name).split('\n')[0].strip()
+                current_status = guest_status.get('status', 'unknown')
+
+                # Check for 'ignore' tag
+                tags = guest_config.get('tags', '').split(',') if guest_config.get('tags') else []
+                if 'ignore' in [t.strip().lower() for t in tags]:
+                    migration_plan.append({
+                        "vmid": vmid,
+                        "name": guest_name,
+                        "type": guest_type,
+                        "status": current_status,
+                        "target": None,
+                        "will_restart": False,
+                        "skipped": True,
+                        "skip_reason": "Has 'ignore' tag",
+                        "storage_volumes": [],
+                        "storage_compatible": True
+                    })
+                    continue
+
+                # Extract storage requirements for this guest
+                storage_volumes = set()
+                for key, value in guest_config.items():
+                    # Disk keys like scsi0, ide0, virtio0, mp0, rootfs
+                    if any(key.startswith(prefix) for prefix in ['scsi', 'ide', 'virtio', 'sata', 'mp', 'rootfs']):
+                        # Value format is typically "storage:vm-disk-id" or "storage:subvol-id"
+                        if isinstance(value, str) and ':' in value:
+                            storage_id = value.split(':')[0]
+                            storage_volumes.add(storage_id)
+
+                # Filter available nodes to only those with compatible storage
+                compatible_nodes = []
+                for node_info in available_nodes:
+                    node = node_info['node']
+                    node_storage = target_storage_map.get(node, set())
+                    missing_storage = storage_volumes - node_storage
+
+                    if not missing_storage:
+                        compatible_nodes.append(node_info)
+
+                # Check if any compatible nodes exist
+                if not compatible_nodes:
+                    # No compatible targets - mark as skipped
+                    missing_on_all = storage_volumes - set.intersection(*[target_storage_map.get(n['node'], set()) for n in available_nodes]) if available_nodes else storage_volumes
+                    migration_plan.append({
+                        "vmid": vmid,
+                        "name": guest_name,
+                        "type": guest_type,
+                        "status": current_status,
+                        "target": None,
+                        "will_restart": False,
+                        "skipped": True,
+                        "skip_reason": f"Storage not available on any target: {', '.join(sorted(missing_on_all))}",
+                        "storage_volumes": list(storage_volumes),
+                        "storage_compatible": False
+                    })
+                    continue
+
+                # Find best target node from compatible nodes only
+                target_node = min(compatible_nodes, key=lambda n: n['cpu'] + n['mem'] + (pending_counts[n['node']] * 10))['node']
+                pending_counts[target_node] += 1
+
+                # Determine if will restart
+                will_restart = False
+                if guest_type == "qemu":
+                    # QEMU VMs use online migration, no restart if running
+                    will_restart = (current_status != "running")
+                else:  # lxc
+                    # LXC containers restart during migration
+                    will_restart = (current_status == "running")
+
+                migration_plan.append({
+                    "vmid": vmid,
+                    "name": guest_name,
+                    "type": guest_type,
+                    "status": current_status,
+                    "target": target_node,
+                    "will_restart": will_restart,
+                    "skipped": False,
+                    "skip_reason": None,
+                    "storage_volumes": list(storage_volumes),
+                    "storage_compatible": True
+                })
+
+            except Exception as e:
+                migration_plan.append({
+                    "vmid": vmid,
+                    "name": f"Unknown-{vmid}",
+                    "type": "unknown",
+                    "status": "unknown",
+                    "target": None,
+                    "will_restart": False,
+                    "skipped": True,
+                    "skip_reason": str(e),
+                    "storage_volumes": [],
+                    "storage_compatible": False
+                })
+
+        # If not confirmed, return the plan for review
+        if not confirm:
+            return jsonify({
+                "success": True,
+                "plan": migration_plan,
+                "source_node": source_node,
+                "available_targets": [n['node'] for n in available_nodes],
+                "total_guests": len(migration_plan),
+                "will_migrate": len([p for p in migration_plan if not p['skipped']]),
+                "will_skip": len([p for p in migration_plan if p['skipped']])
+            })
+
+        # Execute evacuation if confirmed - start in background thread
+        session_id = str(uuid.uuid4())
+        print(f"Starting confirmed evacuation of node {source_node} (session: {session_id})", file=sys.stderr)
+
+        # Initialize session
+        session_data = {
+            "status": "starting",
+            "node": source_node,
+            "progress": {
+                "total": len(guest_vmids),
+                "processed": 0,
+                "successful": 0,
+                "failed": 0,
+                "current_guest": None,
+                "remaining": len(guest_vmids)
+            },
+            "results": [],
+            "completed": False,
+            "error": None
+        }
+        _write_session(session_id, session_data)
+
+        # Start evacuation in background thread
+        def run_evacuation():
+            _execute_evacuation(session_id, source_node, guest_vmids, available_nodes, guest_actions, proxmox)
+
+        thread = threading.Thread(target=run_evacuation, daemon=True)
+        thread.start()
+
+        # Return session ID immediately
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "message": "Evacuation started in background",
+            "total_guests": len(guest_vmids)
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _update_evacuation_progress(session_id, processed, successful, failed, result):
+    """Helper to update evacuation session progress"""
+    session = _read_session(session_id)
+    if session:
+        session["progress"]["processed"] = processed
+        session["progress"]["successful"] = successful
+        session["progress"]["failed"] = failed
+        session["results"].append(result)
+        _write_session(session_id, session)
+
+def _execute_evacuation(session_id, source_node, guest_vmids, available_nodes, guest_actions, proxmox):
+    """Execute evacuation in background thread"""
+    try:
+        print(f"[{session_id}] Executing evacuation of {len(guest_vmids)} guests from {source_node}", file=sys.stderr)
+        results = []
+        successful = 0
+        failed = 0
+
+        # Update session status
+        session = _read_session(session_id)
+        if session:
+            session["status"] = "running"
+            _write_session(session_id, session)
+
+        # Track pending assignments during execution to distribute load evenly
+        execution_pending_counts = {n['node']: 0 for n in available_nodes}
+
+        # Get storage info for all available target nodes
+        target_storage_map = {}
+        for node_info in available_nodes:
+            node = node_info['node']
+            try:
+                storage_list = proxmox.nodes(node).storage.get()
+                # Create set of available storage IDs
+                available_storage = set()
+                for storage in storage_list:
+                    if storage.get('enabled', 1) and storage.get('active', 0):
+                        available_storage.add(storage.get('storage'))
+                target_storage_map[node] = available_storage
+            except Exception as e:
+                print(f"Warning: Could not get storage for {node}: {e}", file=sys.stderr)
+                target_storage_map[node] = set()
+
+        for idx, vmid in enumerate(guest_vmids):
+            # Update current guest in progress
+            session = _read_session(session_id)
+            if session:
+                session["progress"]["current_guest"] = {
+                    "vmid": vmid,
+                    "index": idx + 1,
+                    "total": len(guest_vmids)
+                }
+                session["progress"]["remaining"] = len(guest_vmids) - idx
+                _write_session(session_id, session)
+            try:
+                print(f"[{idx+1}/{len(guest_vmids)}] Processing VM/CT {vmid}", file=sys.stderr)
+
+                # Determine guest type by trying to fetch from qemu first, then lxc
+                guest_type = None
+                guest_config = None
+
+                try:
+                    guest_config = proxmox.nodes(source_node).qemu(vmid).config.get()
+                    guest_type = "qemu"
+                except:
+                    try:
+                        guest_config = proxmox.nodes(source_node).lxc(vmid).config.get()
+                        guest_type = "lxc"
+                    except Exception as e:
+                        print(f"  ✗ Cannot determine type for {vmid}: {str(e)}", file=sys.stderr)
+                        result = {
+                            "vmid": vmid,
+                            "success": False,
+                            "error": f"Cannot determine guest type: {str(e)}"
+                        }
+                        results.append(result)
+                        failed += 1
+                        _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                        continue
+
+                # Check for 'ignore' tag
+                tags = guest_config.get('tags', '').split(',') if guest_config.get('tags') else []
+                if 'ignore' in [t.strip().lower() for t in tags]:
+                    print(f"  ⊘ Skipping {guest_type} {vmid} (has 'ignore' tag)", file=sys.stderr)
+                    result = {
+                        "vmid": vmid,
+                        "success": False,
+                        "error": "Skipped (ignore tag)"
+                    }
+                    results.append(result)
+                    failed += 1
+                    _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                    continue
+
+                # Check user-selected action for this guest
+                action = guest_actions.get(str(vmid), 'migrate')
+
+                if action == 'ignore':
+                    print(f"  ⊘ Ignoring {guest_type} {vmid} (user selected)", file=sys.stderr)
+                    result = {
+                        "vmid": vmid,
+                        "success": True,
+                        "action": "ignored",
+                        "message": "Ignored by user selection"
+                    }
+                    results.append(result)
+                    successful += 1
+                    _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                    continue
+
+                if action == 'poweroff':
+                    print(f"  ⏻ Powering off {guest_type} {vmid}", file=sys.stderr)
+                    try:
+                        if guest_type == "qemu":
+                            proxmox.nodes(source_node).qemu(vmid).status.stop.post()
+                        else:  # lxc
+                            proxmox.nodes(source_node).lxc(vmid).status.stop.post()
+
+                        result = {
+                            "vmid": vmid,
+                            "success": True,
+                            "action": "powered_off",
+                            "message": "Powered off successfully"
+                        }
+                        results.append(result)
+                        successful += 1
+                        _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                    except Exception as poweroff_error:
+                        result = {
+                            "vmid": vmid,
+                            "success": False,
+                            "error": f"Failed to power off: {str(poweroff_error)}"
+                        }
+                        results.append(result)
+                        failed += 1
+                        _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                    continue
+
+                # Extract storage requirements for this guest
+                storage_volumes = set()
+                for key, value in guest_config.items():
+                    # Disk keys like scsi0, ide0, virtio0, mp0, rootfs
+                    if any(key.startswith(prefix) for prefix in ['scsi', 'ide', 'virtio', 'sata', 'mp', 'rootfs']):
+                        # Value format is typically "storage:vm-disk-id" or "storage:subvol-id"
+                        if isinstance(value, str) and ':' in value:
+                            storage_id = value.split(':')[0]
+                            storage_volumes.add(storage_id)
+
+                # Filter available nodes to only those with compatible storage
+                compatible_nodes = []
+                for node_info in available_nodes:
+                    node = node_info['node']
+                    node_storage = target_storage_map.get(node, set())
+                    missing_storage = storage_volumes - node_storage
+
+                    if not missing_storage:
+                        compatible_nodes.append(node_info)
+
+                # Check if any compatible nodes exist
+                if not compatible_nodes:
+                    # No compatible targets - fail this migration
+                    missing_on_all = storage_volumes - set.intersection(*[target_storage_map.get(n['node'], set()) for n in available_nodes]) if available_nodes else storage_volumes
+                    error_msg = f"Storage not available on any target node: {', '.join(sorted(missing_on_all))}"
+                    print(f"  ✗ {error_msg}", file=sys.stderr)
+                    result = {
+                        "vmid": vmid,
+                        "success": False,
+                        "error": error_msg
+                    }
+                    results.append(result)
+                    failed += 1
+                    _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                    continue
+
+                # Find best target node from compatible nodes only
+                target_node = min(compatible_nodes, key=lambda n: n['cpu'] + n['mem'] + (execution_pending_counts[n['node']] * 10))['node']
+                execution_pending_counts[target_node] += 1
+
+                print(f"  → Migrating {guest_type.upper()} {vmid} to {target_node} (storage: {', '.join(sorted(storage_volumes)) if storage_volumes else 'none'})", file=sys.stderr)
+
+                # Execute migration
+                if guest_type == "qemu":
+                    task_id = proxmox.nodes(source_node).qemu(vmid).migrate.post(
+                        target=target_node,
+                        online=1
+                    )
+                else:  # lxc
+                    task_id = proxmox.nodes(source_node).lxc(vmid).migrate.post(
+                        target=target_node,
+                        restart=1
+                    )
+
+                print(f"  ✓ Migration started. Task ID: {task_id}", file=sys.stderr)
+
+                # Wait for migration to complete (poll task status)
+                max_wait = 600  # 10 minutes timeout
+                poll_interval = 5  # Check every 5 seconds
+                elapsed = 0
+                task_status = None
+                migration_success = False
+                migration_error = None
+
+                while elapsed < max_wait:
+                    try:
+                        task_status = proxmox.nodes(source_node).tasks(task_id).status.get()
+                        status = task_status.get('status')
+
+                        if status == 'stopped':
+                            exitstatus = task_status.get('exitstatus')
+
+                            # Check for successful completion
+                            if exitstatus == 'OK':
+                                print(f"  ✓ Migration completed successfully", file=sys.stderr)
+                                migration_success = True
+                                break
+                            else:
+                                # Migration failed - get detailed error
+                                # Read task log to get actual error message
+                                try:
+                                    task_log = proxmox.nodes(source_node).tasks(task_id).log.get(limit=50)
+                                    # Get last few log lines that might contain error info
+                                    error_lines = [line.get('t', '') for line in task_log[-10:] if line.get('t')]
+                                    error_detail = '\n'.join(error_lines) if error_lines else f"exitstatus: {exitstatus}"
+
+                                    # Check for common abort/cancel patterns
+                                    if 'abort' in error_detail.lower():
+                                        migration_error = f"Migration aborted: {exitstatus}"
+                                    elif 'cancel' in error_detail.lower():
+                                        migration_error = f"Migration cancelled: {exitstatus}"
+                                    elif exitstatus == 'ABORT':
+                                        migration_error = "Migration was aborted"
+                                    else:
+                                        migration_error = f"Migration failed (exitstatus: {exitstatus})"
+
+                                    print(f"  ✗ Migration failed. Exit status: {exitstatus}", file=sys.stderr)
+                                    print(f"  ✗ Error detail: {error_detail}", file=sys.stderr)
+                                except Exception as log_error:
+                                    migration_error = f"Migration failed with exitstatus: {exitstatus}"
+                                    print(f"  ✗ Could not read task log: {str(log_error)}", file=sys.stderr)
+
+                                break
+
+                        time.sleep(poll_interval)
+                        elapsed += poll_interval
+
+                    except Exception as poll_error:
+                        # Only retry on connection errors, not on task failures
+                        error_str = str(poll_error)
+                        if 'task not found' in error_str.lower() or '595' in error_str:
+                            migration_error = f"Task disappeared or node unreachable: {error_str}"
+                            print(f"  ✗ {migration_error}", file=sys.stderr)
+                            break
+                        else:
+                            # Temporary connection issue, retry
+                            print(f"  ⚠ Task poll error (retrying): {error_str}", file=sys.stderr)
+                            time.sleep(poll_interval)
+                            elapsed += poll_interval
+
+                # Check if migration timed out
+                if elapsed >= max_wait and not migration_success and not migration_error:
+                    migration_error = f"Migration timeout after {max_wait}s"
+                    print(f"  ✗ {migration_error}", file=sys.stderr)
+
+                # Record result based on actual outcome
+                if migration_success:
+                    result = {
+                        "vmid": vmid,
+                        "target": target_node,
+                        "success": True,
+                        "task_id": task_id
+                    }
+                    results.append(result)
+                    successful += 1
+                    _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                else:
+                    # Migration failed
+                    result = {
+                        "vmid": vmid,
+                        "success": False,
+                        "error": migration_error or "Unknown migration failure",
+                        "task_id": task_id
+                    }
+                    results.append(result)
+                    failed += 1
+                    _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+
+            except Exception as e:
+                error_msg = str(e)
+                result = {
+                    "vmid": vmid,
+                    "success": False,
+                    "error": error_msg
+                }
+                results.append(result)
+                failed += 1
+                _update_evacuation_progress(session_id, idx + 1, successful, failed, result)
+                print(f"  ✗ Failed: {error_msg}", file=sys.stderr)
+
+        # Trigger collection after evacuation
+        trigger_collection()
+
+        # Mark session as completed
+        session = _read_session(session_id)
+        if session:
+            session["status"] = "completed"
+            session["completed"] = True
+            session["progress"]["current_guest"] = None
+            _write_session(session_id, session)
+
+        print(f"[{session_id}] Evacuation completed: {successful} successful, {failed} failed", file=sys.stderr)
+
+    except Exception as e:
+        print(f"[{session_id}] Evacuation error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+
+        # Mark session as failed
+        session = _read_session(session_id)
+        if session:
+            session["status"] = "failed"
+            session["completed"] = True
+            session["error"] = str(e)
+            _write_session(session_id, session)
 
 
 @app.route("/api/permissions", methods=["GET"])
@@ -1100,15 +1935,19 @@ def get_ai_recommendations():
                 "error": str(e)
             }), 400
 
-        # Get analysis period from request
+        # Get analysis period and maintenance nodes from request
         request_data = request.json if request.json else {}
         analysis_period = request_data.get("analysis_period", "24h")
+        maintenance_nodes = set(request_data.get("maintenance_nodes", []))
 
-        # Prepare metrics for AI analysis
+        # Prepare metrics for AI analysis - exclude maintenance nodes
+        all_nodes = cache_data.get("nodes", {})
+        active_nodes = {k: v for k, v in all_nodes.items() if k not in maintenance_nodes}
+
         metrics = {
             "timestamp": cache_data.get("collected_at"),
             "summary": cache_data.get("summary", {}),
-            "nodes": cache_data.get("nodes", {}),
+            "nodes": active_nodes,
             "guests": cache_data.get("guests", {}),
             "thresholds": request_data,
             "analysis_period": analysis_period,
@@ -1118,7 +1957,8 @@ def get_ai_recommendations():
                 "24h": "last 24 hours",
                 "7d": "last 7 days",
                 "30d": "last 30 days"
-            }.get(analysis_period, "last 24 hours")
+            }.get(analysis_period, "last 24 hours"),
+            "maintenance_nodes": list(maintenance_nodes)
         }
 
         # Get AI recommendations
@@ -1128,7 +1968,9 @@ def get_ai_recommendations():
         if recommendations.get("success") and recommendations.get("recommendations"):
             guests_dict = cache_data.get("guests", {})
             nodes_dict = cache_data.get("nodes", {})
-            valid_nodes = list(nodes_dict.keys())
+
+            # Exclude maintenance nodes from valid targets (already loaded above)
+            valid_nodes = [n for n in nodes_dict.keys() if n not in maintenance_nodes]
 
             # Filter out invalid recommendations
             valid_recommendations = []
@@ -1672,6 +2514,514 @@ def switch_branch():
             "success": False,
             "error": str(e),
             "log": update_log if 'update_log' in locals() else []
+        }), 500
+
+
+@app.route("/api/system/restart-service", methods=["POST"])
+def restart_service():
+    """Restart a ProxBalance service"""
+    try:
+        data = request.get_json()
+        service = data.get('service', 'proxmox-balance')
+
+        # Validate service name
+        valid_services = ['proxmox-balance', 'proxmox-collector']
+        if service not in valid_services:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid service. Must be one of: {', '.join(valid_services)}"
+            }), 400
+
+        # For the proxmox-balance service (this app), we need to delay the restart
+        # to allow the response to be sent first
+        if service == 'proxmox-balance':
+            # Schedule restart in background after response is sent
+            import threading
+            def delayed_restart():
+                import time
+                time.sleep(2)  # Wait for response to be sent
+                subprocess.run(
+                    ['/bin/systemctl', 'restart', 'proxmox-balance.service'],
+                    capture_output=True,
+                    text=True
+                )
+
+            restart_thread = threading.Thread(target=delayed_restart, daemon=True)
+            restart_thread.start()
+
+            return jsonify({
+                "success": True,
+                "message": "Service restart initiated. The service will restart in 2 seconds.",
+                "status": "restarting"
+            })
+        else:
+            # For other services, restart immediately
+            result = subprocess.run(
+                ['/bin/systemctl', 'restart', f'{service}.service'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
+                if not error_msg:
+                    error_msg = f"systemctl returned exit code {result.returncode}"
+                return jsonify({
+                    "success": False,
+                    "error": f"Failed to restart service: {error_msg}"
+                }), 500
+
+            # Check if service is running
+            status_result = subprocess.run(
+                ['/bin/systemctl', 'is-active', f'{service}.service'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            is_active = status_result.stdout.strip() == 'active'
+
+            return jsonify({
+                "success": True,
+                "message": f"Service {service} restarted successfully",
+                "status": "active" if is_active else "inactive"
+            })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "error": "Service restart timed out"
+        }), 500
+    except Exception as e:
+        print(f"Service restart error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/api/system/change-host", methods=["POST"])
+def change_host():
+    """Change the Proxmox host in config.json"""
+    try:
+        data = request.get_json()
+        new_host = data.get('host', '').strip()
+
+        if not new_host:
+            return jsonify({
+                "success": False,
+                "error": "Host is required"
+            }), 400
+
+        # Load current config
+        config_path = CONFIG_FILE
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+
+        # Get API credentials for testing
+        api_token_id = config_data.get('proxmox_api_token_id', '')
+        api_token_secret = config_data.get('proxmox_api_token_secret', '')
+
+        if not api_token_id or not api_token_secret:
+            return jsonify({
+                "success": False,
+                "error": "API token not configured. Please configure API credentials first."
+            }), 400
+
+        # Test connection to new host
+        import requests
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        test_url = f"https://{new_host}:8006/api2/json/version"
+        headers = {
+            "Authorization": f"PVEAPIToken={api_token_id}={api_token_secret}"
+        }
+
+        try:
+            response = requests.get(test_url, headers=headers, verify=False, timeout=5)
+
+            if response.status_code == 401:
+                return jsonify({
+                    "success": False,
+                    "error": f"Authentication failed on {new_host}. Please check your API token credentials."
+                }), 400
+            elif response.status_code != 200:
+                return jsonify({
+                    "success": False,
+                    "error": f"Failed to connect to {new_host}. HTTP {response.status_code}: {response.text[:100]}"
+                }), 400
+
+            # Verify it's actually a Proxmox server
+            version_data = response.json().get('data', {})
+            if not version_data.get('version'):
+                return jsonify({
+                    "success": False,
+                    "error": f"{new_host} responded but doesn't appear to be a Proxmox VE server"
+                }), 400
+
+        except requests.exceptions.Timeout:
+            return jsonify({
+                "success": False,
+                "error": f"Connection to {new_host}:8006 timed out. Please verify the host is reachable."
+            }), 400
+        except requests.exceptions.ConnectionError:
+            return jsonify({
+                "success": False,
+                "error": f"Cannot connect to {new_host}:8006. Please verify the hostname/IP and that the Proxmox API is accessible."
+            }), 400
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": f"Connection test failed: {str(e)}"
+            }), 400
+
+        # Connection test passed, update config
+        config_data['proxmox_host'] = new_host
+
+        # Write updated config
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f, indent=2)
+
+        # Restart collector service to apply changes
+        subprocess.run(
+            ['/bin/systemctl', 'restart', 'proxmox-collector.service'],
+            capture_output=True,
+            timeout=10
+        )
+
+        return jsonify({
+            "success": True,
+            "message": f"Proxmox host updated to {new_host} and verified successfully"
+        })
+
+    except Exception as e:
+        print(f"Change host error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/api/system/token-permissions", methods=["POST"])
+def change_token_permissions():
+    """Change API token permissions"""
+    try:
+        data = request.get_json()
+        token_id = data.get('token_id', '')
+        permission_level = data.get('permission_level', 'readonly')
+
+        if not token_id:
+            return jsonify({
+                "success": False,
+                "error": "Token ID is required"
+            }), 400
+
+        # Parse token_id (format: user@realm!tokenname)
+        if '!' not in token_id:
+            return jsonify({
+                "success": False,
+                "error": "Invalid token ID format. Expected: user@realm!tokenname"
+            }), 400
+
+        user_part, token_name = token_id.split('!', 1)
+
+        # Remove existing permissions
+        subprocess.run(
+            ['/usr/bin/pveum', 'acl', 'delete', '/', '--tokens', token_id],
+            capture_output=True,
+            timeout=10
+        )
+        subprocess.run(
+            ['/usr/bin/pveum', 'acl', 'delete', '/', '--users', user_part],
+            capture_output=True,
+            timeout=10
+        )
+
+        # Apply new permissions
+        if permission_level == 'readonly':
+            # Read-only: PVEAuditor
+            subprocess.run(
+                ['/usr/bin/pveum', 'acl', 'modify', '/', '--users', user_part, '--roles', 'PVEAuditor'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True
+            )
+            subprocess.run(
+                ['/usr/bin/pveum', 'acl', 'modify', '/', '--tokens', token_id, '--roles', 'PVEAuditor'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True
+            )
+        else:
+            # Full: PVEAuditor + PVEVMAdmin
+            subprocess.run(
+                ['/usr/bin/pveum', 'acl', 'modify', '/', '--users', user_part, '--roles', 'PVEAuditor'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True
+            )
+            subprocess.run(
+                ['/usr/bin/pveum', 'acl', 'modify', '/', '--users', user_part, '--roles', 'PVEVMAdmin'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True
+            )
+            subprocess.run(
+                ['/usr/bin/pveum', 'acl', 'modify', '/', '--tokens', token_id, '--roles', 'PVEAuditor'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True
+            )
+            subprocess.run(
+                ['/usr/bin/pveum', 'acl', 'modify', '/', '--tokens', token_id, '--roles', 'PVEVMAdmin'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True
+            )
+
+        return jsonify({
+            "success": True,
+            "message": f"Token permissions updated to {permission_level}"
+        })
+
+    except subprocess.CalledProcessError as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to update permissions: {e.stderr if e.stderr else str(e)}"
+        }), 500
+    except Exception as e:
+        print(f"Token permission change error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/api/system/recreate-token", methods=["POST"])
+def recreate_token():
+    """Recreate API token (delete old, create new)"""
+    try:
+        data = request.get_json()
+        token_id = data.get('token_id', '')
+        permission_level = data.get('permission_level', 'readonly')
+
+        if not token_id:
+            return jsonify({
+                "success": False,
+                "error": "Token ID is required"
+            }), 400
+
+        # Parse token_id
+        if '!' not in token_id:
+            return jsonify({
+                "success": False,
+                "error": "Invalid token ID format"
+            }), 400
+
+        user_part, token_name = token_id.split('!', 1)
+
+        # Delete old token
+        subprocess.run(
+            ['/usr/bin/pveum', 'user', 'token', 'remove', user_part, token_name],
+            capture_output=True,
+            timeout=10
+        )
+
+        # Create new token
+        result = subprocess.run(
+            ['/usr/bin/pveum', 'user', 'token', 'add', user_part, token_name, '--privsep', '0'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True
+        )
+
+        # Extract token secret from output
+        import re
+        secret_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', result.stdout)
+        if not secret_match:
+            return jsonify({
+                "success": False,
+                "error": "Failed to extract token secret from output"
+            }), 500
+
+        token_secret = secret_match.group(0)
+
+        # Apply permissions
+        if permission_level == 'readonly':
+            subprocess.run(['/usr/bin/pveum', 'acl', 'modify', '/', '--users', user_part, '--roles', 'PVEAuditor'], check=True, timeout=10)
+            subprocess.run(['/usr/bin/pveum', 'acl', 'modify', '/', '--tokens', token_id, '--roles', 'PVEAuditor'], check=True, timeout=10)
+        else:
+            subprocess.run(['/usr/bin/pveum', 'acl', 'modify', '/', '--users', user_part, '--roles', 'PVEAuditor'], check=True, timeout=10)
+            subprocess.run(['/usr/bin/pveum', 'acl', 'modify', '/', '--users', user_part, '--roles', 'PVEVMAdmin'], check=True, timeout=10)
+            subprocess.run(['/usr/bin/pveum', 'acl', 'modify', '/', '--tokens', token_id, '--roles', 'PVEAuditor'], check=True, timeout=10)
+            subprocess.run(['/usr/bin/pveum', 'acl', 'modify', '/', '--tokens', token_id, '--roles', 'PVEVMAdmin'], check=True, timeout=10)
+
+        # Update config.json with new token secret
+        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+
+        config_data['proxmox_api_token_secret'] = token_secret
+
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f, indent=2)
+
+        return jsonify({
+            "success": True,
+            "message": "Token recreated successfully",
+            "token_secret": token_secret
+        })
+
+    except subprocess.CalledProcessError as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to recreate token: {e.stderr if e.stderr else str(e)}"
+        }), 500
+    except Exception as e:
+        print(f"Token recreation error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/api/system/delete-token", methods=["POST"])
+def delete_token():
+    """Delete API token"""
+    try:
+        data = request.get_json()
+        token_id = data.get('token_id', '')
+
+        if not token_id:
+            return jsonify({
+                "success": False,
+                "error": "Token ID is required"
+            }), 400
+
+        # Parse token_id
+        if '!' not in token_id:
+            return jsonify({
+                "success": False,
+                "error": "Invalid token ID format"
+            }), 400
+
+        user_part, token_name = token_id.split('!', 1)
+
+        # Delete token
+        result = subprocess.run(
+            ['/usr/bin/pveum', 'user', 'token', 'remove', user_part, token_name],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                "success": False,
+                "error": f"Failed to delete token: {result.stderr}"
+            }), 500
+
+        # Clear from config.json
+        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+
+        config_data['proxmox_api_token_id'] = ''
+        config_data['proxmox_api_token_secret'] = ''
+
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f, indent=2)
+
+        return jsonify({
+            "success": True,
+            "message": "Token deleted successfully"
+        })
+
+    except Exception as e:
+        print(f"Token deletion error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/api/logs/download", methods=["GET"])
+def download_logs():
+    """Download service logs"""
+    try:
+        service = request.args.get('service', 'proxmox-balance')
+
+        # Validate service name
+        valid_services = ['proxmox-balance', 'proxmox-collector']
+        if service not in valid_services:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid service. Must be one of: {', '.join(valid_services)}"
+            }), 400
+
+        # Get logs using journalctl
+        result = subprocess.run(
+            ['/bin/journalctl', '-u', f'{service}.service', '-n', '1000', '--no-pager'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                "success": False,
+                "error": f"Failed to retrieve logs: {result.stderr}"
+            }), 500
+
+        # Create a temporary file with the logs
+        import tempfile
+        import io
+
+        log_content = result.stdout
+        log_bytes = io.BytesIO(log_content.encode('utf-8'))
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{service}_{timestamp}.log"
+
+        return send_file(
+            log_bytes,
+            mimetype='text/plain',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "error": "Log retrieval timed out"
+        }), 500
+    except Exception as e:
+        print(f"Log download error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
         }), 500
 
 
