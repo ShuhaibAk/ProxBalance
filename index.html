@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ProxBalance v1.1.0 - Build 20251020-1605 - JSX Fix Applied -->
+<!-- ProxBalance v1.1.0 - Build 20251021-0001 - Icon Fix Applied -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -69,6 +69,8 @@
         const ArrowLeft = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
         const Lock = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>);
         const Download = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>);
+        const MoveRight = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M18 8L22 12L18 16"></path><path d="M2 12H22"></path></svg>);
+        const Loader = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>);
 
 // Logo component
 const ProxBalanceLogo = ({ size = 32 }) => (
@@ -94,6 +96,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [config, setConfig] = useState(null);
           const [autoRefreshInterval, setAutoRefreshInterval] = useState(60 * 60 * 1000);
           const [showSettings, setShowSettings] = useState(false);
+          const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
           const [currentPage, setCurrentPage] = useState('dashboard'); // 'dashboard' or 'settings'
           const [tempBackendInterval, setTempBackendInterval] = useState(60);
           const [tempUiInterval, setTempUiInterval] = useState(60);
@@ -135,6 +138,24 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [logLevel, setLogLevel] = useState('INFO');
           const [verboseLogging, setVerboseLogging] = useState(false);
 
+          // Maintenance mode
+          const [maintenanceNodes, setMaintenanceNodes] = useState(() => {
+            const saved = localStorage.getItem('maintenanceNodes');
+            return saved ? new Set(JSON.parse(saved)) : new Set();
+          });
+          const [evacuatingNodes, setEvacuatingNodes] = useState(new Set());
+          const [evacuationStatus, setEvacuationStatus] = useState({}); // Track status per node
+          const [evacuationPlan, setEvacuationPlan] = useState(null); // Migration plan modal
+          const [planNode, setPlanNode] = useState(null); // Node being planned for evacuation
+          const [guestActions, setGuestActions] = useState({}); // Track action per guest (migrate/ignore/poweroff)
+          const [showConfirmModal, setShowConfirmModal] = useState(false); // Show final confirmation before execution
+
+          // Dashboard header collapse
+          const [dashboardHeaderCollapsed, setDashboardHeaderCollapsed] = useState(() => {
+            const saved = localStorage.getItem('dashboardHeaderCollapsed');
+            return saved ? JSON.parse(saved) : false;
+          });
+
           // Node grid layout state with localStorage persistence
           const [nodeGridColumns, setNodeGridColumns] = useState(() => {
             const saved = localStorage.getItem('nodeGridColumns');
@@ -146,6 +167,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             const saved = localStorage.getItem('collapsedSections');
             return saved ? JSON.parse(saved) : {
               clusterMap: false,
+              maintenance: true,
               nodeStatus: true,
               recommendations: false,
               aiRecommendations: false,
@@ -178,6 +200,16 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           useEffect(() => {
             localStorage.setItem('clusterMapViewMode', clusterMapViewMode);
           }, [clusterMapViewMode]);
+
+          // Save dashboard header collapse state to localStorage
+          useEffect(() => {
+            localStorage.setItem('dashboardHeaderCollapsed', JSON.stringify(dashboardHeaderCollapsed));
+          }, [dashboardHeaderCollapsed]);
+
+          // Save maintenance nodes to localStorage
+          useEffect(() => {
+            localStorage.setItem('maintenanceNodes', JSON.stringify(Array.from(maintenanceNodes)));
+          }, [maintenanceNodes]);
 
           const toggleSection = (section) => {
             setCollapsedSections(prev => ({
@@ -374,7 +406,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               const response = await fetch(`${API_BASE}/recommendations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cpu_threshold: cpuThreshold, mem_threshold: memThreshold })
+                body: JSON.stringify({
+                  cpu_threshold: cpuThreshold,
+                  mem_threshold: memThreshold,
+                  maintenance_nodes: Array.from(maintenanceNodes)
+                })
               });
               const result = await response.json();
               if (result.success) {
@@ -395,7 +431,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 body: JSON.stringify({
                   cpu_threshold: cpuThreshold,
                   mem_threshold: memThreshold,
-                  analysis_period: aiAnalysisPeriod
+                  analysis_period: aiAnalysisPeriod,
+                  maintenance_nodes: Array.from(maintenanceNodes)
                 })
               });
               const result = await response.json();
@@ -568,12 +605,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               });
               
               const result = await response.json();
-              if (result.success) {
+              if (result.success && result.results) {
                 result.results.forEach(r => {
                   const key = `${r.vmid}-batch`;
-                  setMigrationStatus(prev => ({ 
-                    ...prev, 
-                    [key]: r.success ? 'success' : 'failed' 
+                  setMigrationStatus(prev => ({
+                    ...prev,
+                    [key]: r.success ? 'success' : 'failed'
                   }));
                 });
                 setTimeout(() => fetchAnalysis(), 5000);
@@ -622,7 +659,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }, autoRefreshInterval);
             return () => clearInterval(interval);
           }, [autoRefreshInterval]);
-          useEffect(() => { if (data) fetchRecommendations(); }, [data, cpuThreshold, memThreshold]);
+          useEffect(() => { if (data) fetchRecommendations(); }, [data, cpuThreshold, memThreshold, maintenanceNodes]);
 
           // Render charts when data changes or chart period changes
           useEffect(() => {
@@ -651,7 +688,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
               const canvas = document.getElementById(`chart-${node.name}`);
               if (!canvas) {
-                console.error(`Canvas not found for node ${node.name}`);
+                // Canvas not in DOM yet - will be created when node status is expanded
                 return;
               }
 
@@ -1010,6 +1047,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 placeholder="gpt-4o"
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                               />
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                See available models at <a href="https://platform.openai.com/docs/models" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">OpenAI Models</a>
+                              </p>
                             </div>
                           </div>
                         )}
@@ -1040,6 +1080,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 placeholder="claude-3-5-sonnet-20241022"
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                               />
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                See available models at <a href="https://docs.anthropic.com/en/docs/about-claude/models" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Anthropic Models</a>
+                              </p>
                             </div>
                           </div>
                         )}
@@ -1047,9 +1090,79 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         {aiProvider === 'local' && (
                           <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
                             <h4 className="font-medium text-gray-900 dark:text-white">Local LLM (Ollama) Configuration</h4>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Ollama Base URL
+                              </label>
+                              <input
+                                type="text"
+                                value={localUrl}
+                                onChange={(e) => setLocalUrl(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                placeholder="http://localhost:11434"
+                              />
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">The URL where Ollama is running</p>
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  Model
+                                </label>
+                                <button
+                                  onClick={async () => {
+                                    setLocalLoadingModels(true);
+                                    try {
+                                      const response = await fetch('/api/ai-models', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          provider: 'local',
+                                          base_url: localUrl
+                                        })
+                                      });
+                                      const data = await response.json();
+                                      if (data.success) {
+                                        setLocalAvailableModels(data.models || []);
+                                      } else {
+                                        alert('Failed to fetch models: ' + (data.error || 'Unknown error'));
+                                      }
+                                    } catch (error) {
+                                      alert('Error fetching models: ' + error.message);
+                                    } finally {
+                                      setLocalLoadingModels(false);
+                                    }
+                                  }}
+                                  disabled={localLoadingModels}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400"
+                                >
+                                  <RefreshCw size={12} className={localLoadingModels ? 'animate-spin' : ''} />
+                                  {localLoadingModels ? 'Loading...' : 'Refresh Models'}
+                                </button>
+                              </div>
+                              {localAvailableModels.length > 0 ? (
+                                <select
+                                  value={localModel}
+                                  onChange={(e) => setLocalModel(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                >
+                                  {localAvailableModels.map(model => (
+                                    <option key={model} value={model}>{model}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={localModel}
+                                  onChange={(e) => setLocalModel(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  placeholder="llama3.1:8b"
+                                />
+                              )}
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Ollama model to use for recommendations</p>
+                            </div>
                             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3">
                               <p className="text-sm text-blue-900 dark:text-blue-200">
-                                Ollama support coming soon. This will allow you to run AI recommendations locally without external API calls.
+                                <strong>Note:</strong> Ensure Ollama is installed and running. Visit <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="underline">ollama.ai</a> for installation instructions.
                               </p>
                             </div>
                           </div>
@@ -1059,9 +1172,32 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                     <hr className="border-gray-300 dark:border-gray-600" />
 
-                    {/* Data Management */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Data Management</h3>
+                    {/* Advanced System Settings - Collapsible */}
+                    <div className="border-2 border-red-500 dark:border-red-600 rounded-lg p-4 bg-red-50 dark:bg-red-900/20">
+                      <button
+                        onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                        className="w-full flex items-center justify-between text-left group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <AlertTriangle className="text-red-600 dark:text-red-500" size={24} />
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Advanced System Settings</h3>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Data management, debugging, API configuration, and system controls</p>
+                          </div>
+                        </div>
+                        <ChevronDown
+                          className={`text-gray-600 dark:text-gray-400 transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}
+                          size={20}
+                        />
+                      </button>
+
+                      {showAdvancedSettings && (
+                        <div className="mt-4 space-y-6">
+                          <hr className="border-gray-300 dark:border-gray-600" />
+
+                          {/* Data Management */}
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Data Management</h3>
                       <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
                         <button
                           onClick={() => {
@@ -1210,13 +1346,19 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Proxmox Host Configuration</h3>
                       <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                        <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 mb-4">
+                          <p className="text-sm text-blue-900 dark:text-blue-200">
+                            <strong>Current Proxmox Host:</strong> {config?.proxmox_host || 'Not configured'}
+                          </p>
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Proxmox Host IP/Hostname
+                            New Proxmox Host IP/Hostname
                           </label>
                           <input
                             type="text"
                             id="proxmoxHostInput"
+                            defaultValue={config?.proxmox_host || ''}
                             placeholder="10.0.0.3 or pve-node1"
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                           />
@@ -1241,7 +1383,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               .then(result => {
                                 if (result.success) {
                                   alert('Proxmox host updated successfully!\n\nThe collector service has been restarted.');
-                                  fetchData();
+                                  fetchConfig();
+                                  document.getElementById('proxmoxHostInput').value = newHost;
                                 } else {
                                   alert('Failed to update host: ' + (result.error || 'Unknown error'));
                                 }
@@ -1311,7 +1454,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         </button>
                       </div>
                     </div>
-
+                        </div>
+                      )}
+                    </div>
 
                     {/* Save Button */}
                     <div className="mt-6">
@@ -1334,14 +1479,34 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           return (<>
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4">
               <div className="max-w-7xl mx-auto">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <ProxBalanceLogo size={96} />
+                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 mb-6 overflow-hidden">
+                  {/* Minimal Header - Always Visible */}
+                  <div className="flex items-center justify-between p-4">
+                    <div className="flex items-center gap-3">
+                      <ProxBalanceLogo size={dashboardHeaderCollapsed ? 48 : 96} />
                       <div>
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ProxBalance</h1>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Cluster Optimization</p>
-                        {systemInfo && (
+                        <h1 className={`font-bold text-gray-900 dark:text-white transition-all ${dashboardHeaderCollapsed ? 'text-xl' : 'text-3xl'}`}>ProxBalance</h1>
+                        {!dashboardHeaderCollapsed && <p className="text-sm text-gray-500 dark:text-gray-400">Cluster Optimization</p>}
+                        {dashboardHeaderCollapsed && data && data.nodes && (() => {
+                          const nodes = Object.values(data.nodes);
+                          const totalCPU = (nodes.reduce((sum, node) => sum + (node.cpu_percent || 0), 0) / nodes.length).toFixed(1);
+                          const totalMemory = (nodes.reduce((sum, node) => sum + (node.mem_percent || 0), 0) / nodes.length).toFixed(1);
+                          const onlineNodes = nodes.filter(node => node.status === 'online').length;
+                          return (
+                            <div className="flex items-center gap-4 mt-1 text-xs">
+                              <span className="text-gray-600 dark:text-gray-400">
+                                Nodes: <span className="font-semibold text-green-600 dark:text-green-400">{onlineNodes}/{nodes.length}</span>
+                              </span>
+                              <span className="text-gray-600 dark:text-gray-400">
+                                CPU: <span className="font-semibold text-blue-600 dark:text-blue-400">{totalCPU}%</span>
+                              </span>
+                              <span className="text-gray-600 dark:text-gray-400">
+                                RAM: <span className="font-semibold text-purple-600 dark:text-purple-400">{totalMemory}%</span>
+                              </span>
+                            </div>
+                          );
+                        })()}
+                        {!dashboardHeaderCollapsed && systemInfo && (
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs text-gray-500 dark:text-gray-500">
                               Branch: <button
@@ -1400,9 +1565,19 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       >
                         <Settings size={20} className="text-gray-700 dark:text-gray-300" />
                       </button>
+                      <button
+                        onClick={() => setDashboardHeaderCollapsed(!dashboardHeaderCollapsed)}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
+                        title={dashboardHeaderCollapsed ? "Expand Header" : "Collapse Header"}
+                      >
+                        {dashboardHeaderCollapsed ? <ChevronDown size={22} className="text-gray-600 dark:text-gray-400" /> : <ChevronUp size={22} className="text-gray-600 dark:text-gray-400" />}
+                      </button>
                     </div>
                   </div>
 
+                  {/* Expandable Content */}
+                  {!dashboardHeaderCollapsed && (
+                    <div className="px-6 pb-6">
                   {lastUpdate && (
                     <div className="flex items-center gap-3 mb-4 text-xs text-gray-500 dark:text-gray-500">
                       <div className="flex items-center gap-1">
@@ -1431,7 +1606,99 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       )}
                     </div>
                   )}
-                  
+
+                  {/* Cluster Resource Utilization */}
+                  {data && data.nodes && (() => {
+                    // Calculate cluster-wide totals
+                    const nodes = Object.values(data.nodes);
+                    const totalCPU = nodes.reduce((sum, node) => sum + (node.cpu_percent || 0), 0) / nodes.length;
+                    const totalMemory = nodes.reduce((sum, node) => sum + (node.mem_percent || 0), 0) / nodes.length;
+                    const totalIOWait = nodes.reduce((sum, node) => sum + (node.metrics?.current_iowait || 0), 0) / nodes.length;
+                    const totalNodes = nodes.length;
+                    const onlineNodes = nodes.filter(node => node.status === 'online').length;
+
+                    return (
+                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-5 mb-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg shadow-md">
+                              <Server size={24} className="text-white" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Cluster Resource Utilization</h3>
+                              <p className="text-xs text-gray-600 dark:text-gray-400">{onlineNodes} of {totalNodes} nodes online</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* CPU Utilization */}
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">CPU</span>
+                              <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">{totalCPU.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                              <div
+                                className={`h-3 rounded-full transition-all duration-500 ${
+                                  totalCPU > 80 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                                  totalCPU > 60 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                                  'bg-gradient-to-r from-green-500 to-emerald-500'
+                                }`}
+                                style={{width: `${Math.min(100, totalCPU)}%`}}
+                              ></div>
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              Average across all nodes
+                            </div>
+                          </div>
+
+                          {/* Memory Utilization */}
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Memory</span>
+                              <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">{totalMemory.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                              <div
+                                className={`h-3 rounded-full transition-all duration-500 ${
+                                  totalMemory > 80 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                                  totalMemory > 60 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                                  'bg-gradient-to-r from-purple-500 to-pink-500'
+                                }`}
+                                style={{width: `${Math.min(100, totalMemory)}%`}}
+                              ></div>
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              Average across all nodes
+                            </div>
+                          </div>
+
+                          {/* IOWait */}
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">IOWait</span>
+                              <span className="text-2xl font-bold text-orange-600 dark:text-orange-400">{totalIOWait.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                              <div
+                                className={`h-3 rounded-full transition-all duration-500 ${
+                                  totalIOWait > 20 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                                  totalIOWait > 10 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                                  'bg-gradient-to-r from-green-500 to-emerald-500'
+                                }`}
+                                style={{width: `${Math.min(100, totalIOWait)}%`}}
+                              ></div>
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              Average across all nodes
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded">
                       <div className="flex items-center gap-2 mb-2">
@@ -1463,23 +1730,30 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{data.summary.ignored_guests + data.summary.excluded_guests}</p>
                     </div>
                   </div>
+                    </div>
+                  )}
                 </div>
 
                 {(ignoredGuests.length > 0 || excludeGuests.length > 0 || violations.length > 0) && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <Tag size={24} className="text-purple-600 dark:text-purple-400" />
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Tagged Guests & Affinity Rules</h2>
+                  <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-gradient-to-br from-purple-600 to-pink-600 rounded-lg shadow-md">
+                          <Tag size={24} className="text-white" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Tagged Guests & Affinity Rules</h2>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Guest tags and rule violations</p>
+                        </div>
                         <button
                           onClick={() => toggleSection('taggedGuests')}
-                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          className="ml-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                           title={collapsedSections.taggedGuests ? "Expand section" : "Collapse section"}
                         >
                           {collapsedSections.taggedGuests ? (
-                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronDown size={22} className="text-gray-600 dark:text-gray-400" />
                           ) : (
-                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronUp size={22} className="text-gray-600 dark:text-gray-400" />
                           )}
                         </button>
                       </div>
@@ -1600,20 +1874,25 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 )}
 
                 {data && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <Server size={24} className="text-blue-600 dark:text-blue-400" />
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Cluster Map</h2>
+                  <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg shadow-md">
+                          <Server size={24} className="text-white" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Cluster Map</h2>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Visual cluster overview</p>
+                        </div>
                         <button
                           onClick={() => toggleSection('clusterMap')}
-                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          className="ml-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                           title={collapsedSections.clusterMap ? "Expand section" : "Collapse section"}
                         >
                           {collapsedSections.clusterMap ? (
-                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronDown size={22} className="text-gray-600 dark:text-gray-400" />
                           ) : (
-                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronUp size={22} className="text-gray-600 dark:text-gray-400" />
                           )}
                         </button>
                       </div>
@@ -1876,20 +2155,755 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   </div>
                 )}
 
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <HardDrive size={24} className="text-cyan-600 dark:text-cyan-400" />
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Node Status</h2>
+                {/* Node Maintenance Section */}
+                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-lg shadow-md">
+                        <AlertTriangle size={24} className="text-white" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Node Maintenance</h2>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Manage node availability and evacuations</p>
+                        </div>
+                        {collapsedSections.maintenance && maintenanceNodes.size > 0 && (
+                          <span className="px-2.5 py-1 bg-yellow-500 dark:bg-yellow-600 text-white text-sm font-semibold rounded-full">
+                            {maintenanceNodes.size}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => toggleSection('maintenance')}
+                        className="ml-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
+                        title={collapsedSections.maintenance ? "Expand section" : "Collapse section"}
+                      >
+                        {collapsedSections.maintenance ? (
+                          <ChevronDown size={22} className="text-gray-600 dark:text-gray-400" />
+                        ) : (
+                          <ChevronUp size={22} className="text-gray-600 dark:text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {!collapsedSections.maintenance && (
+                    <div className="space-y-5">
+                      <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle size={20} className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                          <div className="text-sm text-blue-800 dark:text-blue-300">
+                            <p className="font-semibold mb-1">About Maintenance Mode</p>
+                            <p>Nodes in maintenance mode are <span className="font-semibold">excluded from migration recommendations</span> and load balancing. Use evacuation to safely migrate all VMs/CTs to healthy nodes before performing maintenance tasks.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {data?.nodes && Object.entries(data.nodes).map(([nodeName, node]) => {
+                          const isInMaintenance = maintenanceNodes.has(nodeName);
+                          const isEvacuating = evacuatingNodes.has(nodeName);
+                          const guestCount = node.guests ? Object.keys(node.guests).length : 0;
+                          const cpuUsage = (node.cpu_percent || 0).toFixed(1);
+                          const memUsage = (node.mem_percent || 0).toFixed(1);
+
+                          return (
+                            <React.Fragment key={nodeName}>
+                            <div
+                              className={`group relative rounded-lg border transition-all duration-300 overflow-hidden ${
+                                isInMaintenance
+                                  ? 'border-yellow-400 dark:border-yellow-600 bg-yellow-50 dark:bg-yellow-900/20'
+                                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md'
+                              }`}
+                            >
+                              {/* Maintenance Badge */}
+                              {isInMaintenance && (
+                                <div className="absolute top-3 right-3 z-10">
+                                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-yellow-500 dark:bg-yellow-600 text-white rounded-full text-xs font-semibold">
+                                    <AlertTriangle size={12} />
+                                    <span>Maintenance</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="p-5">
+                                {/* Node Header */}
+                                <div className="mb-4">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${
+                                      isInMaintenance
+                                        ? 'bg-yellow-500 animate-pulse'
+                                        : 'bg-green-500'
+                                    }`}></div>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">{nodeName}</h3>
+                                  </div>
+
+                                  {/* Stats Grid */}
+                                  <div className="grid grid-cols-3 gap-2 mt-3">
+                                    <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Guests</div>
+                                      <div className="text-sm font-bold text-gray-900 dark:text-white">{guestCount}</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">CPU</div>
+                                      <div className="text-sm font-bold text-gray-900 dark:text-white">{cpuUsage}%</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">RAM</div>
+                                      <div className="text-sm font-bold text-gray-900 dark:text-white">{memUsage}%</div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                              {/* Action Buttons */}
+                              <div className="space-y-2.5">
+                                <button
+                                  onClick={() => {
+                                    if (isInMaintenance) {
+                                      // Remove from maintenance
+                                      setMaintenanceNodes(prev => {
+                                        const newSet = new Set(prev);
+                                        newSet.delete(nodeName);
+                                        return newSet;
+                                      });
+                                    } else {
+                                      // Add to maintenance
+                                      setMaintenanceNodes(prev => new Set([...prev, nodeName]));
+                                    }
+                                  }}
+                                  className={`w-full px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm hover:shadow-md transform hover:scale-[1.02] active:scale-[0.98] ${
+                                    isInMaintenance
+                                      ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white'
+                                      : 'bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white'
+                                  }`}
+                                >
+                                  <span className="flex items-center justify-center gap-2">
+                                    {isInMaintenance ? (
+                                      <>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        Exit Maintenance
+                                      </>
+                                    ) : (
+                                      <>
+                                        <AlertTriangle size={16} />
+                                        Enter Maintenance
+                                      </>
+                                    )}
+                                  </span>
+                                </button>
+
+                                <button
+                                  onClick={async () => {
+                                    if (!canMigrate) {
+                                      alert('Read-only API token (PVEAuditor) - Cannot perform migrations');
+                                      return;
+                                    }
+
+                                    if (guestCount === 0) {
+                                      alert(`Node ${nodeName} has no VMs/CTs to evacuate`);
+                                      return;
+                                    }
+
+                                    // Fetch evacuation plan first
+                                    try {
+                                      const planResponse = await fetch(`${API_BASE}/nodes/evacuate`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          node: nodeName,
+                                          maintenance_nodes: Array.from(maintenanceNodes),
+                                          confirm: false  // Request plan only
+                                        })
+                                      });
+
+                                      const planResult = await planResponse.json();
+                                      console.log('Plan result:', planResult);
+
+                                      if (planResult.success && planResult.plan) {
+                                        // Show the plan modal
+                                        console.log('Setting evacuation plan for node:', nodeName);
+                                        setEvacuationPlan(planResult);
+                                        setPlanNode(nodeName);
+                                      } else {
+                                        console.error('Plan generation failed:', planResult);
+                                        alert(`Failed to generate evacuation plan: ${planResult.error}`);
+                                      }
+                                    } catch (error) {
+                                      console.error('Plan fetch error:', error);
+                                      alert(`Error generating plan: ${error.message}`);
+                                    }
+                                  }}
+                                  disabled={!canMigrate || isEvacuating || guestCount === 0}
+                                  className={`w-full px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 shadow-sm transform ${
+                                    !canMigrate || guestCount === 0
+                                      ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-500 cursor-not-allowed opacity-60'
+                                      : isEvacuating
+                                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white cursor-wait'
+                                      : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white hover:shadow-md hover:scale-[1.02] active:scale-[0.98]'
+                                  }`}
+                                  title={!canMigrate ? 'Read-only API token - Cannot migrate' : guestCount === 0 ? 'No guests to evacuate' : ''}
+                                >
+                                  {!canMigrate ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                      <Lock size={16} />
+                                      Read-only Mode
+                                    </span>
+                                  ) : isEvacuating ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                      <Loader className="animate-spin" size={16} />
+                                      Evacuating...
+                                    </span>
+                                  ) : guestCount === 0 ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                      </svg>
+                                      No Guests
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center justify-center gap-2">
+                                      <MoveRight size={16} />
+                                      Evacuate Node
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                            </div>
+
+                            {/* Evacuation Plan Modal */}
+                            {evacuationPlan && planNode === nodeName && (
+                                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => {
+                                    setEvacuationPlan(null);
+                                    setPlanNode(null);
+                                  }}>
+                                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                                      {/* Modal Header */}
+                                      <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                                          Evacuation Plan for {evacuationPlan.source_node}
+                                        </h3>
+                                        <button
+                                          onClick={() => {
+                                            setEvacuationPlan(null);
+                                            setPlanNode(null);
+                                          }}
+                                          className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                        >
+                                          <X size={24} />
+                                        </button>
+                                      </div>
+
+                                      {/* Modal Body */}
+                                      <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+                                        {evacuationPlan.will_skip > 0 && (
+                                          <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+                                            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                                              <span className="font-semibold">{evacuationPlan.will_skip}</span> guest(s) cannot be migrated. Reasons may include: missing storage on target nodes, errors, or "ignore" tag. These are shown in yellow below.
+                                            </p>
+                                          </div>
+                                        )}
+
+                                        {/* Migration Plan Table */}
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-sm">
+                                            <thead className="bg-gray-50 dark:bg-gray-700">
+                                              <tr>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">VM/CT</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Name</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Type</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Storage</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Target</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Will Restart?</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Action</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                              {evacuationPlan.plan.map((item) => (
+                                                <tr key={item.vmid} className={item.skipped ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''}>
+                                                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{item.vmid}</td>
+                                                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{item.name}</td>
+                                                  <td className="px-4 py-3">
+                                                    <span className={`px-2 py-1 text-xs rounded ${
+                                                      item.type === 'qemu' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' :
+                                                      item.type === 'lxc' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300' :
+                                                      'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                                                    }`}>
+                                                      {item.type === 'qemu' ? 'VM' : item.type === 'lxc' ? 'CT' : 'Unknown'}
+                                                    </span>
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {item.storage_volumes && item.storage_volumes.length > 0 ? (
+                                                      <span className={`text-xs ${!item.storage_compatible ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-gray-600 dark:text-gray-400'}`}>
+                                                        {item.storage_volumes.join(', ')}
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-xs text-gray-400 dark:text-gray-500 italic">none</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    <span className={`px-2 py-1 text-xs rounded ${
+                                                      item.status === 'running' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
+                                                      item.status === 'stopped' ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300' :
+                                                      'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300'
+                                                    }`}>
+                                                      {item.status}
+                                                    </span>
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {item.skipped ? (
+                                                      <span className="text-yellow-600 dark:text-yellow-400 text-xs italic">{item.skip_reason}</span>
+                                                    ) : (
+                                                      <span className="font-medium text-gray-900 dark:text-white">{item.target}</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {!item.skipped && (
+                                                      item.will_restart ? (
+                                                        <span className="text-orange-600 dark:text-orange-400 font-medium">Yes</span>
+                                                      ) : (
+                                                        <span className="text-green-600 dark:text-green-400">No</span>
+                                                      )
+                                                    )}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {item.skipped ? (
+                                                      <span className="text-xs text-gray-400 dark:text-gray-500 italic">N/A</span>
+                                                    ) : (
+                                                      <select
+                                                        value={guestActions[item.vmid] || 'migrate'}
+                                                        onChange={(e) => setGuestActions({...guestActions, [item.vmid]: e.target.value})}
+                                                        className="text-sm px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                      >
+                                                        <option value="migrate">Migrate</option>
+                                                        <option value="ignore">Ignore</option>
+                                                        <option value="poweroff">Power Off</option>
+                                                      </select>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+
+                                        {/* Notes */}
+                                        <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded">
+                                          <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Important Notes:</h4>
+                                          <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
+                                            <li>Running VMs will use live migration (no downtime)</li>
+                                            <li>Running containers will restart during migration (brief downtime)</li>
+                                            <li>Stopped VMs/CTs will be moved without starting</li>
+                                            <li>Migrations are performed one at a time to avoid overloading hosts</li>
+                                            <li>Available target nodes: {evacuationPlan.available_targets.join(', ')}</li>
+                                          </ul>
+                                        </div>
+                                      </div>
+
+                                      {/* Modal Footer */}
+                                      <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+                                        <button
+                                          onClick={() => {
+                                            setEvacuationPlan(null);
+                                            setPlanNode(null);
+                                            setGuestActions({});  // Reset guest actions
+                                          }}
+                                          className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded font-medium"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            // Show confirmation modal with grouped actions
+                                            setShowConfirmModal(true);
+                                          }}
+                                          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded font-medium"
+                                        >
+                                          Review & Confirm
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                            )}
+
+                            {/* Final Confirmation Modal with Grouped Actions */}
+                            {showConfirmModal && evacuationPlan && planNode === nodeName && (
+                                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowConfirmModal(false)}>
+                                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                                      {/* Confirmation Header */}
+                                      <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                                        <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Confirm Evacuation Actions</h3>
+                                        <button onClick={() => setShowConfirmModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                          <XCircle size={24} />
+                                        </button>
+                                      </div>
+
+                                      {/* Grouped Actions Summary */}
+                                      <div className="p-6 overflow-y-auto max-h-[60vh]">
+                                        {(() => {
+                                          // Group guests by action
+                                          const toMigrate = [];
+                                          const toIgnore = [];
+                                          const toPowerOff = [];
+
+                                          evacuationPlan.plan.forEach(item => {
+                                            if (item.skipped) return;
+                                            const action = guestActions[item.vmid] || 'migrate';
+                                            const guestInfo = { ...item };
+                                            if (action === 'migrate') toMigrate.push(guestInfo);
+                                            else if (action === 'ignore') toIgnore.push(guestInfo);
+                                            else if (action === 'poweroff') toPowerOff.push(guestInfo);
+                                          });
+
+                                          return (
+                                            <div className="space-y-6">
+                                              {/* Migration Group */}
+                                              {toMigrate.length > 0 && (
+                                                <div>
+                                                  <h4 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-2">
+                                                    <MoveRight size={20} />
+                                                    Migrate ({toMigrate.length})
+                                                  </h4>
+                                                  <div className="space-y-2">
+                                                    {toMigrate.map(item => (
+                                                      <div key={item.vmid} className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded">
+                                                        <div className="flex items-center gap-3">
+                                                          <span className="font-medium text-gray-900 dark:text-white">{item.vmid}</span>
+                                                          <span className="text-sm text-gray-600 dark:text-gray-300">{item.name}</span>
+                                                          <span className={`px-2 py-1 text-xs rounded ${
+                                                            item.type === 'qemu' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' :
+                                                            'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
+                                                          }`}>
+                                                            {item.type === 'qemu' ? 'VM' : 'CT'}
+                                                          </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 text-sm">
+                                                          <MoveRight size={16} className="text-gray-400" />
+                                                          <span className="font-medium text-gray-900 dark:text-white">{item.target}</span>
+                                                        </div>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* Ignore Group */}
+                                              {toIgnore.length > 0 && (
+                                                <div>
+                                                  <h4 className="text-lg font-semibold text-gray-600 dark:text-gray-400 mb-3 flex items-center gap-2">
+                                                    <AlertTriangle size={20} />
+                                                    Ignore ({toIgnore.length})
+                                                  </h4>
+                                                  <div className="space-y-2">
+                                                    {toIgnore.map(item => (
+                                                      <div key={item.vmid} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded">
+                                                        <span className="font-medium text-gray-900 dark:text-white">{item.vmid}</span>
+                                                        <span className="text-sm text-gray-600 dark:text-gray-300">{item.name}</span>
+                                                        <span className={`px-2 py-1 text-xs rounded ${
+                                                          item.type === 'qemu' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' :
+                                                          'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
+                                                        }`}>
+                                                          {item.type === 'qemu' ? 'VM' : 'CT'}
+                                                        </span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* Power Off Group */}
+                                              {toPowerOff.length > 0 && (
+                                                <div>
+                                                  <h4 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-3 flex items-center gap-2">
+                                                    <XCircle size={20} />
+                                                    Power Off ({toPowerOff.length})
+                                                  </h4>
+                                                  <div className="space-y-2">
+                                                    {toPowerOff.map(item => (
+                                                      <div key={item.vmid} className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded">
+                                                        <span className="font-medium text-gray-900 dark:text-white">{item.vmid}</span>
+                                                        <span className="text-sm text-gray-600 dark:text-gray-300">{item.name}</span>
+                                                        <span className={`px-2 py-1 text-xs rounded ${
+                                                          item.type === 'qemu' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' :
+                                                          'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
+                                                        }`}>
+                                                          {item.type === 'qemu' ? 'VM' : 'CT'}
+                                                        </span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
+                                      </div>
+
+                                      {/* Confirmation Footer */}
+                                      <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+                                        <button
+                                          onClick={() => setShowConfirmModal(false)}
+                                          className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded font-medium"
+                                        >
+                                          Back
+                                        </button>
+                                        <button
+                                          onClick={async () => {
+                                            console.log('Confirm evacuation clicked for node:', nodeName);
+                                            // Close modals and start evacuation
+                                            setShowConfirmModal(false);
+                                            setEvacuationPlan(null);
+                                            setPlanNode(null);
+                                            const actionsToExecute = {...guestActions};
+                                            setGuestActions({});  // Reset guest actions
+
+                                            setEvacuatingNodes(prev => new Set([...prev, nodeName]));
+
+                                            // Initialize status for this node's evacuation
+                                            setEvacuationStatus(prev => ({
+                                              ...prev,
+                                              [nodeName]: {
+                                                inProgress: true,
+                                                guests: {}
+                                              }
+                                            }));
+
+                                            try {
+                                              console.log('Starting evacuation request...');
+                                              const response = await fetch(`${API_BASE}/nodes/evacuate`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                  node: nodeName,
+                                                  maintenance_nodes: Array.from(maintenanceNodes),
+                                                  confirm: true,  // Execute evacuation
+                                                  guest_actions: actionsToExecute  // Include user-selected actions
+                                                })
+                                              });
+
+                                              const result = await response.json();
+                                              console.log('Evacuation started:', result);
+
+                                              if (result.success && result.session_id) {
+                                                // Start polling for progress
+                                                const sessionId = result.session_id;
+                                                const pollInterval = setInterval(async () => {
+                                                  try {
+                                                    const statusResponse = await fetch(`${API_BASE}/nodes/evacuate/status/${sessionId}`);
+                                                    const status = await statusResponse.json();
+
+                                                    if (status.success) {
+                                                      // Update evacuation status with progress
+                                                      setEvacuationStatus(prev => ({
+                                                        ...prev,
+                                                        [nodeName]: {
+                                                          inProgress: !status.completed,
+                                                          completed: status.completed,
+                                                          progress: status.progress,
+                                                          results: status.results,
+                                                          error: status.error
+                                                        }
+                                                      }));
+
+                                                      // If completed, stop polling
+                                                      if (status.completed) {
+                                                        clearInterval(pollInterval);
+                                                        setEvacuatingNodes(prev => {
+                                                          const newSet = new Set(prev);
+                                                          newSet.delete(nodeName);
+                                                          return newSet;
+                                                        });
+                                                        fetchAnalysis();  // Refresh cluster data
+                                                      }
+                                                    }
+                                                  } catch (pollError) {
+                                                    console.error('Polling error:', pollError);
+                                                  }
+                                                }, 2000);  // Poll every 2 seconds
+                                              } else {
+                                                throw new Error(result.error || 'Failed to start evacuation');
+                                              }
+                                            } catch (error) {
+                                              console.error('Evacuation error:', error);
+                                              setEvacuationStatus(prev => ({
+                                                ...prev,
+                                                [nodeName]: {
+                                                  inProgress: false,
+                                                  completed: true,
+                                                  error: error.message
+                                                }
+                                              }));
+                                              setEvacuatingNodes(prev => {
+                                                const newSet = new Set(prev);
+                                                newSet.delete(nodeName);
+                                                return newSet;
+                                              });
+                                            }
+                                    }}
+                                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium"
+                                        >
+                                          Confirm Evacuation
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                            )}
+
+                            {/* Evacuation Status Display */}
+                            {evacuationStatus[nodeName] && (
+                                <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h4 className="font-semibold text-sm text-gray-900 dark:text-white">
+                                      Evacuation Status
+                                    </h4>
+                                    {evacuationStatus[nodeName].completed && (
+                                      <button
+                                        onClick={() => {
+                                          setEvacuationStatus(prev => {
+                                            const newStatus = {...prev};
+                                            delete newStatus[nodeName];
+                                            return newStatus;
+                                          });
+                                        }}
+                                        className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                      >
+                                        <X size={16} />
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {evacuationStatus[nodeName].inProgress && (
+                                    <div className="mb-3">
+                                      <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 mb-2">
+                                        <Loader className="animate-spin" size={16} />
+                                        <span className="font-medium">Processing evacuation...</span>
+                                      </div>
+                                      {evacuationStatus[nodeName].progress && (
+                                        <div className="space-y-2">
+                                          <div className="text-xs text-gray-700 dark:text-gray-300">
+                                            <span className="font-medium">
+                                              {evacuationStatus[nodeName].progress.processed} / {evacuationStatus[nodeName].progress.total}
+                                            </span>
+                                            {' '}completed •
+                                            <span className="text-green-600 dark:text-green-400 ml-1">
+                                              {evacuationStatus[nodeName].progress.successful} successful
+                                            </span>
+                                            <span className="text-red-600 dark:text-red-400 ml-1">
+                                              {evacuationStatus[nodeName].progress.failed} failed
+                                            </span>
+                                            <span className="text-gray-500 ml-1">
+                                              • {evacuationStatus[nodeName].progress.remaining} remaining
+                                            </span>
+                                          </div>
+                                          {evacuationStatus[nodeName].progress.current_guest && (
+                                            <div className="text-xs bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
+                                              <span className="font-medium">Currently processing:</span>
+                                              <span className="ml-1">VM/CT {evacuationStatus[nodeName].progress.current_guest.vmid}</span>
+                                              <span className="text-gray-500 dark:text-gray-400 ml-1">
+                                                ({evacuationStatus[nodeName].progress.current_guest.index} of {evacuationStatus[nodeName].progress.current_guest.total})
+                                              </span>
+                                            </div>
+                                          )}
+                                          {/* Progress bar */}
+                                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                                            <div
+                                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                              style={{
+                                                width: `${(evacuationStatus[nodeName].progress.processed / evacuationStatus[nodeName].progress.total) * 100}%`
+                                              }}
+                                            ></div>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {evacuationStatus[nodeName].error && (
+                                    <div className="text-sm text-red-600 dark:text-red-400">
+                                      Error: {evacuationStatus[nodeName].error}
+                                    </div>
+                                  )}
+
+                                  {evacuationStatus[nodeName].completed && evacuationStatus[nodeName].progress && (
+                                    <div className="mb-2">
+                                      <div className="text-sm text-gray-700 dark:text-gray-300">
+                                        <span className="text-green-600 dark:text-green-400 font-medium">
+                                          {evacuationStatus[nodeName].progress.successful} successful
+                                        </span>
+                                        {' / '}
+                                        <span className="text-red-600 dark:text-red-400 font-medium">
+                                          {evacuationStatus[nodeName].progress.failed} failed
+                                        </span>
+                                        {' / '}
+                                        <span className="font-medium">
+                                          {evacuationStatus[nodeName].progress.total} total
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {evacuationStatus[nodeName].results && evacuationStatus[nodeName].results.length > 0 && (
+                                    <div className="space-y-1 max-h-60 overflow-y-auto">
+                                      {evacuationStatus[nodeName].results.map((result) => (
+                                        <div
+                                          key={result.vmid}
+                                          className={`flex items-center justify-between text-xs p-2 rounded ${
+                                            result.success
+                                              ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+                                              : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            {result.success ? (
+                                              <CheckCircle size={14} className="text-green-600 dark:text-green-400" />
+                                            ) : (
+                                              <XCircle size={14} className="text-red-600 dark:text-red-400" />
+                                            )}
+                                            <span className="font-medium">VM/CT {result.vmid}</span>
+                                          </div>
+                                          <div className="text-right">
+                                            {result.success ? (
+                                              result.target ? <span>→ {result.target}</span> : <span>{result.message || result.action}</span>
+                                            ) : (
+                                              <span className="text-xs">{result.error}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                            )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-lg shadow-md">
+                        <HardDrive size={24} className="text-white" />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Node Status</h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Detailed node metrics</p>
+                      </div>
                       <button
                         onClick={() => toggleSection('nodeStatus')}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        className="ml-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                         title={collapsedSections.nodeStatus ? "Expand section" : "Collapse section"}
                       >
                         {collapsedSections.nodeStatus ? (
-                          <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                          <ChevronDown size={22} className="text-gray-600 dark:text-gray-400" />
                         ) : (
-                          <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                          <ChevronUp size={22} className="text-gray-600 dark:text-gray-400" />
                         )}
                       </button>
                     </div>
@@ -1995,21 +3009,26 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   )}
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                  <div className="mb-4">
+                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+                  <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <Activity size={24} className="text-orange-600 dark:text-orange-400" />
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Migration Recommendations</h2>
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-gradient-to-br from-orange-600 to-red-600 rounded-lg shadow-md">
+                          <Activity size={24} className="text-white" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Migration Recommendations</h2>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Suggested optimizations</p>
+                        </div>
                         <button
                           onClick={() => toggleSection('recommendations')}
-                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          className="ml-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                           title={collapsedSections.recommendations ? "Expand section" : "Collapse section"}
                         >
                           {collapsedSections.recommendations ? (
-                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronDown size={22} className="text-gray-600 dark:text-gray-400" />
                           ) : (
-                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronUp size={22} className="text-gray-600 dark:text-gray-400" />
                           )}
                         </button>
                       </div>
@@ -2122,19 +3141,25 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 </div>
 
                 {config?.ai_recommendations_enabled && aiEnabled && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">🤖 AI-Enhanced Recommendations</h2>
+                  <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-lg shadow-md">
+                          <Activity size={24} className="text-white" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">AI-Enhanced Recommendations</h2>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">AI-powered migration insights</p>
+                        </div>
                         <button
                           onClick={() => toggleSection('aiRecommendations')}
-                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          className="ml-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                           title={collapsedSections.aiRecommendations ? "Expand section" : "Collapse section"}
                         >
                           {collapsedSections.aiRecommendations ? (
-                            <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronDown size={22} className="text-gray-600 dark:text-gray-400" />
                           ) : (
-                            <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
+                            <ChevronUp size={22} className="text-gray-600 dark:text-gray-400" />
                           )}
                         </button>
                       </div>
@@ -2369,16 +3394,21 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
             {showUpdateModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full p-6">
+                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 max-w-2xl w-full p-6">
                   <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-2">
-                      <RefreshCw size={24} className={updating ? "text-blue-600 dark:text-blue-400 animate-spin" : "text-blue-600 dark:text-blue-400"} />
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Update ProxBalance</h2>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-lg shadow-md ${updating ? 'animate-pulse' : ''}`}>
+                        <RefreshCw size={24} className={updating ? "text-white animate-spin" : "text-white"} />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Update ProxBalance</h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">System update management</p>
+                      </div>
                     </div>
                     {!updating && (
                       <button
                         onClick={() => setShowUpdateModal(false)}
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                        className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-200"
                       >
                         <X size={20} className="text-gray-600 dark:text-gray-400" />
                       </button>
@@ -2508,18 +3538,23 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
             {showBranchModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
                   <div className="p-6">
                     <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center gap-2">
-                        <GitBranch size={24} className="text-purple-600 dark:text-purple-400" />
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Switch Branch</h2>
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-gradient-to-br from-purple-600 to-violet-600 rounded-lg shadow-md">
+                          <GitBranch size={24} className="text-white" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Switch Branch</h2>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Change code branch</p>
+                        </div>
                       </div>
                       <button
                         onClick={() => setShowBranchModal(false)}
-                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-200"
                       >
-                        <X size={24} />
+                        <X size={20} className="text-gray-600 dark:text-gray-400" />
                       </button>
                     </div>
 
@@ -2615,8 +3650,16 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             {/* Migration Dialog Modal */}
             {showMigrationDialog && selectedGuest && canMigrate && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowMigrationDialog(false)}>
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-                  <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Migrate Guest</h2>
+                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg shadow-md">
+                      <Activity size={24} className="text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Migrate Guest</h2>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Move VM or container</p>
+                    </div>
+                  </div>
 
                   <div className="mb-4 space-y-2">
                     <div className="text-sm text-gray-600 dark:text-gray-400">

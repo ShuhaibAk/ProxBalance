@@ -79,6 +79,7 @@ Complete documentation for ProxBalance - Automated cluster load balancing for Pr
 - [Guest Tags](INSTALL.md#3-configure-guest-tags)
 
 ### Usage
+- [Node Maintenance Mode](../README.md#node-maintenance-mode)
 - [API Endpoints](../README.md#api-endpoints)
 - [Tagging Guests](../README.md#tagging-guests)
 - [Migration Execution](../README.md#usage)

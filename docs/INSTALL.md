@@ -983,14 +983,60 @@ pvesh get /nodes --output-format json | jq -r '.[].node'
 
 ---
 
+## ⚙️ Settings Menu
+
+Access the Settings menu from the web interface to configure ProxBalance.
+
+### AI Recommendations
+
+Configure AI-powered migration analysis:
+
+**Supported Providers:**
+- **OpenAI** - GPT-4o and other OpenAI models ([Get API Key](https://platform.openai.com/api-keys))
+- **Anthropic** - Claude 3.5 Sonnet and other Claude models ([Get API Key](https://console.anthropic.com/))
+- **Ollama** - Local LLM with privacy and no API costs ([Install Ollama](https://ollama.ai))
+
+**Configuration:**
+1. Enable AI Recommendations
+2. Select your provider
+3. Enter API credentials (or Ollama URL for local)
+4. Choose your model
+5. Click "Refresh Models" to see available options
+6. Save settings
+
+### Advanced System Settings
+
+**Debug & Logging:**
+- View real-time service logs (collector, API, nginx)
+- Download log files for troubleshooting
+- Adjust log verbosity
+
+**Service Management:**
+- Restart services (collector, API, nginx)
+- Check service status
+- View resource usage
+
+**Proxmox Configuration:**
+- Change Proxmox host connection
+- Update API credentials
+- Test connectivity
+
+**System Updates:**
+- View current version and branch
+- Check for updates
+- Switch between branches (main/dev)
+- One-click update with automatic rollback
+
+---
+
 ## 📚 Next Steps
 
 After successful installation:
 
-1. **Read the Usage Guide** - [Main README](../README.md#-usage)
-2. **Configure Tagging Rules** - [Tagging Documentation](../README.md#tagging-guests)
-3. **Review API Documentation** - [API.md](API.md)
-4. **Setup Backup Strategy** - [Backup Instructions](../README.md#-backup-instructions)
+1. **Configure Node Maintenance** - [Node Maintenance Mode](../README.md#node-maintenance-mode)
+2. **Setup AI Recommendations** - [AI Features](AI_FEATURES.md)
+3. **Configure Tagging Rules** - [Tagging Documentation](../README.md#tagging-guests)
+4. **Review API Documentation** - [API.md](API.md)
 5. **Join Community Discussions** - [GitHub Discussions](https://github.com/Pr0zak/ProxBalance/discussions)
 
 ---
