@@ -2712,6 +2712,72 @@ def change_host():
         }), 500
 
 
+@app.route("/api/settings/collection", methods=["POST"])
+def update_collection_settings():
+    """Update collection optimization settings"""
+    try:
+        data = request.get_json()
+
+        # Validate input
+        interval = data.get('collection_interval_minutes')
+        if interval and (not isinstance(interval, int) or interval < 1 or interval > 240):
+            return jsonify({
+                "success": False,
+                "error": "Collection interval must be between 1 and 240 minutes"
+            }), 400
+
+        opt_config = data.get('collection_optimization', {})
+        max_workers = opt_config.get('max_parallel_workers')
+        if max_workers and (not isinstance(max_workers, int) or max_workers < 1 or max_workers > 10):
+            return jsonify({
+                "success": False,
+                "error": "Max parallel workers must be between 1 and 10"
+            }), 400
+
+        # Load current config
+        with open(CONFIG_FILE, 'r') as f:
+            config_data = json.load(f)
+
+        # Update collection settings
+        if interval:
+            config_data['collection_interval_minutes'] = interval
+
+        if opt_config:
+            if 'collection_optimization' not in config_data:
+                config_data['collection_optimization'] = {}
+            config_data['collection_optimization'].update(opt_config)
+
+        # Write updated config
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config_data, f, indent=2)
+
+        # Update systemd timer
+        try:
+            subprocess.run(
+                ['/opt/proxmox-balance-manager/venv/bin/python3',
+                 '/opt/proxmox-balance-manager/update_timer.py'],
+                capture_output=True,
+                timeout=10,
+                check=True
+            )
+        except Exception as e:
+            print(f"Warning: Failed to update timer: {e}", file=sys.stderr)
+
+        return jsonify({
+            "success": True,
+            "message": "Collection settings updated successfully"
+        })
+
+    except Exception as e:
+        print(f"Update collection settings error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @app.route("/api/system/token-permissions", methods=["POST"])
 def change_token_permissions():
     """Change API token permissions"""

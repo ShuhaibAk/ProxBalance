@@ -24,5 +24,13 @@
       "base_url": "http://localhost:11434",
       "model": "llama3.1:8b"
     }
+  },
+  "collection_optimization": {
+    "cluster_size": "medium",
+    "parallel_collection_enabled": true,
+    "max_parallel_workers": 5,
+    "skip_stopped_guest_rrd": true,
+    "node_rrd_timeframe": "day",
+    "guest_rrd_timeframe": "hour"
   }
 }
