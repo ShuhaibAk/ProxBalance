@@ -38,6 +38,20 @@
       .pulse-animation {
         animation: pulse 2s ease-in-out infinite;
       }
+      @keyframes balance {
+        0% { transform: rotate(0deg) scale(1); }
+        15% { transform: rotate(-8deg) scale(1.05); }
+        30% { transform: rotate(8deg) scale(1.1); }
+        45% { transform: rotate(-6deg) scale(1.05); }
+        60% { transform: rotate(6deg) scale(1.08); }
+        75% { transform: rotate(-3deg) scale(1.03); }
+        85% { transform: rotate(2deg) scale(1.02); }
+        95% { transform: rotate(-1deg) scale(1.01); }
+        100% { transform: rotate(0deg) scale(1); }
+      }
+      .logo-balancing {
+        animation: balance 2s ease-in-out;
+      }
     </style>
 </head>
 <body>
@@ -142,6 +156,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [proxmoxTokenSecret, setProxmoxTokenSecret] = useState('');
           const [showBranchModal, setShowBranchModal] = useState(false);
           const [availableBranches, setAvailableBranches] = useState([]);
+          const [logoBalancing, setLogoBalancing] = useState(false);
           const [loadingBranches, setLoadingBranches] = useState(false);
           const [switchingBranch, setSwitchingBranch] = useState(false);
 
@@ -379,13 +394,50 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             setLoading(true);
             setError(null);
             try {
+              // Get current collection timestamp before triggering refresh
+              const preRefreshData = data;
+              const oldTimestamp = preRefreshData?.collected_at;
+
+              // Trigger background collection
               const refreshResponse = await fetch(`${API_BASE}/refresh`, { method: 'POST' });
               if (!refreshResponse.ok) throw new Error('Failed to trigger data collection');
-              await new Promise(resolve => setTimeout(resolve, 45000));
+
+              // Poll for new data (check every 2 seconds, max 30 seconds)
+              let attempts = 0;
+              const maxAttempts = 15;
+
+              while (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Fetch updated data
+                const response = await fetch(`${API_BASE}/analyze`);
+                if (response.ok) {
+                  const result = await response.json();
+                  const newTimestamp = result?.data?.collected_at;
+
+                  // Check if we have new data
+                  if (newTimestamp && newTimestamp !== oldTimestamp) {
+                    // New data available!
+                    await fetchAnalysis();
+                    return;
+                  }
+                }
+
+                attempts++;
+              }
+
+              // Fallback: if polling didn't detect new data, fetch anyway
               await fetchAnalysis();
             } catch (err) {
               setError(`Refresh failed: ${err.message}`);
               setLoading(false);
+            }
+          };
+
+          const handleLogoHover = () => {
+            if (!logoBalancing) {
+              setLogoBalancing(true);
+              setTimeout(() => setLogoBalancing(false), 2000);
             }
           };
 
@@ -1214,7 +1266,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             const newCharts = {};
 
             Object.values(data.nodes).forEach(node => {
-              if (!node.trend_data || node.trend_data.length === 0) {
+              if (!node.trend_data || typeof node.trend_data !== 'object') {
                 return;
               }
 
@@ -1224,16 +1276,43 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 return;
               }
 
-              // Filter data based on chart period
-              const now = Math.floor(Date.now() / 1000);
+              // Select appropriate timeframe data based on chart period
+              // Automatically use the best RRD resolution for the selected time range
+              let sourceTimeframe = 'day'; // default
               const periodSeconds = {
                 '1h': 3600,
                 '6h': 6 * 3600,
                 '12h': 12 * 3600,
-                '24h': 24 * 3600
+                '24h': 24 * 3600,
+                '7d': 7 * 24 * 3600,
+                '30d': 30 * 24 * 3600,
+                '1y': 365 * 24 * 3600
               }[chartPeriod] || 24 * 3600;
 
-              const filteredData = node.trend_data.filter(point =>
+              // Select optimal timeframe based on period
+              if (chartPeriod === '1h') {
+                sourceTimeframe = 'hour';  // 1-min resolution, ~60 points
+              } else if (chartPeriod === '6h' || chartPeriod === '12h' || chartPeriod === '24h') {
+                sourceTimeframe = 'day';   // 1-min resolution, ~1440 points
+              } else if (chartPeriod === '7d') {
+                sourceTimeframe = 'week';  // 5-min resolution, ~1680 points
+              } else if (chartPeriod === '30d') {
+                sourceTimeframe = 'month'; // 30-min resolution, ~2000 points
+              } else if (chartPeriod === '1y') {
+                sourceTimeframe = 'year';  // 6-hour resolution, ~2000 points
+              }
+
+              // Get trend data from the appropriate timeframe
+              const trendData = node.trend_data?.[sourceTimeframe] || node.trend_data?.day || [];
+
+              if (!trendData || trendData.length === 0) {
+                console.log(`No trend data available for ${node.name} (timeframe: ${sourceTimeframe})`);
+                return;
+              }
+
+              // Filter data based on chart period
+              const now = Math.floor(Date.now() / 1000);
+              const filteredData = trendData.filter(point =>
                 (now - point.time) <= periodSeconds
               );
 
@@ -1241,13 +1320,15 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 return;
               }
 
-              // Reduce data points for longer periods to improve performance and readability
-              // With day RRD: ~1440 points total (1 per minute), ~60 points/hour
+              // Reduce data points for performance (adaptive sampling)
               const sampleRate = {
-                '1h': 2,    // ~30 points (every 2 minutes)
-                '6h': 5,    // ~72 points (every 5 minutes)
-                '12h': 10,  // ~72 points (every 10 minutes)
-                '24h': 20   // ~72 points (every 20 minutes)
+                '1h': 2,    // ~30 points
+                '6h': 5,    // ~72 points
+                '12h': 10,  // ~72 points
+                '24h': 20,  // ~72 points
+                '7d': 20,   // ~84 points
+                '30d': 25,  // ~80 points
+                '1y': 25    // ~80 points
               }[chartPeriod] || 1;
 
               // Always keep first and last points for accurate range display
@@ -2199,7 +2280,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   {/* Minimal Header - Always Visible */}
                   <div className="flex items-center justify-between p-4">
                     <div className="flex items-center gap-3">
-                      <ProxBalanceLogo size={dashboardHeaderCollapsed ? 64 : 128} />
+                      <div onMouseEnter={handleLogoHover} className={logoBalancing ? 'logo-balancing' : 'transition-transform'}>
+                        <ProxBalanceLogo size={dashboardHeaderCollapsed ? 64 : 128} />
+                      </div>
                       <div>
                         <h1 className={`font-bold bg-gradient-to-r from-yellow-400 via-orange-500 to-orange-600 bg-clip-text text-transparent transition-all ${dashboardHeaderCollapsed ? 'text-xl' : 'text-3xl'}`}>ProxBalance</h1>
                         {!dashboardHeaderCollapsed && <p className="text-sm text-gray-500 dark:text-gray-400">Cluster Optimization</p>}
@@ -3917,6 +4000,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           <option value="6h">6 Hours</option>
                           <option value="12h">12 Hours</option>
                           <option value="24h">24 Hours</option>
+                          <option value="7d">7 Days</option>
+                          <option value="30d">30 Days</option>
+                          <option value="1y">1 Year</option>
                         </select>
                       </div>
                     </div>
@@ -3977,7 +4063,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           <div><span className="text-gray-600 dark:text-gray-400">Cores:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.cpu_cores || 0}</span></div>
                           <div><span className="text-gray-600 dark:text-gray-400">Guests:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.guests?.length || 0}</span></div>
                         </div>
-                        {node.trend_data && node.trend_data.length > 0 && (
+                        {node.trend_data && typeof node.trend_data === 'object' && Object.keys(node.trend_data).length > 0 && (
                           <div className="mt-4" style={{height: '200px'}}>
                             <canvas id={`chart-${node.name}`}></canvas>
                           </div>

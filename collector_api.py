@@ -210,8 +210,18 @@ class ProxmoxAPICollector:
         node_name = node["node"]
         print(f"Processing node: {node_name}")
 
-        # Get RRD data using configured timeframe
-        rrd_data = self.get_node_rrd_data(node_name, self.node_rrd_timeframe)
+        # Get RRD data for multiple timeframes
+        # This allows UI to show different time ranges without re-fetching
+        timeframes = {
+            'hour': self.get_node_rrd_data(node_name, 'hour'),    # ~60 points, 1-min intervals
+            'day': self.get_node_rrd_data(node_name, 'day'),      # ~1440 points, 1-min intervals
+            'week': self.get_node_rrd_data(node_name, 'week'),    # ~1680 points, 5-min intervals
+            'month': self.get_node_rrd_data(node_name, 'month'),  # ~2000 points, 30-min intervals
+            'year': self.get_node_rrd_data(node_name, 'year')     # ~2000 points, 6-hour intervals
+        }
+
+        # Use day timeframe for current metrics calculation (most common/detailed)
+        rrd_data = timeframes['day']
 
         # Calculate metrics from RRD data
         metrics = {
@@ -252,20 +262,24 @@ class ProxmoxAPICollector:
             if load_values:
                 metrics["avg_load"] = sum(load_values) / len(load_values)
 
-        # Process RRD data for charting (keep time series)
-        trend_data = []
-        if rrd_data:
-            for point in rrd_data:
-                if "time" in point and "cpu" in point and "memused" in point and "memtotal" in point:
-                    trend_data.append({
-                        "time": point["time"],
-                        "cpu": round(point["cpu"] * 100, 2) if point["cpu"] is not None else 0,
-                        "mem": round((point["memused"] / point["memtotal"] * 100), 2) if point["memused"] and point["memtotal"] else 0,
-                        "iowait": round(point["iowait"] * 100, 2) if "iowait" in point and point["iowait"] is not None else 0
-                    })
-            print(f"Processed {len(trend_data)} trend data points for {node_name}")
-        else:
-            print(f"No RRD data available for {node_name}")
+        # Process RRD data for all timeframes (for charting at different time ranges)
+        trend_data = {}
+        total_points = 0
+
+        for timeframe_name, timeframe_rrd in timeframes.items():
+            trend_data[timeframe_name] = []
+            if timeframe_rrd:
+                for point in timeframe_rrd:
+                    if "time" in point and "cpu" in point and "memused" in point and "memtotal" in point:
+                        trend_data[timeframe_name].append({
+                            "time": point["time"],
+                            "cpu": round(point["cpu"] * 100, 2) if point["cpu"] is not None else 0,
+                            "mem": round((point["memused"] / point["memtotal"] * 100), 2) if point["memused"] and point["memtotal"] else 0,
+                            "iowait": round(point["iowait"] * 100, 2) if "iowait" in point and point["iowait"] is not None else 0
+                        })
+                total_points += len(trend_data[timeframe_name])
+
+        print(f"Processed {total_points} trend data points across {len(timeframes)} timeframes for {node_name}")
 
         return {
             "name": node_name,

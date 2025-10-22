@@ -32,13 +32,15 @@ ProxBalance is a web-based cluster analyzer and migration manager for Proxmox VE
 ## ✨ Features
 
 - **Real-Time Monitoring** - CPU, memory, IOWait, and load metrics across all nodes
+- **Multi-Timeframe Charts** - View historical data from 1 hour to 1 year with automatic resolution optimization
+- **Parallel Data Collection** - Configurable collection optimization for small, medium, or large clusters
 - **Cluster Map** - Visual representation with 4 view modes (Usage, Allocated, Disk I/O, Network)
 - **Node Maintenance Mode** - Evacuate VMs/CTs before maintenance with storage validation
 - **Smart Recommendations** - Intelligent migration suggestions based on historical data
 - **AI-Powered Analysis** - Optional AI recommendations using OpenAI, Anthropic, or Ollama
 - **Anti-Affinity Rules** - Tag-based system to enforce workload separation
 - **One-Click Migrations** - Execute migrations directly from the web interface
-- **Historical Trending** - 24-hour performance graphs with configurable periods
+- **Performance Monitoring** - Real-time collection metrics and optimization settings
 - **Dark Mode** - Modern interface with light/dark theme support
 
 ---
