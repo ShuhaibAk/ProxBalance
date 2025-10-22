@@ -75,6 +75,7 @@ Complete documentation for ProxBalance - Automated cluster load balancing for Pr
 ### Configuration
 - [Basic Configuration](INSTALL.md#-post-installation-configuration)
 - [AI Configuration](AI_FEATURES.md#configuration)
+- [Collection Optimization](INSTALL.md#collection-optimization) - Parallel collection and cluster size presets
 - [Collection Intervals](INSTALL.md#2-configure-collection-intervals)
 - [Guest Tags](INSTALL.md#3-configure-guest-tags)
 
@@ -206,9 +207,12 @@ ProxBalance/
 
 ## 🔄 Documentation Updates
 
-This documentation is for **ProxBalance v2.0** which includes:
+This documentation is for **ProxBalance v2.0+** which includes:
 
 - AI-powered migration recommendations
+- Multi-timeframe historical charts (1 hour to 1 year)
+- Parallel data collection with cluster size optimization
+- Performance monitoring and metrics
 - Enhanced installer with visual progress
 - Improved web UI with collapsible sections
 - API-only authentication (no SSH)

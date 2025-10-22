@@ -568,19 +568,59 @@ This comprehensive check verifies:
 - ✅ API health
 - ✅ API token connectivity test
 
-### 2. Configure Collection Intervals
+### 2. Collection Optimization
+
+ProxBalance now includes intelligent parallel data collection with configurable cluster size presets.
 
 #### Via Web Interface (Recommended)
 1. Click the ⚙️ **Settings** icon in the top right
-2. Adjust **Backend Collection Interval** (5-240 minutes)
-   - Small clusters (1-20 guests): 30-60 min
-   - Medium clusters (21-50 guests): 60-120 min
-   - Large clusters (50+ guests): 120-240 min
-3. Adjust **UI Refresh Interval** (5-120 minutes)
-   - Should be ≤ backend interval
-   - Typical: 15-60 minutes
+2. Scroll to **Collection Optimization** section
+3. Select **Cluster Size Preset**:
+   - **Small** (< 30 VMs/CTs): 5 min interval, 3 workers
+   - **Medium** (30-100 VMs/CTs): 15 min interval, 5 workers
+   - **Large** (100+ VMs/CTs): 30 min interval, 8 workers
+   - **Custom**: Manual configuration
+4. Or customize individual settings:
+   - **Collection Interval** (5-240 minutes)
+   - **Parallel Collection** (Enable/Disable)
+   - **Max Workers** (1-8 threads)
+   - **Skip Stopped RRD** (Enable/Disable)
+5. Click **Apply Collection Settings**
+6. View real-time performance metrics below settings
+
+**Performance Metrics:**
+- **Total Collection Time**: Complete data collection duration
+- **Node Processing Time**: Parallel node collection time
+- **Guest Processing Time**: VM/CT data collection time
+- **Workers Used**: Number of parallel threads
+
+**Multi-Timeframe Charts:**
+- ProxBalance now fetches 5 RRD timeframes simultaneously
+- View historical data: 1 hour, 6 hours, 12 hours, 24 hours, 7 days, 30 days, 1 year
+- Automatic resolution optimization for each time range
+- No performance impact - all timeframes collected in ~2-3 seconds
+
+#### Via Command Line
+
+```bash
+# Apply a cluster size preset
+pct exec $CTID -- /opt/proxmox-balance-manager/venv/bin/python3 \
+  /opt/proxmox-balance-manager/set_cluster_preset.py small
+
+# Available presets: small, medium, large, custom
+pct exec $CTID -- /opt/proxmox-balance-manager/venv/bin/python3 \
+  /opt/proxmox-balance-manager/set_cluster_preset.py --list
+```
+
+### 3. Configure Collection Intervals (Legacy)
+
+The new Collection Optimization presets are recommended, but you can still manually adjust intervals:
+
+#### Via Web Interface
+1. Click the ⚙️ **Settings** icon
+2. Scroll to **Data Collection** section
+3. Adjust **Collection Interval** (5-240 minutes)
 4. Click **Save Settings**
-5. Services restart automatically
 
 **What happens when you save:**
 1. API validates the new values (range checks)
@@ -606,7 +646,7 @@ pct exec $CTID -- /opt/proxmox-balance-manager/manage_settings.sh set-ui 15
 pct exec $CTID -- /opt/proxmox-balance-manager/manage_settings.sh set-both 45
 ```
 
-### 3. Configure Guest Tags
+### 4. Configure Guest Tags
 
 ProxBalance respects two types of tags on VMs and containers:
 
