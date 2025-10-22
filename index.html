@@ -1846,41 +1846,43 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => {
-                            const collectionConfig = {
-                              collection_interval_minutes: parseInt(document.getElementById('collectionInterval').value),
-                              collection_optimization: {
-                                cluster_size: document.getElementById('clusterSizePreset').value,
-                                parallel_collection_enabled: document.getElementById('parallelEnabled').checked,
-                                max_parallel_workers: parseInt(document.getElementById('maxWorkers').value),
-                                skip_stopped_guest_rrd: document.getElementById('skipStoppedRRD').checked,
-                                node_rrd_timeframe: document.getElementById('nodeTimeframe').value,
-                                guest_rrd_timeframe: document.getElementById('guestTimeframe').value
-                              }
-                            };
+                        <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-700/50 -mx-4 -mb-4 px-4 py-4 mt-4 border-t border-gray-200 dark:border-gray-600">
+                          <button
+                            onClick={() => {
+                              const collectionConfig = {
+                                collection_interval_minutes: parseInt(document.getElementById('collectionInterval').value),
+                                collection_optimization: {
+                                  cluster_size: document.getElementById('clusterSizePreset').value,
+                                  parallel_collection_enabled: document.getElementById('parallelEnabled').checked,
+                                  max_parallel_workers: parseInt(document.getElementById('maxWorkers').value),
+                                  skip_stopped_guest_rrd: document.getElementById('skipStoppedRRD').checked,
+                                  node_rrd_timeframe: document.getElementById('nodeTimeframe').value,
+                                  guest_rrd_timeframe: document.getElementById('guestTimeframe').value
+                                }
+                              };
 
-                            fetch(`${API_BASE}/settings/collection`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify(collectionConfig)
-                            })
-                            .then(response => response.json())
-                            .then(result => {
-                              if (result.success) {
-                                alert('Collection settings updated!\n\nThe collector timer has been updated. Changes will take effect on the next collection cycle.');
-                                fetchConfig();
-                              } else {
-                                alert('Failed to update settings: ' + (result.error || 'Unknown error'));
-                              }
-                            })
-                            .catch(error => alert('Error: ' + error.message));
-                          }}
-                          className="w-full px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 font-medium flex items-center justify-center gap-2"
-                        >
-                          <Save size={16} />
-                          Apply Collection Settings
-                        </button>
+                              fetch(`${API_BASE}/settings/collection`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(collectionConfig)
+                              })
+                              .then(response => response.json())
+                              .then(result => {
+                                if (result.success) {
+                                  alert('Collection settings updated!\n\nThe collector timer has been updated. Changes will take effect on the next collection cycle.');
+                                  fetchConfig();
+                                } else {
+                                  alert('Failed to update settings: ' + (result.error || 'Unknown error'));
+                                }
+                              })
+                              .catch(error => alert('Error: ' + error.message));
+                            }}
+                            className="w-full px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 font-medium flex items-center justify-center gap-2 shadow-lg"
+                          >
+                            <Save size={16} />
+                            Apply Collection Settings
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -2172,12 +2174,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       )}
                     </div>
 
-                    {/* Save Button */}
-                    <div className="mt-6">
+                    {/* Save Button - Sticky at bottom */}
+                    <div className="sticky bottom-0 mt-6 -mx-4 px-4 py-4 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 shadow-lg">
                       <button
                         onClick={saveSettings}
                         disabled={savingSettings}
-                        className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="w-full px-6 py-3 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md"
                       >
                         <Save size={18} />
                         {savingSettings ? 'Saving...' : 'Save Settings'}
