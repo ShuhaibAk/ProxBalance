@@ -514,6 +514,17 @@ def execute_migration(
             "warning": "Migration status polling timed out"
         }
 
+    except requests.exceptions.HTTPError as e:
+        error_msg = str(e)
+        # Try to extract more details from response
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_detail = e.response.json().get('error', str(e))
+                error_msg = f"{error_msg}: {error_detail}"
+            except:
+                pass
+        logger.error(f"Error migrating VM {vmid}: {error_msg}")
+        return {"success": False, "error": error_msg}
     except Exception as e:
         logger.error(f"Error migrating VM {vmid}: {e}")
         return {"success": False, "error": str(e)}
