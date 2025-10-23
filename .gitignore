@@ -22,6 +22,10 @@ cluster_cache.json
 cluster_cache.json.tmp
 dev-cache/cache.json
 
+# Runtime state files
+migration_history.json
+automigrate.lock
+
 # IDE
 .vscode/
 .idea/

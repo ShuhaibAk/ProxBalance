@@ -4531,11 +4531,11 @@ def get_automigrate_status():
         # Check timer status
         try:
             timer_result = subprocess.run(
-                ['systemctl', 'is-active', 'proxmox-balance-automigrate.timer'],
+                ['/usr/bin/systemctl', 'is-active', 'proxmox-balance-automigrate.timer'],
                 capture_output=True, text=True, timeout=5
             )
             timer_active = timer_result.stdout.strip() == 'active'
-        except:
+        except Exception:
             timer_active = False
 
         # Load history
@@ -4645,6 +4645,49 @@ def test_automigrate():
         }), 500
     except Exception as e:
         print(f"Error testing automigrate: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/automigrate/run", methods=["POST"])
+def run_automigrate():
+    """Manually trigger automation check now"""
+    try:
+        # Run automigrate.py
+        script_path = os.path.join(BASE_PATH, 'automigrate.py')
+        venv_python = os.path.join(BASE_PATH, 'venv', 'bin', 'python3')
+
+        if not os.path.exists(script_path):
+            return jsonify({
+                "success": False,
+                "error": f"automigrate.py not found at {script_path}"
+            }), 404
+
+        # Run automation in background to avoid timeout
+        result = subprocess.run(
+            [venv_python, script_path],
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 minute timeout
+            cwd=BASE_PATH
+        )
+
+        return jsonify({
+            "success": result.returncode == 0,
+            "message": "Automation check completed successfully" if result.returncode == 0 else "Automation check completed with errors",
+            "return_code": result.returncode,
+            "output": result.stdout[-1000:] if result.stdout else "",  # Last 1000 chars
+            "error": result.stderr[-1000:] if result.stderr and result.returncode != 0 else None
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "error": "Automation run timed out after 120 seconds"
+        }), 500
+    except Exception as e:
+        print(f"Error running automigrate: {str(e)}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500

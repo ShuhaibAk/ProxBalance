@@ -88,8 +88,11 @@
         const List = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>);
         const Info = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>);
         const ArrowRight = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>);
+        const History = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><polyline points="12 7 12 12 15 15"></polyline></svg>);
+        const Pause = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>);
         const Package = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>);
         const Bell = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>);
+        const MinusCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>);
 
 // Logo component
 const ProxBalanceLogo = ({ size = 32 }) => (
@@ -157,6 +160,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [anthropicKey, setAnthropicKey] = useState('');
           const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
           const [anthropicModelCustom, setAnthropicModelCustom] = useState('');
+          const [countdownTick, setCountdownTick] = useState(0); // Force re-render for countdown timer
+          const [runningAutomation, setRunningAutomation] = useState(false); // Track manual automation run
+          const [refreshElapsed, setRefreshElapsed] = useState(0); // Track refresh elapsed time
           const [anthropicAvailableModels, setAnthropicAvailableModels] = useState([]);
           const [anthropicLoadingModels, setAnthropicLoadingModels] = useState(false);
           const [localUrl, setLocalUrl] = useState('http://localhost:11434');
@@ -241,7 +247,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               mainSettings: false,
               safetyRules: false,
               additionalRules: false,
-              automatedMigrations: true  // Collapsed by default
+              automatedMigrations: true,  // Collapsed by default
+              notificationSettings: true  // Collapsed by default (coming soon)
             };
           });
 
@@ -279,17 +286,24 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               max_node_memory_percent: 85,
               min_free_disk_gb: 20
             },
-            time_windows: []
+            time_windows: [],
+            presets: {
+              conservative: { min_confidence_score: 80, max_migrations_per_run: 1, cooldown_minutes: 120, check_interval_minutes: 30 },
+              balanced: { min_confidence_score: 70, max_migrations_per_run: 3, cooldown_minutes: 60, check_interval_minutes: 15 },
+              aggressive: { min_confidence_score: 60, max_migrations_per_run: 5, cooldown_minutes: 30, check_interval_minutes: 5 }
+            }
           });
           const [savingAutomationConfig, setSavingAutomationConfig] = useState(false);
+          const [editingPreset, setEditingPreset] = useState(null); // Track which preset is being edited (conservative/balanced/aggressive)
           const [testResult, setTestResult] = useState(null);
           const [testingAutomation, setTestingAutomation] = useState(false);
 
-          // Migration/Blackout window form state
-          const [showMigrationWindowForm, setShowMigrationWindowForm] = useState(false);
-          const [showBlackoutWindowForm, setShowBlackoutWindowForm] = useState(false);
+          // Unified Time Windows form state
+          const [showTimeWindowForm, setShowTimeWindowForm] = useState(false);
+          const [editingWindowIndex, setEditingWindowIndex] = useState(null); // Track which window is being edited (index in combined array)
           const [newWindowData, setNewWindowData] = useState({
             name: '',
+            type: 'migration', // 'migration' or 'blackout'
             days: [],
             start_time: '',
             end_time: ''
@@ -374,6 +388,14 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             fetchAutomationStatus();
             fetchAutomationConfig();
             checkPermissions();
+          }, []);
+
+          // Update countdown timer every second
+          useEffect(() => {
+            const interval = setInterval(() => {
+              setCountdownTick(prev => prev + 1);
+            }, 1000);
+            return () => clearInterval(interval);
           }, []);
 
           const checkPermissions = async () => {
@@ -505,6 +527,14 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const handleRefresh = async () => {
             setLoading(true);
             setError(null);
+            setRefreshElapsed(0);
+
+            // Start elapsed time counter
+            const startTime = Date.now();
+            const elapsedInterval = setInterval(() => {
+              setRefreshElapsed(Math.floor((Date.now() - startTime) / 1000));
+            }, 1000);
+
             try {
               // Get current collection timestamp before triggering refresh
               const preRefreshData = data;
@@ -514,12 +544,15 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               const refreshResponse = await fetch(`${API_BASE}/refresh`, { method: 'POST' });
               if (!refreshResponse.ok) throw new Error('Failed to trigger data collection');
 
-              // Poll for new data (check every 2 seconds, max 30 seconds)
+              // Poll for new data with faster initial checks
+              // Start with 500ms intervals, then increase to 1s after 10 attempts
               let attempts = 0;
-              const maxAttempts = 15;
+              const maxAttempts = 40; // 40 attempts = ~25 seconds max
 
               while (attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Variable delay: 500ms for first 10 checks, then 1s
+                const delay = attempts < 10 ? 500 : 1000;
+                await new Promise(resolve => setTimeout(resolve, delay));
 
                 // Fetch updated data
                 const response = await fetch(`${API_BASE}/analyze`);
@@ -530,6 +563,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   // Check if we have new data
                   if (newTimestamp && newTimestamp !== oldTimestamp) {
                     // New data available!
+                    clearInterval(elapsedInterval);
                     await fetchAnalysis();
                     return;
                   }
@@ -539,8 +573,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               }
 
               // Fallback: if polling didn't detect new data, fetch anyway
+              clearInterval(elapsedInterval);
               await fetchAnalysis();
             } catch (err) {
+              clearInterval(elapsedInterval);
               setError(`Refresh failed: ${err.message}`);
               setLoading(false);
             }
@@ -822,6 +858,30 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               setTestResult({ success: false, error: err.message });
             } finally {
               setTestingAutomation(false);
+            }
+          };
+
+          const runAutomationNow = async () => {
+            setRunningAutomation(true);
+            try {
+              const response = await fetch(`${API_BASE}/automigrate/run`, {
+                method: 'POST'
+              });
+              const result = await response.json();
+
+              if (result.success) {
+                console.log('Automation run completed:', result.message);
+                // Refresh automation status to show updated last_run time
+                await fetchAutomationStatus();
+                // Wait a moment for state file to be written
+                setTimeout(() => fetchAutomationStatus(), 1000);
+              } else {
+                console.error('Automation run failed:', result.error);
+              }
+            } catch (err) {
+              console.error('Failed to run automation:', err);
+            } finally {
+              setRunningAutomation(false);
             }
           };
 
@@ -2886,16 +2946,215 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           How often to check for migrations
                         </div>
                       </div>
+
+                      {/* Schedule Presets */}
+                      <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border border-purple-200 dark:border-purple-700 rounded-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="block font-semibold text-gray-900 dark:text-white">
+                            Quick Configuration Presets
+                          </label>
+                          <button
+                            onClick={() => setEditingPreset(editingPreset ? null : 'info')}
+                            className="text-xs text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-100 flex items-center gap-1"
+                          >
+                            <Settings size={14} />
+                            {editingPreset ? 'Done Editing' : 'Customize Presets'}
+                          </button>
+                        </div>
+
+                        {(() => {
+                          const presets = automationConfig.presets || {
+                            conservative: { min_confidence_score: 80, max_migrations_per_run: 1, cooldown_minutes: 120, check_interval_minutes: 30 },
+                            balanced: { min_confidence_score: 70, max_migrations_per_run: 3, cooldown_minutes: 60, check_interval_minutes: 15 },
+                            aggressive: { min_confidence_score: 60, max_migrations_per_run: 5, cooldown_minutes: 30, check_interval_minutes: 5 }
+                          };
+
+                          const presetInfo = {
+                            conservative: { icon: Shield, color: 'blue', label: 'Conservative', desc: 'High confidence, low frequency, safest option' },
+                            balanced: { icon: Activity, color: 'green', label: 'Balanced', desc: 'Medium confidence and frequency, recommended' },
+                            aggressive: { icon: AlertTriangle, color: 'orange', label: 'Aggressive', desc: 'Lower confidence, high frequency, use with care' }
+                          };
+
+                          return (
+                            <div className="grid grid-cols-3 gap-3">
+                              {Object.entries(presets).map(([key, preset]) => {
+                                const info = presetInfo[key];
+                                const Icon = info.icon;
+                                const editing = editingPreset === key;
+
+                                return (
+                                  <div key={key} className={`p-3 bg-white dark:bg-gray-700 border-2 border-${info.color}-300 dark:border-${info.color}-600 rounded-lg ${!editing && 'hover:bg-' + info.color + '-50 dark:hover:bg-' + info.color + '-900/30'} transition-colors`}>
+                                    {editing ? (
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <div className="flex items-center gap-2">
+                                            <Icon size={16} className={`text-${info.color}-600 dark:text-${info.color}-400`} />
+                                            <span className="text-sm font-semibold text-gray-900 dark:text-white">{info.label}</span>
+                                          </div>
+                                          <button
+                                            onClick={() => setEditingPreset(null)}
+                                            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                          >
+                                            <X size={14} />
+                                          </button>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-gray-600 dark:text-gray-400">Min Confidence</label>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={preset.min_confidence_score}
+                                            onChange={(e) => saveAutomationConfig({
+                                              presets: {
+                                                ...presets,
+                                                [key]: { ...preset, min_confidence_score: parseInt(e.target.value) }
+                                              }
+                                            })}
+                                            className="w-full px-2 py-1 text-xs bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-gray-900 dark:text-white"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-gray-600 dark:text-gray-400">Max Migrations</label>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max="20"
+                                            value={preset.max_migrations_per_run}
+                                            onChange={(e) => saveAutomationConfig({
+                                              presets: {
+                                                ...presets,
+                                                [key]: { ...preset, max_migrations_per_run: parseInt(e.target.value) }
+                                              }
+                                            })}
+                                            className="w-full px-2 py-1 text-xs bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-gray-900 dark:text-white"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-gray-600 dark:text-gray-400">Cooldown (min)</label>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max="1440"
+                                            value={preset.cooldown_minutes}
+                                            onChange={(e) => saveAutomationConfig({
+                                              presets: {
+                                                ...presets,
+                                                [key]: { ...preset, cooldown_minutes: parseInt(e.target.value) }
+                                              }
+                                            })}
+                                            className="w-full px-2 py-1 text-xs bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-gray-900 dark:text-white"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-gray-600 dark:text-gray-400">Check Interval (min)</label>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max="1440"
+                                            value={preset.check_interval_minutes}
+                                            onChange={(e) => saveAutomationConfig({
+                                              presets: {
+                                                ...presets,
+                                                [key]: { ...preset, check_interval_minutes: parseInt(e.target.value) }
+                                              }
+                                            })}
+                                            className="w-full px-2 py-1 text-xs bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-gray-900 dark:text-white"
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          if (editingPreset) {
+                                            setEditingPreset(key);
+                                          } else if (confirm(`Apply ${info.label} preset?\n\n• Min Confidence: ${preset.min_confidence_score}%\n• Max Migrations/Run: ${preset.max_migrations_per_run}\n• Cooldown: ${preset.cooldown_minutes} min\n• Check Interval: ${preset.check_interval_minutes} min\n\n${key === 'conservative' ? 'This is the safest option.' : key === 'balanced' ? 'Good for most environments.' : '⚠️ Use with caution! More frequent migrations.'}`)) {
+                                            saveAutomationConfig({
+                                              check_interval_minutes: preset.check_interval_minutes,
+                                              rules: {
+                                                ...automationConfig.rules,
+                                                min_confidence_score: preset.min_confidence_score,
+                                                max_migrations_per_run: preset.max_migrations_per_run,
+                                                cooldown_minutes: preset.cooldown_minutes
+                                              }
+                                            });
+                                          }
+                                        }}
+                                        className="w-full text-left"
+                                      >
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <Icon size={18} className={`text-${info.color}-600 dark:text-${info.color}-400`} />
+                                          <span className="font-semibold text-gray-900 dark:text-white">{info.label}</span>
+                                          {editingPreset && (
+                                            <Settings size={14} className="ml-auto text-gray-500" />
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-gray-600 dark:text-gray-400">
+                                          {info.desc}
+                                        </div>
+                                        {editingPreset && (
+                                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                            Click to edit
+                                          </div>
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+
+                        <div className="text-xs text-purple-700 dark:text-purple-300 mt-3 italic">
+                          💡 {editingPreset ? 'Edit preset values above, then click "Done Editing" to apply them.' : 'These presets configure multiple settings at once. Click "Customize Presets" to edit their values.'}
+                        </div>
+                      </div>
                     </div>)}
                   </div>
 
-                  {/* Safety Rules */}
+                  {/* Threshold Configuration Info */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-5 mb-6">
+                    <div className="flex items-start gap-3">
+                      <Info size={24} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold text-blue-900 dark:text-blue-200 mb-2">Resource Threshold Configuration</div>
+                        <div className="text-sm text-blue-800 dark:text-blue-300 space-y-2">
+                          <p>
+                            Automated migrations use <strong>resource thresholds</strong> to determine which VMs should be migrated.
+                            These thresholds define when a node is considered "overloaded" and needs VMs moved off it.
+                          </p>
+                          <div className="mt-3 p-3 bg-white/50 dark:bg-gray-800/50 rounded border border-blue-300 dark:border-blue-600">
+                            <div className="font-semibold text-blue-900 dark:text-blue-100 mb-1">Where to Set Thresholds:</div>
+                            <p className="text-sm mb-2">
+                              <button
+                                onClick={() => setCurrentPage('dashboard')}
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline font-semibold"
+                              >
+                                Go to Dashboard →
+                              </button> and scroll down to the <strong>Migration Recommendations</strong> card to configure:
+                            </p>
+                            <ul className="list-disc list-inside ml-2 mt-1 space-y-1 text-sm">
+                              <li><strong>CPU Threshold:</strong> When node CPU usage exceeds this %, consider migrating VMs</li>
+                              <li><strong>Memory Threshold:</strong> When node memory usage exceeds this %, consider migrating VMs</li>
+                              <li><strong>IOWait Threshold:</strong> When node I/O wait exceeds this %, consider migrating VMs</li>
+                            </ul>
+                            <p className="mt-2 text-xs text-blue-700 dark:text-blue-300 italic">
+                              💡 The thresholds you set in Migration Recommendations are automatically used by Automated Migrations.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Safety & Rules */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                     <button
                       onClick={() => setCollapsedSections(prev => ({ ...prev, safetyRules: !prev.safetyRules }))}
                       className="w-full flex items-center justify-between text-left mb-4 hover:opacity-80 transition-opacity"
                     >
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Safety Rules</h2>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Safety & Rules</h2>
                       <ChevronDown
                         size={24}
                         className={`text-gray-600 dark:text-gray-400 transition-transform ${collapsedSections.safetyRules ? '-rotate-180' : ''}`}
@@ -2930,6 +3189,38 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, max_migrations_per_run: parseInt(e.target.value) } })}
                           className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
                         />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Cooldown Minutes
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1440"
+                          value={automationConfig.rules?.cooldown_minutes || 30}
+                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, cooldown_minutes: parseInt(e.target.value) } })}
+                          className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Wait time between migrations of the same VM
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Max Concurrent Migrations
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={automationConfig.rules?.max_concurrent_migrations || 1}
+                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, max_concurrent_migrations: parseInt(e.target.value) } })}
+                          className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Maximum simultaneous migrations
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -2974,24 +3265,30 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       <div className="flex items-center">
                         <input
                           type="checkbox"
-                          checked={automationConfig.rules?.respect_exclude_affinity !== false}
-                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, respect_exclude_affinity: e.target.checked } })}
+                          checked={automationConfig.rules?.require_auto_migrate_ok_tag || false}
+                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, require_auto_migrate_ok_tag: e.target.checked } })}
                           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                         />
                         <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Respect anti-affinity (exclude_* tags)
+                          Require 'auto_migrate_ok' tag (only migrate VMs with this tag)
                         </label>
                       </div>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.safety_checks?.require_quorum !== false}
-                          onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, require_quorum: e.target.checked } })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Require cluster quorum
-                        </label>
+                      <div className="flex flex-col">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={automationConfig.rules?.respect_exclude_affinity !== false}
+                            onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, respect_exclude_affinity: e.target.checked } })}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Respect anti-affinity (exclude_* tags)
+                          </label>
+                        </div>
+                        <p className="ml-6 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Prevents VMs with the same exclude tag from clustering on one node.<br/>
+                          Example: Two VMs with 'exclude_database' will spread across different nodes for fault tolerance.
+                        </p>
                       </div>
                       <div className="flex items-center">
                         <input
@@ -3009,94 +3306,22 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           Allow container restarts for migration (may cause brief downtime)
                         </label>
                       </div>
-                    </div>
-                    </>
-                    )}
-                  </div>
-
-                  {/* Additional Rules */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                    <button
-                      onClick={() => setCollapsedSections(prev => ({ ...prev, additionalRules: !prev.additionalRules }))}
-                      className="w-full flex items-center justify-between text-left mb-4 hover:opacity-80 transition-opacity"
-                    >
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Additional Rules</h2>
-                      <ChevronDown
-                        size={24}
-                        className={`text-gray-600 dark:text-gray-400 transition-transform ${collapsedSections.additionalRules ? '-rotate-180' : ''}`}
-                      />
-                    </button>
-
-                    {!collapsedSections.additionalRules && (
-                    <>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Cooldown Minutes
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="1440"
-                          value={automationConfig.rules?.cooldown_minutes || 30}
-                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, cooldown_minutes: parseInt(e.target.value) } })}
-                          className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                        />
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Wait time between migrations of the same VM
+                      <div className="flex flex-col">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={automationConfig.safety_checks?.check_cluster_health !== false}
+                            onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, check_cluster_health: e.target.checked } })}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Check cluster health before migrating
+                          </label>
+                        </div>
+                        <p className="ml-6 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Verifies cluster is healthy before migrating: cluster has quorum, all nodes CPU {'<'} 85%, all nodes memory {'<'} 90%.<br/>
+                          Prevents migrations during cluster stress that could worsen the situation. Recommended for production.
                         </p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Max Concurrent Migrations
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="10"
-                          value={automationConfig.rules?.max_concurrent_migrations || 1}
-                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, max_concurrent_migrations: parseInt(e.target.value) } })}
-                          className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                        />
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Maximum simultaneous migrations
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.rules?.require_auto_migrate_ok_tag || false}
-                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, require_auto_migrate_ok_tag: e.target.checked } })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Require 'auto_migrate_ok' tag (only migrate VMs with this tag)
-                        </label>
-                      </div>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.rules?.respect_exclude_tags !== false}
-                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, respect_exclude_tags: e.target.checked } })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Respect 'exclude_*' tags (node exclusion)
-                        </label>
-                      </div>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.safety_checks?.check_cluster_health !== false}
-                          onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, check_cluster_health: e.target.checked } })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Check cluster health before migrating
-                        </label>
                       </div>
                       <div className="flex items-center">
                         <input
@@ -3109,10 +3334,28 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           Abort batch if a migration fails
                         </label>
                       </div>
+                      <div className="flex flex-col">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={automationConfig.safety_checks?.pause_on_failure === true}
+                            onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, pause_on_failure: e.target.checked } })}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Pause automation after migration failure
+                          </label>
+                        </div>
+                        <p className="ml-6 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Automatically disables automated migrations if any migration fails.<br/>
+                          Prevents cascading failures and requires manual review before resuming automation.
+                        </p>
+                      </div>
                     </div>
                     </>
                     )}
                   </div>
+
 
                   {/* Notifications - DISABLED FOR NOW - Awaiting additional development
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
@@ -3190,286 +3433,868 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   </div>
                   */}
 
-                  {/* Schedule */}
+                  {/* Time Windows (Unified) */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Schedule</h2>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Time Windows</h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                      Configure when migrations are allowed (Migration Windows) or blocked (Blackout Windows).
+                      If no windows are configured, migrations are allowed at any time.
+                    </p>
 
-                    <div className="space-y-6">
-                      {/* Migration Windows */}
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Migration Windows</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                          Define time windows when automated migrations are allowed. Leave empty to allow migrations at any time.
-                        </p>
+                    {/* Weekly Visual Timeline */}
+                    {(() => {
+                      const migrationWindows = automationConfig.schedule?.migration_windows || [];
+                      const blackoutWindows = automationConfig.schedule?.blackout_windows || [];
+                      const hasWindows = migrationWindows.length > 0 || blackoutWindows.length > 0;
 
-                        {automationConfig.schedule?.migration_windows && automationConfig.schedule.migration_windows.length > 0 ? (
-                          <div className="space-y-2 mb-3">
-                            {automationConfig.schedule.migration_windows.map((window, idx) => (
-                              <div key={idx} className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                <div className="flex-1">
-                                  <span className="font-medium text-gray-900 dark:text-white">{window.name || `Window ${idx + 1}`}</span>
-                                  <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
-                                    {window.days?.join(', ')} {window.start_time}-{window.end_time}
-                                  </span>
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    const newWindows = [...automationConfig.schedule.migration_windows];
-                                    newWindows.splice(idx, 1);
-                                    saveAutomationConfig({ schedule: { ...automationConfig.schedule, migration_windows: newWindows } });
-                                  }}
-                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            ))}
+                      if (!hasWindows) return null;
+
+                      const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                      const today = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+
+                      return (
+                        <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                          <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                            Weekly Schedule Overview
                           </div>
-                        ) : (
+
+                          {/* Week Grid */}
+                          <div className="space-y-3 mt-4">
+                            {daysOfWeek.map((day) => {
+                              const dayMigrations = migrationWindows.filter(w => w.days?.includes(day));
+                              const dayBlackouts = blackoutWindows.filter(w => w.days?.includes(day));
+                              const isToday = day === today;
+
+                              return (
+                                <div key={day} className="flex gap-2">
+                                  {/* Day Label */}
+                                  <div className={`w-20 flex-shrink-0 text-xs font-medium flex items-center ${
+                                    isToday
+                                      ? 'text-blue-600 dark:text-blue-400 font-bold'
+                                      : 'text-gray-600 dark:text-gray-400'
+                                  }`}>
+                                    {day.slice(0, 3)}
+                                    {isToday && <span className="ml-1 text-blue-600 dark:text-blue-400">●</span>}
+                                  </div>
+
+                                  {/* Timeline Bar */}
+                                  <div className="flex-1 relative h-6 bg-gray-200 dark:bg-gray-600 rounded overflow-visible">
+                                    {/* Hour tick marks - every hour */}
+                                    {Array.from({ length: 25 }, (_, hour) => {
+                                      const isMajorTick = hour % 6 === 0;
+                                      const isMinorTick = hour % 3 === 0 && !isMajorTick;
+
+                                      return (
+                                        <div
+                                          key={`tick-${hour}`}
+                                          className={`absolute bottom-0 z-0 ${
+                                            isMajorTick
+                                              ? 'h-full border-l-2 border-gray-400 dark:border-gray-500'
+                                              : isMinorTick
+                                              ? 'h-2/3 border-l border-gray-350 dark:border-gray-500'
+                                              : 'h-1/3 border-l border-gray-300 dark:border-gray-550'
+                                          }`}
+                                          style={{ left: `${(hour / 24) * 100}%` }}
+                                        >
+                                          {isMajorTick && hour < 24 && (
+                                            <div className="absolute -top-3 -translate-x-1/2 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                                              {hour.toString().padStart(2, '0')}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+
+                                    {/* Render blackout windows */}
+                                    {dayBlackouts.map((window, idx) => {
+                                      const [startHour, startMin] = window.start_time.split(':').map(Number);
+                                      const [endHour, endMin] = window.end_time.split(':').map(Number);
+                                      const startPercent = ((startHour * 60 + startMin) / 1440) * 100;
+                                      const endPercent = ((endHour * 60 + endMin) / 1440) * 100;
+                                      const width = endPercent - startPercent;
+
+                                      // Find the global index for this blackout window
+                                      const blackoutIndex = blackoutWindows.findIndex(w =>
+                                        w.name === window.name &&
+                                        w.start_time === window.start_time &&
+                                        w.end_time === window.end_time
+                                      );
+                                      const globalIndex = migrationWindows.length + blackoutIndex;
+
+                                      return (
+                                        <div
+                                          key={`blackout-${idx}`}
+                                          className="absolute top-0 bottom-0 bg-red-500 dark:bg-red-600 hover:bg-red-600 dark:hover:bg-red-700 transition-colors z-10 cursor-pointer"
+                                          style={{ left: `${startPercent}%`, width: `${width}%` }}
+                                          title={`${window.name}: ${window.start_time}-${window.end_time} (BLOCKED) - Click to edit`}
+                                          onClick={() => {
+                                            setEditingWindowIndex(globalIndex);
+                                            // Scroll to the window list
+                                            setTimeout(() => {
+                                              const element = document.querySelector(`[data-window-index="${globalIndex}"]`);
+                                              if (element) {
+                                                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                              }
+                                            }, 100);
+                                          }}
+                                        />
+                                      );
+                                    })}
+
+                                    {/* Render migration windows */}
+                                    {dayMigrations.map((window, idx) => {
+                                      const [startHour, startMin] = window.start_time.split(':').map(Number);
+                                      const [endHour, endMin] = window.end_time.split(':').map(Number);
+                                      const startPercent = ((startHour * 60 + startMin) / 1440) * 100;
+                                      const endPercent = ((endHour * 60 + endMin) / 1440) * 100;
+                                      const width = endPercent - startPercent;
+
+                                      // Find the global index for this migration window
+                                      const migrationIndex = migrationWindows.findIndex(w =>
+                                        w.name === window.name &&
+                                        w.start_time === window.start_time &&
+                                        w.end_time === window.end_time
+                                      );
+
+                                      return (
+                                        <div
+                                          key={`migration-${idx}`}
+                                          className="absolute top-0 bottom-0 bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 transition-colors z-10 cursor-pointer"
+                                          style={{ left: `${startPercent}%`, width: `${width}%` }}
+                                          title={`${window.name}: ${window.start_time}-${window.end_time} (ALLOWED) - Click to edit`}
+                                          onClick={() => {
+                                            setEditingWindowIndex(migrationIndex);
+                                            // Scroll to the window list
+                                            setTimeout(() => {
+                                              const element = document.querySelector(`[data-window-index="${migrationIndex}"]`);
+                                              if (element) {
+                                                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                              }
+                                            }, 100);
+                                          }}
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Legend */}
+                          <div className="flex items-center gap-4 mt-6 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-green-500 dark:bg-green-600 rounded"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Migrations Allowed</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-red-500 dark:bg-red-600 rounded"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Migrations Blocked</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-gray-200 dark:bg-gray-600 rounded border border-gray-300 dark:border-gray-500"></div>
+                              <span className="text-gray-600 dark:text-gray-400">No Restriction</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Combined Windows List */}
+                    {(() => {
+                      const migrationWindows = automationConfig.schedule?.migration_windows || [];
+                      const blackoutWindows = automationConfig.schedule?.blackout_windows || [];
+
+                      // Combine both arrays with type information
+                      const allWindows = [
+                        ...migrationWindows.map((w, idx) => ({ ...w, type: 'migration', originalIndex: idx })),
+                        ...blackoutWindows.map((w, idx) => ({ ...w, type: 'blackout', originalIndex: idx }))
+                      ];
+
+                      if (allWindows.length === 0) {
+                        return (
                           <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-400 mb-3">
-                            No migration windows configured - migrations allowed at any time
+                            No time windows configured - migrations allowed at any time
                           </div>
-                        )}
+                        );
+                      }
 
-                        {showMigrationWindowForm ? (
-                          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-3">
-                            <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Add Migration Window</h4>
-                            <div className="space-y-3">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                  Window Name
-                                </label>
-                                <input
-                                  type="text"
-                                  value={newWindowData.name}
-                                  onChange={(e) => setNewWindowData({ ...newWindowData, name: e.target.value })}
-                                  placeholder="e.g., Weekend Maintenance"
-                                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                  Days of Week
-                                </label>
-                                <div className="grid grid-cols-4 gap-2">
-                                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
-                                    <label key={day} className="flex items-center">
+                      return (
+                        <div className="space-y-2 mb-3">
+                          {allWindows.map((window, idx) => {
+                            const isMigration = window.type === 'migration';
+                            const isEditing = editingWindowIndex === idx;
+
+                            return (
+                              <div
+                                key={`${window.type}-${window.originalIndex}`}
+                                data-window-index={idx}
+                                className={`p-3 rounded-lg border ${
+                                  isMigration
+                                    ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-700'
+                                    : 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-700'
+                                }`}
+                              >
+                                {isEditing ? (
+                                  <div className="space-y-3">
+                                    {/* Type Toggle */}
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Window Type</label>
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => {
+                                            // Move window from one array to another
+                                            const newMigrationWindows = [...migrationWindows];
+                                            const newBlackoutWindows = [...blackoutWindows];
+
+                                            if (isMigration) {
+                                              // Move to blackout
+                                              const [removed] = newMigrationWindows.splice(window.originalIndex, 1);
+                                              newBlackoutWindows.push(removed);
+                                            } else {
+                                              // Move to migration
+                                              const [removed] = newBlackoutWindows.splice(window.originalIndex, 1);
+                                              newMigrationWindows.push(removed);
+                                            }
+
+                                            saveAutomationConfig({
+                                              schedule: {
+                                                ...automationConfig.schedule,
+                                                migration_windows: newMigrationWindows,
+                                                blackout_windows: newBlackoutWindows
+                                              }
+                                            });
+                                            setEditingWindowIndex(null);
+                                          }}
+                                          className={`px-3 py-2 rounded text-sm font-semibold ${
+                                            isMigration
+                                              ? 'bg-green-600 text-white'
+                                              : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                                          }`}
+                                        >
+                                          Migration Window
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            // Move window from one array to another
+                                            const newMigrationWindows = [...migrationWindows];
+                                            const newBlackoutWindows = [...blackoutWindows];
+
+                                            if (isMigration) {
+                                              // Move to blackout
+                                              const [removed] = newMigrationWindows.splice(window.originalIndex, 1);
+                                              newBlackoutWindows.push(removed);
+                                            } else {
+                                              // Move to migration
+                                              const [removed] = newBlackoutWindows.splice(window.originalIndex, 1);
+                                              newMigrationWindows.push(removed);
+                                            }
+
+                                            saveAutomationConfig({
+                                              schedule: {
+                                                ...automationConfig.schedule,
+                                                migration_windows: newMigrationWindows,
+                                                blackout_windows: newBlackoutWindows
+                                              }
+                                            });
+                                            setEditingWindowIndex(null);
+                                          }}
+                                          className={`px-3 py-2 rounded text-sm font-semibold ${
+                                            !isMigration
+                                              ? 'bg-red-600 text-white'
+                                              : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                                          }`}
+                                        >
+                                          Blackout Window
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Window Name */}
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Window Name</label>
                                       <input
-                                        type="checkbox"
-                                        checked={newWindowData.days.includes(day)}
+                                        type="text"
+                                        value={window.name}
                                         onChange={(e) => {
-                                          if (e.target.checked) {
-                                            setNewWindowData({ ...newWindowData, days: [...newWindowData.days, day] });
-                                          } else {
-                                            setNewWindowData({ ...newWindowData, days: newWindowData.days.filter(d => d !== day) });
-                                          }
+                                          const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                          const newWindows = [...targetArray];
+                                          newWindows[window.originalIndex] = { ...window, name: e.target.value };
+
+                                          saveAutomationConfig({
+                                            schedule: {
+                                              ...automationConfig.schedule,
+                                              [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                            }
+                                          });
                                         }}
-                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        className="w-full px-3 py-2 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-lg text-gray-900 dark:text-white"
                                       />
-                                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{day.slice(0, 3)}</span>
-                                    </label>
-                                  ))}
-                                </div>
+                                    </div>
+
+                                    {/* Days of Week */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Days of Week</label>
+                                        <label className="flex items-center cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={window.days?.length === 7}
+                                            onChange={(e) => {
+                                              const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                              const newWindows = [...targetArray];
+                                              newWindows[window.originalIndex] = {
+                                                ...window,
+                                                days: e.target.checked
+                                                  ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                                                  : []
+                                              };
+
+                                              saveAutomationConfig({
+                                                schedule: {
+                                                  ...automationConfig.schedule,
+                                                  [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                                }
+                                              });
+                                            }}
+                                            className={`w-4 h-4 border-gray-300 rounded ${
+                                              isMigration ? 'text-green-600 focus:ring-green-500' : 'text-red-600 focus:ring-red-500'
+                                            }`}
+                                          />
+                                          <span className="ml-2 text-xs font-semibold text-blue-600 dark:text-blue-400">All Days</span>
+                                        </label>
+                                      </div>
+                                      <div className="grid grid-cols-4 gap-2">
+                                        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
+                                          <label key={day} className="flex items-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={window.days?.includes(day)}
+                                              onChange={(e) => {
+                                                const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                                const newWindows = [...targetArray];
+                                                const currentDays = window.days || [];
+                                                newWindows[window.originalIndex] = {
+                                                  ...window,
+                                                  days: e.target.checked
+                                                    ? [...currentDays, day]
+                                                    : currentDays.filter(d => d !== day)
+                                                };
+
+                                                saveAutomationConfig({
+                                                  schedule: {
+                                                    ...automationConfig.schedule,
+                                                    [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                                  }
+                                                });
+                                              }}
+                                              className={`w-4 h-4 border-gray-300 rounded ${
+                                                isMigration ? 'text-green-600 focus:ring-green-500' : 'text-red-600 focus:ring-red-500'
+                                              }`}
+                                            />
+                                            <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{day.slice(0, 3)}</span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* Start/End Time */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Time</label>
+                                        <div className="flex gap-2">
+                                          <select
+                                            value={window.start_time?.split(':')[0] || '00'}
+                                            onChange={(e) => {
+                                              const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                              const newWindows = [...targetArray];
+                                              const currentMinute = window.start_time?.split(':')[1] || '00';
+                                              newWindows[window.originalIndex] = { ...window, start_time: `${e.target.value}:${currentMinute}` };
+                                              saveAutomationConfig({
+                                                schedule: {
+                                                  ...automationConfig.schedule,
+                                                  [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                                }
+                                              });
+                                            }}
+                                            className="flex-1 px-3 py-2 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-lg text-gray-900 dark:text-white"
+                                          >
+                                            {Array.from({ length: 24 }, (_, i) => (
+                                              <option key={i} value={i.toString().padStart(2, '0')}>
+                                                {i.toString().padStart(2, '0')}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <span className="flex items-center text-gray-500 dark:text-gray-400">:</span>
+                                          <select
+                                            value={window.start_time?.split(':')[1] || '00'}
+                                            onChange={(e) => {
+                                              const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                              const newWindows = [...targetArray];
+                                              const currentHour = window.start_time?.split(':')[0] || '00';
+                                              newWindows[window.originalIndex] = { ...window, start_time: `${currentHour}:${e.target.value}` };
+                                              saveAutomationConfig({
+                                                schedule: {
+                                                  ...automationConfig.schedule,
+                                                  [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                                }
+                                              });
+                                            }}
+                                            className="flex-1 px-3 py-2 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-lg text-gray-900 dark:text-white"
+                                          >
+                                            {Array.from({ length: 12 }, (_, i) => i * 5).map(minute => (
+                                              <option key={minute} value={minute.toString().padStart(2, '0')}>
+                                                {minute.toString().padStart(2, '0')}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Time</label>
+                                        <div className="flex gap-2">
+                                          <select
+                                            value={window.end_time?.split(':')[0] || '00'}
+                                            onChange={(e) => {
+                                              const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                              const newWindows = [...targetArray];
+                                              const currentMinute = window.end_time?.split(':')[1] || '00';
+                                              newWindows[window.originalIndex] = { ...window, end_time: `${e.target.value}:${currentMinute}` };
+                                              saveAutomationConfig({
+                                                schedule: {
+                                                  ...automationConfig.schedule,
+                                                  [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                                }
+                                              });
+                                            }}
+                                            className="flex-1 px-3 py-2 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-lg text-gray-900 dark:text-white"
+                                          >
+                                            {Array.from({ length: 24 }, (_, i) => (
+                                              <option key={i} value={i.toString().padStart(2, '0')}>
+                                                {i.toString().padStart(2, '0')}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <span className="flex items-center text-gray-500 dark:text-gray-400">:</span>
+                                          <select
+                                            value={window.end_time?.split(':')[1] || '00'}
+                                            onChange={(e) => {
+                                              const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                              const newWindows = [...targetArray];
+                                              const currentHour = window.end_time?.split(':')[0] || '00';
+                                              newWindows[window.originalIndex] = { ...window, end_time: `${currentHour}:${e.target.value}` };
+                                              saveAutomationConfig({
+                                                schedule: {
+                                                  ...automationConfig.schedule,
+                                                  [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                                }
+                                              });
+                                            }}
+                                            className="flex-1 px-3 py-2 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-lg text-gray-900 dark:text-white"
+                                          >
+                                            {Array.from({ length: 12 }, (_, i) => i * 5).map(minute => (
+                                              <option key={minute} value={minute.toString().padStart(2, '0')}>
+                                                {minute.toString().padStart(2, '0')}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Done Button */}
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => setEditingWindowIndex(null)}
+                                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-semibold"
+                                      >
+                                        Done
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    {/* Type Badge */}
+                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                      isMigration
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-red-600 text-white'
+                                    }`}>
+                                      {isMigration ? 'MIGRATION' : 'BLACKOUT'}
+                                    </span>
+
+                                    {/* Window Info */}
+                                    <div className="flex-1">
+                                      <span className="font-medium text-gray-900 dark:text-white">
+                                        {window.name || `${isMigration ? 'Migration' : 'Blackout'} ${window.originalIndex + 1}`}
+                                      </span>
+                                      <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
+                                        {window.days?.join(', ')} {window.start_time}-{window.end_time}
+                                      </span>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <button
+                                      onClick={() => setEditingWindowIndex(idx)}
+                                      className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (confirm(`Remove this ${isMigration ? 'migration' : 'blackout'} window?`)) {
+                                          const targetArray = isMigration ? migrationWindows : blackoutWindows;
+                                          const newWindows = [...targetArray];
+                                          newWindows.splice(window.originalIndex, 1);
+
+                                          saveAutomationConfig({
+                                            schedule: {
+                                              ...automationConfig.schedule,
+                                              [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
+                                            }
+                                          });
+                                        }
+                                      }}
+                                      className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                )}
                               </div>
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Start Time
-                                  </label>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Add Window Form */}
+                    {showTimeWindowForm ? (
+                      <div className={`rounded-lg p-4 mb-3 border ${
+                        newWindowData.type === 'migration'
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+                      }`}>
+                        <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Add Time Window</h4>
+                        <div className="space-y-3">
+                          {/* Type Toggle */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Window Type</label>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setNewWindowData({ ...newWindowData, type: 'migration' })}
+                                className={`px-3 py-2 rounded text-sm font-semibold ${
+                                  newWindowData.type === 'migration'
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                                }`}
+                              >
+                                Migration Window
+                              </button>
+                              <button
+                                onClick={() => setNewWindowData({ ...newWindowData, type: 'blackout' })}
+                                className={`px-3 py-2 rounded text-sm font-semibold ${
+                                  newWindowData.type === 'blackout'
+                                    ? 'bg-red-600 text-white'
+                                    : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                                }`}
+                              >
+                                Blackout Window
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Window Name */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Window Name
+                            </label>
+                            <input
+                              type="text"
+                              value={newWindowData.name}
+                              onChange={(e) => setNewWindowData({ ...newWindowData, name: e.target.value })}
+                              placeholder={newWindowData.type === 'migration' ? 'e.g., Weekend Maintenance' : 'e.g., Business Hours'}
+                              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                            />
+                          </div>
+
+                          {/* Days of Week */}
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Days of Week
+                              </label>
+                              <label className="flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={newWindowData.days.length === 7}
+                                  onChange={(e) => {
+                                    setNewWindowData({
+                                      ...newWindowData,
+                                      days: e.target.checked
+                                        ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                                        : []
+                                    });
+                                  }}
+                                  className={`w-4 h-4 border-gray-300 rounded ${
+                                    newWindowData.type === 'migration'
+                                      ? 'text-green-600 focus:ring-green-500'
+                                      : 'text-red-600 focus:ring-red-500'
+                                  }`}
+                                />
+                                <span className="ml-2 text-xs font-semibold text-blue-600 dark:text-blue-400">All Days</span>
+                              </label>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
+                                <label key={day} className="flex items-center">
                                   <input
-                                    type="time"
-                                    value={newWindowData.start_time}
-                                    onChange={(e) => setNewWindowData({ ...newWindowData, start_time: e.target.value })}
-                                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                    type="checkbox"
+                                    checked={newWindowData.days.includes(day)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setNewWindowData({ ...newWindowData, days: [...newWindowData.days, day] });
+                                      } else {
+                                        setNewWindowData({ ...newWindowData, days: newWindowData.days.filter(d => d !== day) });
+                                      }
+                                    }}
+                                    className={`w-4 h-4 border-gray-300 rounded ${
+                                      newWindowData.type === 'migration'
+                                        ? 'text-green-600 focus:ring-green-500'
+                                        : 'text-red-600 focus:ring-red-500'
+                                    }`}
                                   />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    End Time
-                                  </label>
-                                  <input
-                                    type="time"
-                                    value={newWindowData.end_time}
-                                    onChange={(e) => setNewWindowData({ ...newWindowData, end_time: e.target.value })}
-                                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                                  />
-                                </div>
-                              </div>
+                                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{day.slice(0, 3)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Start/End Time */}
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Time Range
+                              </label>
                               <div className="flex gap-2">
                                 <button
-                                  onClick={() => {
-                                    if (newWindowData.name && newWindowData.days.length > 0 && newWindowData.start_time && newWindowData.end_time) {
-                                      const windows = automationConfig.schedule?.migration_windows || [];
-                                      saveAutomationConfig({ schedule: { ...automationConfig.schedule, migration_windows: [...windows, newWindowData] } });
-                                      setNewWindowData({ name: '', days: [], start_time: '', end_time: '' });
-                                      setShowMigrationWindowForm(false);
-                                    } else {
-                                      alert('Please fill in all fields');
-                                    }
-                                  }}
-                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold"
+                                  onClick={() => setNewWindowData({ ...newWindowData, start_time: '00:00', end_time: '23:59' })}
+                                  className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded text-xs font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50"
                                 >
-                                  Save Window
+                                  All Day
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    setNewWindowData({ name: '', days: [], start_time: '', end_time: '' });
-                                    setShowMigrationWindowForm(false);
-                                  }}
-                                  className="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold"
+                                  onClick={() => setNewWindowData({ ...newWindowData, start_time: '09:00', end_time: '17:00' })}
+                                  className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded text-xs font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50"
                                 >
-                                  Cancel
+                                  Business Hours
+                                </button>
+                                <button
+                                  onClick={() => setNewWindowData({ ...newWindowData, start_time: '22:00', end_time: '06:00' })}
+                                  className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded text-xs font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50"
+                                >
+                                  Night
                                 </button>
                               </div>
                             </div>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setShowMigrationWindowForm(true)}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold"
-                          >
-                            Add Migration Window
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Blackout Windows */}
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Blackout Windows</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                          Define time windows when automated migrations should never occur (e.g., business hours, peak usage).
-                        </p>
-
-                        {automationConfig.schedule?.blackout_windows && automationConfig.schedule.blackout_windows.length > 0 ? (
-                          <div className="space-y-2 mb-3">
-                            {automationConfig.schedule.blackout_windows.map((window, idx) => (
-                              <div key={idx} className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
-                                <div className="flex-1">
-                                  <span className="font-medium text-gray-900 dark:text-white">{window.name || `Blackout ${idx + 1}`}</span>
-                                  <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
-                                    {window.days?.join(', ')} {window.start_time}-{window.end_time}
-                                  </span>
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    const newWindows = [...automationConfig.schedule.blackout_windows];
-                                    newWindows.splice(idx, 1);
-                                    saveAutomationConfig({ schedule: { ...automationConfig.schedule, blackout_windows: newWindows } });
-                                  }}
-                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-400 mb-3">
-                            No blackout windows configured
-                          </div>
-                        )}
-
-                        {showBlackoutWindowForm ? (
-                          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4 mb-3">
-                            <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Add Blackout Window</h4>
-                            <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                  Window Name
+                                  Start Time
                                 </label>
-                                <input
-                                  type="text"
-                                  value={newWindowData.name}
-                                  onChange={(e) => setNewWindowData({ ...newWindowData, name: e.target.value })}
-                                  placeholder="e.g., Business Hours"
-                                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                                />
+                                <div className="flex gap-2">
+                                  <select
+                                    value={newWindowData.start_time?.split(':')[0] || '00'}
+                                    onChange={(e) => {
+                                      const currentMinute = newWindowData.start_time?.split(':')[1] || '00';
+                                      setNewWindowData({ ...newWindowData, start_time: `${e.target.value}:${currentMinute}` });
+                                    }}
+                                    className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                  >
+                                    {Array.from({ length: 24 }, (_, i) => (
+                                      <option key={i} value={i.toString().padStart(2, '0')}>
+                                        {i.toString().padStart(2, '0')}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <span className="flex items-center text-gray-500 dark:text-gray-400">:</span>
+                                  <select
+                                    value={newWindowData.start_time?.split(':')[1] || '00'}
+                                    onChange={(e) => {
+                                      const currentHour = newWindowData.start_time?.split(':')[0] || '00';
+                                      setNewWindowData({ ...newWindowData, start_time: `${currentHour}:${e.target.value}` });
+                                    }}
+                                    className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                  >
+                                    {Array.from({ length: 12 }, (_, i) => i * 5).map(minute => (
+                                      <option key={minute} value={minute.toString().padStart(2, '0')}>
+                                        {minute.toString().padStart(2, '0')}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                  Days of Week
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  End Time
                                 </label>
-                                <div className="grid grid-cols-4 gap-2">
-                                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
-                                    <label key={day} className="flex items-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={newWindowData.days.includes(day)}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            setNewWindowData({ ...newWindowData, days: [...newWindowData.days, day] });
-                                          } else {
-                                            setNewWindowData({ ...newWindowData, days: newWindowData.days.filter(d => d !== day) });
-                                          }
-                                        }}
-                                        className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
-                                      />
-                                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">{day.slice(0, 3)}</span>
-                                    </label>
-                                  ))}
+                                <div className="flex gap-2">
+                                  <select
+                                    value={newWindowData.end_time?.split(':')[0] || '00'}
+                                    onChange={(e) => {
+                                      const currentMinute = newWindowData.end_time?.split(':')[1] || '00';
+                                      setNewWindowData({ ...newWindowData, end_time: `${e.target.value}:${currentMinute}` });
+                                    }}
+                                    className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                  >
+                                    {Array.from({ length: 24 }, (_, i) => (
+                                      <option key={i} value={i.toString().padStart(2, '0')}>
+                                        {i.toString().padStart(2, '0')}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <span className="flex items-center text-gray-500 dark:text-gray-400">:</span>
+                                  <select
+                                    value={newWindowData.end_time?.split(':')[1] || '00'}
+                                    onChange={(e) => {
+                                      const currentHour = newWindowData.end_time?.split(':')[0] || '00';
+                                      setNewWindowData({ ...newWindowData, end_time: `${currentHour}:${e.target.value}` });
+                                    }}
+                                    className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                                  >
+                                    {Array.from({ length: 12 }, (_, i) => i * 5).map(minute => (
+                                      <option key={minute} value={minute.toString().padStart(2, '0')}>
+                                        {minute.toString().padStart(2, '0')}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Start Time
-                                  </label>
-                                  <input
-                                    type="time"
-                                    value={newWindowData.start_time}
-                                    onChange={(e) => setNewWindowData({ ...newWindowData, start_time: e.target.value })}
-                                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    End Time
-                                  </label>
-                                  <input
-                                    type="time"
-                                    value={newWindowData.end_time}
-                                    onChange={(e) => setNewWindowData({ ...newWindowData, end_time: e.target.value })}
-                                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                                  />
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => {
-                                    if (newWindowData.name && newWindowData.days.length > 0 && newWindowData.start_time && newWindowData.end_time) {
-                                      const windows = automationConfig.schedule?.blackout_windows || [];
-                                      saveAutomationConfig({ schedule: { ...automationConfig.schedule, blackout_windows: [...windows, newWindowData] } });
-                                      setNewWindowData({ name: '', days: [], start_time: '', end_time: '' });
-                                      setShowBlackoutWindowForm(false);
-                                    } else {
-                                      alert('Please fill in all fields');
-                                    }
-                                  }}
-                                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold"
-                                >
-                                  Save Window
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setNewWindowData({ name: '', days: [], start_time: '', end_time: '' });
-                                    setShowBlackoutWindowForm(false);
-                                  }}
-                                  className="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold"
-                                >
-                                  Cancel
-                                </button>
                               </div>
                             </div>
                           </div>
-                        ) : (
-                          <button
-                            onClick={() => setShowBlackoutWindowForm(true)}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold"
-                          >
-                            Add Blackout Window
-                          </button>
-                        )}
+
+                          {/* Save/Cancel Buttons */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                if (newWindowData.name && newWindowData.days.length > 0 && newWindowData.start_time && newWindowData.end_time) {
+                                  const isMigration = newWindowData.type === 'migration';
+                                  const targetArray = isMigration
+                                    ? (automationConfig.schedule?.migration_windows || [])
+                                    : (automationConfig.schedule?.blackout_windows || []);
+
+                                  const { type, ...windowData } = newWindowData;
+
+                                  saveAutomationConfig({
+                                    schedule: {
+                                      ...automationConfig.schedule,
+                                      [isMigration ? 'migration_windows' : 'blackout_windows']: [...targetArray, windowData]
+                                    }
+                                  });
+
+                                  setNewWindowData({ name: '', type: 'migration', days: [], start_time: '', end_time: '' });
+                                  setShowTimeWindowForm(false);
+                                } else {
+                                  alert('Please fill in all fields');
+                                }
+                              }}
+                              className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                                newWindowData.type === 'migration'
+                                  ? 'bg-green-600 hover:bg-green-700'
+                                  : 'bg-red-600 hover:bg-red-700'
+                              }`}
+                            >
+                              Save Window
+                            </button>
+                            <button
+                              onClick={() => {
+                                setNewWindowData({ name: '', type: 'migration', days: [], start_time: '', end_time: '' });
+                                setShowTimeWindowForm(false);
+                              }}
+                              className="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowTimeWindowForm(true)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold"
+                      >
+                        Add Time Window
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Notification Settings */}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-gray-100/50 to-gray-200/50 dark:from-gray-700/30 dark:to-gray-800/30 backdrop-blur-sm"></div>
+                    <div className="relative">
+                      <button
+                        onClick={() => setCollapsedSections(prev => ({ ...prev, notificationSettings: !prev.notificationSettings }))}
+                        className="w-full flex items-center justify-between text-left mb-4 hover:opacity-80 transition-opacity"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Bell size={24} className="text-gray-400 dark:text-gray-500" />
+                          <h2 className="text-xl font-bold text-gray-500 dark:text-gray-400">Notification Settings</h2>
+                          <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs font-semibold rounded">
+                            Coming Soon
+                          </span>
+                        </div>
+                        <ChevronDown
+                          size={24}
+                          className={`text-gray-400 dark:text-gray-500 transition-transform ${collapsedSections.notificationSettings ? '-rotate-180' : ''}`}
+                        />
+                      </button>
+
+                      {!collapsedSections.notificationSettings && (
+                        <div className="space-y-4 opacity-50">
+                          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                            <div className="flex items-start gap-3">
+                              <Info size={20} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                              <div className="text-sm text-blue-800 dark:text-blue-300">
+                                <p className="font-semibold mb-2">Notification features are planned for a future release.</p>
+                                <p>Planned notification channels include:</p>
+                                <ul className="list-disc list-inside ml-2 mt-2 space-y-1">
+                                  <li>Email notifications for migration events</li>
+                                  <li>Webhook integrations (Slack, Discord, Teams)</li>
+                                  <li>Custom notification rules and filters</li>
+                                  <li>Digest reports (daily/weekly summaries)</li>
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                              <div className="font-semibold text-gray-400 dark:text-gray-500 mb-2">Email Notifications</div>
+                              <div className="text-sm text-gray-400 dark:text-gray-500">
+                                Configure SMTP settings and email recipients
+                              </div>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                              <div className="font-semibold text-gray-400 dark:text-gray-500 mb-2">Webhooks</div>
+                              <div className="text-sm text-gray-400 dark:text-gray-500">
+                                Send migration events to external services
+                              </div>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                              <div className="font-semibold text-gray-400 dark:text-gray-500 mb-2">Notification Rules</div>
+                              <div className="text-sm text-gray-400 dark:text-gray-500">
+                                Filter which events trigger notifications
+                              </div>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                              <div className="font-semibold text-gray-400 dark:text-gray-500 mb-2">Digest Reports</div>
+                              <div className="text-sm text-gray-400 dark:text-gray-500">
+                                Scheduled summary reports via email
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -3723,6 +4548,90 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         </button>
                       </div>
                       <div className="flex items-center gap-3">
+                        {collapsedSections.automatedMigrations && (() => {
+                          const now = new Date();
+                          const last24h = now - (24 * 60 * 60 * 1000);
+                          const last7d = now - (7 * 24 * 60 * 60 * 1000);
+
+                          // Calculate 24h stats
+                          const stats24h = automationStatus.recent_migrations ? automationStatus.recent_migrations.filter(m => {
+                            const timestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
+                            return new Date(timestamp) > last24h;
+                          }) : [];
+                          const success24h = stats24h.filter(m => m.status === 'completed').length;
+                          const successRate24h = stats24h.length > 0 ? Math.round((success24h / stats24h.length) * 100) : 0;
+
+                          // Calculate 7d stats
+                          const stats7d = automationStatus.recent_migrations ? automationStatus.recent_migrations.filter(m => {
+                            const timestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
+                            return new Date(timestamp) > last7d;
+                          }) : [];
+
+                          // Calculate next check time
+                          let nextCheckDisplay = '';
+                          if (automationStatus.timer_active && automationStatus.state?.last_run) {
+                            const lastRunStr = automationStatus.state.last_run.endsWith('Z') ? automationStatus.state.last_run : automationStatus.state.last_run + 'Z';
+                            const lastRun = new Date(lastRunStr);
+                            const interval = automationStatus.check_interval_minutes * 60 * 1000;
+                            const nextCheck = new Date(lastRun.getTime() + interval);
+                            const msUntilNext = nextCheck - now;
+
+                            if (msUntilNext < 0) {
+                              nextCheckDisplay = 'overdue';
+                            } else {
+                              const minutes = Math.floor(msUntilNext / 60000);
+                              const seconds = Math.floor((msUntilNext % 60000) / 1000);
+                              if (minutes > 0) {
+                                nextCheckDisplay = `${minutes}m ${seconds}s`;
+                              } else {
+                                nextCheckDisplay = `${seconds}s`;
+                              }
+                            }
+                          }
+
+                          return (
+                            <div className="flex items-center gap-4">
+                              {/* Migration counts */}
+                              <div className="flex items-center gap-3 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{stats24h.length}</span>
+                                  <span className="text-xs text-blue-600 dark:text-blue-400">24h</span>
+                                </div>
+                                <span className="text-blue-300 dark:text-blue-700">|</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{stats7d.length}</span>
+                                  <span className="text-xs text-blue-600 dark:text-blue-400">7d</span>
+                                </div>
+                              </div>
+
+                              {/* Success rate */}
+                              <div className={`px-3 py-1.5 rounded-lg border font-semibold text-sm ${
+                                successRate24h >= 90
+                                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+                                  : successRate24h >= 70
+                                  ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-300'
+                                  : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                              }`}>
+                                {successRate24h}% success
+                              </div>
+
+                              {/* Next check countdown */}
+                              {nextCheckDisplay && (
+                                <div className="px-3 py-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                                  <span className="text-xs text-purple-600 dark:text-purple-400">Next check: </span>
+                                  <span className="text-sm font-bold text-purple-700 dark:text-purple-300">{nextCheckDisplay}</span>
+                                </div>
+                              )}
+
+                              {/* Dry run indicator */}
+                              {automationStatus.dry_run && automationStatus.enabled && (
+                                <div className="px-3 py-1.5 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                                  <span className="text-sm font-bold text-yellow-700 dark:text-yellow-300">DRY RUN MODE</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <button
                           onClick={() => setCurrentPage('automation')}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
@@ -3754,22 +4663,268 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Timer Status</div>
-                        <div className={`text-sm font-semibold ${
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Automation Status</div>
+                        <div className={`flex items-center gap-2 ${
                           automationStatus.timer_active
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-gray-600 dark:text-gray-400'
                         }`}>
-                          {automationStatus.timer_active ? 'Running' : 'Stopped'}
+                          <div className={`w-2 h-2 rounded-full ${
+                            automationStatus.timer_active
+                              ? 'bg-green-500 animate-pulse'
+                              : 'bg-gray-400'
+                          }`}></div>
+                          <div className="text-sm font-semibold">
+                            {automationStatus.timer_active ? 'Active' : 'Inactive'}
+                          </div>
                         </div>
                       </div>
                       <div className="bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Check Interval</div>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Next Check</div>
+                          <button
+                            type="button"
+                            onClick={runAutomationNow}
+                            disabled={!automationStatus.enabled || runningAutomation}
+                            className={`px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                              automationStatus.enabled && !runningAutomation
+                                ? 'bg-green-600 hover:bg-green-700 text-white'
+                                : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                            }`}
+                            title={!automationStatus.enabled ? "Enable automation first" : runningAutomation ? "Running..." : "Run automation check now"}
+                          >
+                            {runningAutomation ? (
+                              <>
+                                <Loader size={12} className="animate-spin" />
+                                Running...
+                              </>
+                            ) : (
+                              <>
+                                <Play size={12} />
+                                Run Now
+                              </>
+                            )}
+                          </button>
+                        </div>
                         <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          {automationStatus.check_interval_minutes} min
+                          {(() => {
+                            if (!automationStatus.timer_active || !automationStatus.state?.last_run) {
+                              return <span className="text-gray-400 dark:text-gray-500">Not scheduled</span>;
+                            }
+
+                            // Calculate next check time
+                            const lastRunStr = automationStatus.state.last_run.endsWith('Z') ? automationStatus.state.last_run : automationStatus.state.last_run + 'Z';
+                            const lastRun = new Date(lastRunStr);
+                            const interval = automationStatus.check_interval_minutes * 60 * 1000;
+                            const nextCheck = new Date(lastRun.getTime() + interval);
+                            const now = new Date();
+                            const msUntilNext = nextCheck - now;
+
+                            if (msUntilNext < 0) {
+                              return <span className="text-orange-600 dark:text-orange-400">Overdue</span>;
+                            }
+
+                            const minutes = Math.floor(msUntilNext / 60000);
+                            const seconds = Math.floor((msUntilNext % 60000) / 1000);
+
+                            if (minutes > 0) {
+                              return <span>in {minutes}m {seconds}s</span>;
+                            } else {
+                              return <span>in {seconds}s</span>;
+                            }
+                          })()}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Every {automationStatus.check_interval_minutes} {automationStatus.check_interval_minutes === 1 ? 'min' : 'mins'}
                         </div>
                       </div>
                     </div>
+
+                    {/* Migration Statistics */}
+                    {automationStatus.recent_migrations && automationStatus.recent_migrations.length > 0 && (() => {
+                      const now = new Date();
+                      const last24h = now - (24 * 60 * 60 * 1000);
+                      const last7d = now - (7 * 24 * 60 * 60 * 1000);
+
+                      const stats24h = automationStatus.recent_migrations.filter(m => {
+                        const timestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
+                        return new Date(timestamp) > last24h;
+                      });
+
+                      const stats7d = automationStatus.recent_migrations.filter(m => {
+                        const timestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
+                        return new Date(timestamp) > last7d;
+                      });
+
+                      // Separate real vs dry run migrations
+                      const real24h = stats24h.filter(m => !m.dry_run);
+                      const dryRun24h = stats24h.filter(m => m.dry_run);
+                      const real7d = stats7d.filter(m => !m.dry_run);
+                      const dryRun7d = stats7d.filter(m => m.dry_run);
+
+                      const success24h = stats24h.filter(m => m.status === 'completed').length;
+                      const success7d = stats7d.filter(m => m.status === 'completed').length;
+                      const successRate24h = stats24h.length > 0 ? Math.round((success24h / stats24h.length) * 100) : 0;
+                      const successRate7d = stats7d.length > 0 ? Math.round((success7d / stats7d.length) * 100) : 0;
+
+                      return (
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
+                            <div className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">Last 24 Hours</div>
+                            <div className="flex items-baseline gap-2">
+                              <div className="text-lg font-bold text-blue-900 dark:text-blue-100">{stats24h.length}</div>
+                              <div className="text-xs text-blue-700 dark:text-blue-300">migrations</div>
+                            </div>
+                            <div className="text-xs mt-1">
+                              <span className={`font-semibold ${successRate24h >= 90 ? 'text-green-600 dark:text-green-400' : successRate24h >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}`}>
+                                {successRate24h}% success
+                              </span>
+                              <span className="text-blue-600 dark:text-blue-400"> ({success24h}/{stats24h.length})</span>
+                            </div>
+                            {(real24h.length > 0 || dryRun24h.length > 0) && (
+                              <div className="text-xs mt-1">
+                                {real24h.length > 0 && <span className="text-blue-600 dark:text-blue-400">{real24h.length} real</span>}
+                                {real24h.length > 0 && dryRun24h.length > 0 && <span className="text-blue-600 dark:text-blue-400">, </span>}
+                                {dryRun24h.length > 0 && <span className="text-yellow-700 dark:text-yellow-300">{dryRun24h.length} dry run</span>}
+                              </div>
+                            )}
+                          </div>
+                          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/20 dark:to-indigo-800/20 rounded-lg p-3 border border-indigo-200 dark:border-indigo-700">
+                            <div className="text-xs text-indigo-600 dark:text-indigo-400 mb-1 font-medium">Last 7 Days</div>
+                            <div className="flex items-baseline gap-2">
+                              <div className="text-lg font-bold text-indigo-900 dark:text-indigo-100">{stats7d.length}</div>
+                              <div className="text-xs text-indigo-700 dark:text-indigo-300">migrations</div>
+                            </div>
+                            <div className="text-xs mt-1">
+                              <span className={`font-semibold ${successRate7d >= 90 ? 'text-green-600 dark:text-green-400' : successRate7d >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}`}>
+                                {successRate7d}% success
+                              </span>
+                              <span className="text-indigo-600 dark:text-indigo-400"> ({success7d}/{stats7d.length})</span>
+                            </div>
+                            {(real7d.length > 0 || dryRun7d.length > 0) && (
+                              <div className="text-xs mt-1">
+                                {real7d.length > 0 && <span className="text-indigo-600 dark:text-indigo-400">{real7d.length} real</span>}
+                                {real7d.length > 0 && dryRun7d.length > 0 && <span className="text-indigo-600 dark:text-indigo-400">, </span>}
+                                {dryRun7d.length > 0 && <span className="text-yellow-700 dark:text-yellow-300">{dryRun7d.length} dry run</span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Migration History Chart */}
+                    {(() => {
+                      const migrations = automationStatus.recent_migrations || [];
+                      if (migrations.length === 0) return null;
+
+                      // Group migrations by date (last 7 days)
+                      const last7Days = Array.from({ length: 7 }, (_, i) => {
+                        const date = new Date();
+                        date.setDate(date.getDate() - (6 - i));
+                        date.setHours(0, 0, 0, 0);
+                        return date;
+                      });
+
+                      const dailyStats = last7Days.map(date => {
+                        const dayStart = new Date(date);
+                        const dayEnd = new Date(date);
+                        dayEnd.setHours(23, 59, 59, 999);
+
+                        const dayMigrations = migrations.filter(m => {
+                          let timestamp = m.timestamp;
+                          if (!timestamp.endsWith('Z') && !timestamp.includes('+')) {
+                            timestamp += 'Z';
+                          }
+                          const migDate = new Date(timestamp);
+                          return migDate >= dayStart && migDate <= dayEnd;
+                        });
+
+                        const successful = dayMigrations.filter(m => m.status === 'completed').length;
+                        const failed = dayMigrations.filter(m => m.status === 'failed').length;
+                        const skipped = dayMigrations.filter(m => m.status === 'skipped').length;
+
+                        return {
+                          date,
+                          total: dayMigrations.length,
+                          successful,
+                          failed,
+                          skipped,
+                          label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                        };
+                      });
+
+                      const maxMigrations = Math.max(...dailyStats.map(d => d.total), 1);
+
+                      return (
+                        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4">
+                          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Migration History (Last 7 Days)</h3>
+                          <div className="flex items-end justify-between gap-1 h-32">
+                            {dailyStats.map((day, idx) => {
+                              const heightPercent = (day.total / maxMigrations) * 100;
+
+                              return (
+                                <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                                  {/* Bar */}
+                                  <div className="w-full flex flex-col-reverse gap-0.5" style={{ height: '100px' }}>
+                                    {day.total > 0 ? (
+                                      <>
+                                        {day.successful > 0 && (
+                                          <div
+                                            className="w-full bg-green-500 dark:bg-green-600 rounded-t"
+                                            style={{ height: `${(day.successful / day.total) * heightPercent}%` }}
+                                            title={`${day.successful} successful`}
+                                          />
+                                        )}
+                                        {day.failed > 0 && (
+                                          <div
+                                            className="w-full bg-red-500 dark:bg-red-600"
+                                            style={{ height: `${(day.failed / day.total) * heightPercent}%` }}
+                                            title={`${day.failed} failed`}
+                                          />
+                                        )}
+                                        {day.skipped > 0 && (
+                                          <div
+                                            className="w-full bg-yellow-500 dark:bg-yellow-600 rounded-b"
+                                            style={{ height: `${(day.skipped / day.total) * heightPercent}%` }}
+                                            title={`${day.skipped} skipped`}
+                                          />
+                                        )}
+                                      </>
+                                    ) : (
+                                      <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded" />
+                                    )}
+                                  </div>
+                                  {/* Count */}
+                                  <div className="text-xs font-semibold text-gray-900 dark:text-white">
+                                    {day.total > 0 ? day.total : ''}
+                                  </div>
+                                  {/* Date Label */}
+                                  <div className="text-[10px] text-gray-500 dark:text-gray-400 text-center">
+                                    {day.label}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Legend */}
+                          <div className="flex items-center justify-center gap-4 mt-3 text-xs">
+                            <div className="flex items-center gap-1">
+                              <div className="w-3 h-3 bg-green-500 dark:bg-green-600 rounded"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Success</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-3 h-3 bg-red-500 dark:bg-red-600 rounded"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Failed</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-3 h-3 bg-yellow-500 dark:bg-yellow-600 rounded"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Skipped</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {automationStatus.state && (
                       <div className="space-y-2 mb-4">
@@ -3798,30 +4953,254 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     )}
 
                     {automationStatus.recent_migrations && automationStatus.recent_migrations.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Recent Auto-Migrations</h4>
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 recent-auto-migrations">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Recent Auto-Migrations</h4>
+                          <button
+                            onClick={() => {
+                              // Export migration history to CSV
+                              const migrations = automationStatus.recent_migrations || [];
+                              if (migrations.length === 0) return;
+
+                              // CSV headers
+                              const headers = ['Timestamp', 'VM ID', 'VM Name', 'Source Node', 'Target Node', 'Reason', 'Confidence Score', 'Status', 'Duration (s)', 'Dry Run', 'Window'];
+
+                              // CSV rows
+                              const rows = migrations.map(m => [
+                                m.timestamp || '',
+                                m.vmid || '',
+                                m.name || '',
+                                m.source_node || '',
+                                m.target_node || '',
+                                (m.reason || '').replace(/,/g, ';'), // Replace commas in reason
+                                m.confidence_score || '',
+                                m.status || '',
+                                m.duration_seconds || '',
+                                m.dry_run ? 'Yes' : 'No',
+                                (m.window_name || '').replace(/,/g, ';')
+                              ]);
+
+                              // Combine headers and rows
+                              const csv = [
+                                headers.join(','),
+                                ...rows.map(row => row.join(','))
+                              ].join('\n');
+
+                              // Create download link
+                              const blob = new Blob([csv], { type: 'text/csv' });
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `proxbalance-migrations-${new Date().toISOString().split('T')[0]}.csv`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                            title="Export migration history to CSV"
+                          >
+                            <Download size={12} />
+                            Export CSV
+                          </button>
+                        </div>
                         <div className="space-y-2">
-                          {automationStatus.recent_migrations.slice(0, 3).map(migration => (
-                            <div key={migration.id} className="flex items-center justify-between text-sm bg-white dark:bg-gray-700 rounded p-2 border border-gray-200 dark:border-gray-600">
-                              <div className="flex items-center gap-2">
-                                <span className="text-gray-900 dark:text-white font-medium">{migration.name}</span>
-                                <span className="text-gray-500 dark:text-gray-400">→</span>
-                                <span className="text-gray-700 dark:text-gray-300">{migration.target_node}</span>
-                                {migration.dry_run && (
-                                  <span className="px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded">
-                                    DRY RUN
+                          {(() => {
+                            // Deduplicate migrations by VMID+source+target, keeping only the most recent
+                            const seen = new Map();
+                            const uniqueMigrations = [];
+
+                            // Sort by timestamp descending (most recent first)
+                            const sortedMigrations = [...automationStatus.recent_migrations].sort((a, b) => {
+                              return new Date(b.timestamp) - new Date(a.timestamp);
+                            });
+
+                            // Keep only first occurrence of each VMID+source+target combo
+                            for (const migration of sortedMigrations) {
+                              const key = `${migration.vmid}-${migration.source_node}-${migration.target_node}`;
+                              if (!seen.has(key)) {
+                                seen.set(key, true);
+                                uniqueMigrations.push(migration);
+                              }
+                            }
+
+                            return uniqueMigrations.slice(0, 3);
+                          })().map((migration) => {
+
+                            // Format timestamp
+                            let timeDisplay = '';
+                            if (migration.timestamp) {
+                              try {
+                                // Parse timestamp - add 'Z' if not present to indicate UTC
+                                const timestamp = migration.timestamp.endsWith('Z') ? migration.timestamp : migration.timestamp + 'Z';
+                                const migrationDate = new Date(timestamp);
+                                const now = new Date();
+                                const diffMs = now - migrationDate;
+                                const diffMins = Math.floor(diffMs / 60000);
+                                const diffHours = Math.floor(diffMs / 3600000);
+                                const diffDays = Math.floor(diffMs / 86400000);
+
+                                if (diffMins < 1) {
+                                  timeDisplay = 'Just now';
+                                } else if (diffMins < 60) {
+                                  timeDisplay = `${diffMins}m ago`;
+                                } else if (diffHours < 24) {
+                                  timeDisplay = `${diffHours}h ago`;
+                                } else if (diffDays < 7) {
+                                  timeDisplay = `${diffDays}d ago`;
+                                } else {
+                                  timeDisplay = migrationDate.toLocaleDateString();
+                                }
+                              } catch (e) {
+                                timeDisplay = '';
+                              }
+                            }
+
+                            return (
+                            <div key={migration.id} className="text-sm bg-white dark:bg-gray-700 rounded p-2 border border-gray-200 dark:border-gray-600">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 flex-1">
+                                  <span className="text-gray-900 dark:text-white font-medium">{migration.name}</span>
+                                  <span className="text-gray-500 dark:text-gray-400">→</span>
+                                  <span className="text-gray-700 dark:text-gray-300">{migration.target_node}</span>
+                                  {migration.dry_run && (
+                                    <span className="px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded">
+                                      DRY RUN
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {timeDisplay && (
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                                      {timeDisplay}
+                                    </span>
+                                  )}
+                                  <span className={`px-2 py-0.5 rounded text-xs font-semibold flex items-center gap-1 ${
+                                    migration.status === 'completed'
+                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                      : migration.status === 'failed'
+                                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                      : migration.status === 'skipped'
+                                      ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                      : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
+                                  }`}>
+                                    {migration.status === 'completed' && <CheckCircle size={12} />}
+                                    {migration.status === 'failed' && <XCircle size={12} />}
+                                    {migration.status === 'skipped' && <AlertTriangle size={12} />}
+                                    {migration.status}
+                                  </span>
+                                </div>
+                              </div>
+                              {migration.reason && (
+                                <div className="mt-1 flex items-center gap-3">
+                                  <span className="text-xs text-gray-600 dark:text-gray-400">
+                                    {migration.reason}
+                                  </span>
+                                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500">
+                                    {migration.confidence_score !== undefined && (
+                                      <span title="Confidence Score">
+                                        Confidence: {migration.confidence_score.toFixed(1)}%
+                                      </span>
+                                    )}
+                                    {migration.duration_seconds !== undefined && migration.duration_seconds > 0 && (
+                                      <>
+                                        <span className="text-gray-400 dark:text-gray-600">•</span>
+                                        <span title="Migration Duration">
+                                          Duration: {migration.duration_seconds}s
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Rollback Detection */}
+                              {(() => {
+                                // Check if this VM was migrated back to its source within 24 hours
+                                const rollbackWindow = 24 * 60 * 60 * 1000; // 24 hours in ms
+                                const currentTime = new Date(migration.timestamp.endsWith('Z') ? migration.timestamp : migration.timestamp + 'Z');
+
+                                const rollback = automationStatus.recent_migrations.find(m =>
+                                  m.vmid === migration.vmid &&
+                                  m.id !== migration.id &&
+                                  m.source_node === migration.target_node && // Went from current target back to...
+                                  m.target_node === migration.source_node && // ...current source (rollback)
+                                  Math.abs(new Date(m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z') - currentTime) < rollbackWindow
+                                );
+
+                                if (rollback) {
+                                  return (
+                                    <div className="mt-2 p-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded flex items-start gap-2">
+                                      <AlertTriangle size={14} className="text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+                                      <div className="text-xs text-orange-800 dark:text-orange-300">
+                                        <span className="font-semibold">Rollback Detected:</span> This VM was migrated back to its original node within 24 hours. This may indicate a problem with the target node or migration configuration.
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Activity Log */}
+                    {automationStatus.state?.activity_log && automationStatus.state.activity_log.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Activity Log (Last Check)</h4>
+                        <div className="space-y-2">
+                          {automationStatus.state.activity_log.slice(0, 10).map((activity, idx) => {
+                            // Format timestamp
+                            let timeDisplay = '';
+                            if (activity.timestamp) {
+                              try {
+                                const timestamp = activity.timestamp.endsWith('Z') ? activity.timestamp : activity.timestamp + 'Z';
+                                const activityDate = new Date(timestamp);
+                                const now = new Date();
+                                const diffMs = now - activityDate;
+                                const diffMins = Math.floor(diffMs / 60000);
+                                const diffHours = Math.floor(diffMs / 3600000);
+
+                                if (diffMins < 1) {
+                                  timeDisplay = 'Just now';
+                                } else if (diffMins < 60) {
+                                  timeDisplay = `${diffMins}m ago`;
+                                } else if (diffHours < 24) {
+                                  timeDisplay = `${diffHours}h ago`;
+                                } else {
+                                  timeDisplay = activityDate.toLocaleDateString();
+                                }
+                              } catch (e) {
+                                timeDisplay = '';
+                              }
+                            }
+
+                            const isSkipped = activity.action === 'skipped';
+
+                            return (
+                              <div key={idx} className="text-xs bg-white dark:bg-gray-700 rounded p-2 border border-gray-200 dark:border-gray-600 flex items-center gap-2" title={activity.reason}>
+                                {isSkipped && <MinusCircle size={14} className="text-yellow-600 dark:text-yellow-400 shrink-0" />}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-gray-900 dark:text-white">{activity.name}</span>
+                                    <span className="px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded">
+                                      SKIPPED
+                                    </span>
+                                  </div>
+                                  <div className="text-gray-600 dark:text-gray-400 mt-0.5 truncate">
+                                    {activity.reason}
+                                  </div>
+                                </div>
+                                {timeDisplay && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                                    {timeDisplay}
                                   </span>
                                 )}
                               </div>
-                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                migration.status === 'completed'
-                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                              }`}>
-                                {migration.status}
-                              </span>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}

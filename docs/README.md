@@ -37,6 +37,14 @@ Complete documentation for ProxBalance - Automated cluster load balancing for Pr
 
 ### Advanced Features
 
+- **[Automated Migrations Guide](AUTOMATION.md)** - Complete automation setup and configuration
+  - Quick start and schedule presets
+  - Time windows and blackout periods
+  - Safety checks and rules
+  - Dashboard monitoring and activity logs
+  - Troubleshooting and best practices
+  - Example configurations
+
 - **[AI Features Guide](AI_FEATURES.md)** - AI-powered migration recommendations
   - AI provider setup (OpenAI, Anthropic, Ollama)
   - Configuration options
@@ -74,6 +82,7 @@ Complete documentation for ProxBalance - Automated cluster load balancing for Pr
 
 ### Configuration
 - [Basic Configuration](INSTALL.md#-post-installation-configuration)
+- [Automated Migrations](AUTOMATION.md) - Complete automation guide
 - [AI Configuration](AI_FEATURES.md#configuration)
 - [Collection Optimization](INSTALL.md#collection-optimization) - Parallel collection and cluster size presets
 - [Collection Intervals](INSTALL.md#2-configure-collection-intervals)

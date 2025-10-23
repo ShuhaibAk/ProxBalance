@@ -10,7 +10,7 @@ import os
 import json
 import fcntl
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Any
 import uuid
@@ -223,11 +223,8 @@ def can_auto_migrate(guest: Dict[str, Any], rules: Dict[str, Any]) -> Tuple[bool
         if rules.get('respect_ignore_tags', True) and tags_raw.get('has_ignore', False):
             return False, "Has 'ignore' tag"
 
-        # Check exclude groups
-        if rules.get('respect_exclude_tags', True):
-            exclude_groups = tags_raw.get('exclude_groups', [])
-            if exclude_groups:
-                return False, f"Has exclude tag: {exclude_groups[0]}"
+        # NOTE: exclude tags are handled by check_exclude_group_affinity() per-target-node
+        # They don't prevent migration entirely, only migration to nodes with same tag
 
         # Get all tags for other checks
         tags = [str(t).strip().lower() for t in tags_raw.get('all_tags', [])]
@@ -239,11 +236,8 @@ def can_auto_migrate(guest: Dict[str, Any], rules: Dict[str, Any]) -> Tuple[bool
         if rules.get('respect_ignore_tags', True) and 'ignore' in tags:
             return False, "Has 'ignore' tag"
 
-        # Check exclude tags (existing functionality)
-        if rules.get('respect_exclude_tags', True):
-            exclude_tags = [t for t in tags if t.startswith('exclude_')]
-            if exclude_tags:
-                return False, f"Has exclude tag: {exclude_tags[0]}"
+        # NOTE: exclude tags are handled by check_exclude_group_affinity() per-target-node
+        # They don't prevent migration entirely, only migration to nodes with same tag
     else:
         tags = []
 
@@ -281,8 +275,15 @@ def check_exclude_group_affinity(
     if not rules.get('respect_exclude_affinity', True):
         return True, "Exclude affinity checks disabled"
 
-    guest_tags = [t.strip().lower() for t in guest.get('tags', '').split(';') if t.strip()]
-    exclude_groups = [t for t in guest_tags if t.startswith('exclude_')]
+    # Extract tags - handle both dict and string formats
+    tags_raw = guest.get('tags', '')
+    if isinstance(tags_raw, dict):
+        exclude_groups = tags_raw.get('exclude_groups', [])
+    elif isinstance(tags_raw, str):
+        guest_tags = [t.strip().lower() for t in tags_raw.split(';') if t.strip()]
+        exclude_groups = [t for t in guest_tags if t.startswith('exclude_')]
+    else:
+        exclude_groups = []
 
     if not exclude_groups:
         return True, "No exclude groups"
@@ -296,8 +297,17 @@ def check_exclude_group_affinity(
             if other_guest.get('vmid') == guest.get('vmid'):
                 continue
 
-            other_tags = [t.strip().lower() for t in other_guest.get('tags', '').split(';') if t.strip()]
-            if exclude_group not in other_tags:
+            # Extract other guest's tags - handle both dict and string formats
+            other_tags_raw = other_guest.get('tags', '')
+            if isinstance(other_tags_raw, dict):
+                other_exclude_groups = other_tags_raw.get('exclude_groups', [])
+                if exclude_group not in other_exclude_groups:
+                    continue
+            elif isinstance(other_tags_raw, str):
+                other_tags = [t.strip().lower() for t in other_tags_raw.split(';') if t.strip()]
+                if exclude_group not in other_tags:
+                    continue
+            else:
                 continue
 
             node = other_guest.get('node')
@@ -438,6 +448,43 @@ def execute_migration(
         return {"success": False, "error": str(e)}
 
 
+def is_vm_in_cooldown(vmid: int, cooldown_minutes: int) -> bool:
+    """
+    Check if a VM was recently migrated and is still in cooldown period.
+
+    Args:
+        vmid: VM ID to check
+        cooldown_minutes: Cooldown period in minutes
+
+    Returns:
+        True if VM is in cooldown, False otherwise
+    """
+    if cooldown_minutes <= 0:
+        return False
+
+    history = load_history()
+    migrations = history.get('migrations', [])
+
+    # Check if this VM was migrated recently
+    now = datetime.utcnow()
+    cooldown_threshold = now - timedelta(minutes=cooldown_minutes)
+
+    for migration in reversed(migrations):  # Check most recent first
+        if migration.get('vmid') == vmid:
+            try:
+                migration_time = datetime.fromisoformat(migration.get('timestamp', ''))
+                if migration_time > cooldown_threshold:
+                    logger.info(f"VM {vmid} is in cooldown period (last migrated {migration_time.isoformat()})")
+                    return True
+                else:
+                    # Found the VM but it's past cooldown, no need to check older entries
+                    return False
+            except (ValueError, TypeError):
+                continue
+
+    return False
+
+
 def record_migration(migration_record: Dict[str, Any]):
     """
     Record a migration to the history file.
@@ -496,6 +543,7 @@ def send_notification(config: Dict[str, Any], event_type: str, data: Dict[str, A
 def main():
     """Main automation logic."""
     lock_fd = None
+    activity_log = []  # Initialize activity log at function level
 
     try:
         lock_fd = acquire_lock()
@@ -548,6 +596,7 @@ def main():
         # 7. Filter recommendations
         rules = auto_config.get('rules', {})
         maintenance_nodes = auto_config.get('maintenance_nodes', [])
+        cooldown_minutes = rules.get('cooldown_minutes', 60)  # Default 60 minutes
         filtered = []
 
         for rec in recommendations:
@@ -557,11 +606,32 @@ def main():
             # Check if this is a maintenance evacuation (bypass most filters)
             is_maintenance_evac = source_node in maintenance_nodes
 
+            # Check cooldown (skip for maintenance evacuations)
+            if not is_maintenance_evac and is_vm_in_cooldown(vmid, cooldown_minutes):
+                logger.info(f"VM {vmid} is in cooldown period, skipping")
+                guest = cache_data.get('guests', {}).get(str(vmid), {})
+                activity_log.append({
+                    'timestamp': datetime.utcnow().isoformat() + 'Z',
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'action': 'skipped',
+                    'reason': f'In cooldown period ({cooldown_minutes}min after recent migration)'
+                })
+                continue
+
             # Check confidence score (always check, even for maintenance)
             score = rec.get('confidence_score', 0)
             min_score = rules.get('min_confidence_score', 75)
             if score < min_score:
                 logger.info(f"VM {vmid} confidence score {score} < {min_score}, skipping")
+                guest = cache_data.get('guests', {}).get(str(vmid), {})
+                activity_log.append({
+                    'timestamp': datetime.utcnow().isoformat() + 'Z',
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'action': 'skipped',
+                    'reason': f'Confidence score too low ({score}% < {min_score}%)'
+                })
                 continue
 
             # Get guest info
@@ -592,6 +662,13 @@ def main():
             can_migrate, tag_reason = can_auto_migrate(guest, rules)
             if not can_migrate:
                 logger.info(f"VM {vmid} cannot auto-migrate: {tag_reason}")
+                activity_log.append({
+                    'timestamp': datetime.utcnow().isoformat() + 'Z',
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'action': 'skipped',
+                    'reason': tag_reason
+                })
                 continue
 
             # Check exclude group affinity (only for non-maintenance migrations)
@@ -600,6 +677,13 @@ def main():
             )
             if not ok:
                 logger.info(f"VM {vmid} affinity check failed: {affinity_reason}")
+                activity_log.append({
+                    'timestamp': datetime.utcnow().isoformat() + 'Z',
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'action': 'skipped',
+                    'reason': affinity_reason
+                })
                 continue
 
             filtered.append(rec)
@@ -608,6 +692,13 @@ def main():
 
         if not filtered:
             logger.info("No eligible migrations after filtering")
+            # Save activity log even when no migrations happen
+            try:
+                history = load_history()
+                history.setdefault('state', {})['activity_log'] = activity_log[-50:]
+                save_history(history)
+            except Exception as e:
+                logger.error(f"Failed to save activity log: {e}")
             return 0
 
         # 8. Limit and execute migrations
@@ -666,6 +757,14 @@ def main():
             'dry_run': dry_run
         })
 
+        # Update state with activity log (keep only last 50 entries)
+        try:
+            history = load_history()
+            history.setdefault('state', {})['activity_log'] = activity_log[-50:]
+            save_history(history)
+        except Exception as e:
+            logger.error(f"Failed to save activity log: {e}")
+
         return 0
 
     except Exception as e:
@@ -673,6 +772,14 @@ def main():
         return 1
 
     finally:
+        # Always update state to record this automation run (even if exited early)
+        try:
+            history = load_history()
+            history.setdefault('state', {})['last_run'] = datetime.utcnow().isoformat() + 'Z'
+            save_history(history)
+        except Exception as e:
+            logger.error(f"Failed to update state: {e}")
+
         if lock_fd:
             release_lock(lock_fd)
         logger.info("Automated migration check complete")
