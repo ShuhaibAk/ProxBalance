@@ -4663,19 +4663,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                           return (
                             <div className="flex items-center gap-4">
-                              {/* Migration counts */}
-                              <div className="flex items-center gap-3 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{stats24h.length}</span>
-                                  <span className="text-xs text-blue-600 dark:text-blue-400">24h</span>
-                                </div>
-                                <span className="text-blue-300 dark:text-blue-700">|</span>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{stats7d.length}</span>
-                                  <span className="text-xs text-blue-600 dark:text-blue-400">7d</span>
-                                </div>
-                              </div>
-
                               {/* Success rate */}
                               <div className={`px-3 py-1.5 rounded-lg border font-semibold text-sm ${
                                 successRate24h >= 90
@@ -4811,79 +4798,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         </div>
                       </div>
                     </div>
-
-                    {/* Migration Statistics */}
-                    {automationStatus.recent_migrations && automationStatus.recent_migrations.length > 0 && (() => {
-                      const now = new Date();
-                      const last24h = now - (24 * 60 * 60 * 1000);
-                      const last7d = now - (7 * 24 * 60 * 60 * 1000);
-
-                      const stats24h = automationStatus.recent_migrations.filter(m => {
-                        const timestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
-                        return new Date(timestamp) > last24h;
-                      });
-
-                      const stats7d = automationStatus.recent_migrations.filter(m => {
-                        const timestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
-                        return new Date(timestamp) > last7d;
-                      });
-
-                      // Separate real vs dry run migrations
-                      const real24h = stats24h.filter(m => !m.dry_run);
-                      const dryRun24h = stats24h.filter(m => m.dry_run);
-                      const real7d = stats7d.filter(m => !m.dry_run);
-                      const dryRun7d = stats7d.filter(m => m.dry_run);
-
-                      const success24h = stats24h.filter(m => m.status === 'completed').length;
-                      const success7d = stats7d.filter(m => m.status === 'completed').length;
-                      const successRate24h = stats24h.length > 0 ? Math.round((success24h / stats24h.length) * 100) : 0;
-                      const successRate7d = stats7d.length > 0 ? Math.round((success7d / stats7d.length) * 100) : 0;
-
-                      return (
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                          <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
-                            <div className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">Last 24 Hours</div>
-                            <div className="flex items-baseline gap-2">
-                              <div className="text-lg font-bold text-blue-900 dark:text-blue-100">{stats24h.length}</div>
-                              <div className="text-xs text-blue-700 dark:text-blue-300">migrations</div>
-                            </div>
-                            <div className="text-xs mt-1">
-                              <span className={`font-semibold ${successRate24h >= 90 ? 'text-green-600 dark:text-green-400' : successRate24h >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}`}>
-                                {successRate24h}% success
-                              </span>
-                              <span className="text-blue-600 dark:text-blue-400"> ({success24h}/{stats24h.length})</span>
-                            </div>
-                            {(real24h.length > 0 || dryRun24h.length > 0) && (
-                              <div className="text-xs mt-1">
-                                {real24h.length > 0 && <span className="text-blue-600 dark:text-blue-400">{real24h.length} real</span>}
-                                {real24h.length > 0 && dryRun24h.length > 0 && <span className="text-blue-600 dark:text-blue-400">, </span>}
-                                {dryRun24h.length > 0 && <span className="text-yellow-700 dark:text-yellow-300">{dryRun24h.length} dry run</span>}
-                              </div>
-                            )}
-                          </div>
-                          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/20 dark:to-indigo-800/20 rounded-lg p-3 border border-indigo-200 dark:border-indigo-700">
-                            <div className="text-xs text-indigo-600 dark:text-indigo-400 mb-1 font-medium">Last 7 Days</div>
-                            <div className="flex items-baseline gap-2">
-                              <div className="text-lg font-bold text-indigo-900 dark:text-indigo-100">{stats7d.length}</div>
-                              <div className="text-xs text-indigo-700 dark:text-indigo-300">migrations</div>
-                            </div>
-                            <div className="text-xs mt-1">
-                              <span className={`font-semibold ${successRate7d >= 90 ? 'text-green-600 dark:text-green-400' : successRate7d >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}`}>
-                                {successRate7d}% success
-                              </span>
-                              <span className="text-indigo-600 dark:text-indigo-400"> ({success7d}/{stats7d.length})</span>
-                            </div>
-                            {(real7d.length > 0 || dryRun7d.length > 0) && (
-                              <div className="text-xs mt-1">
-                                {real7d.length > 0 && <span className="text-indigo-600 dark:text-indigo-400">{real7d.length} real</span>}
-                                {real7d.length > 0 && dryRun7d.length > 0 && <span className="text-indigo-600 dark:text-indigo-400">, </span>}
-                                {dryRun7d.length > 0 && <span className="text-yellow-700 dark:text-yellow-300">{dryRun7d.length} dry run</span>}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
 
                     {/* Migration History Chart */}
                     {(() => {
