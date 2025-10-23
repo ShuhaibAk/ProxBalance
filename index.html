@@ -51,9 +51,92 @@
       .logo-balancing {
         animation: balance 2s ease-in-out;
       }
+
+      /* Loading Screen Styles */
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.5s ease-out;
+      }
+
+      #loading-screen.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .loading-logo {
+        width: 120px;
+        height: 120px;
+        margin-bottom: 2rem;
+        animation: balance 2s ease-in-out infinite;
+        filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.3));
+      }
+
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      .loading-spinner {
+        width: 60px;
+        height: 60px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1.5rem;
+      }
+
+      .loading-text {
+        color: white;
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+
+      .loading-subtext {
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.875rem;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+
+      @keyframes shimmer {
+        0% { background-position: -1000px 0; }
+        100% { background-position: 1000px 0; }
+      }
+
+      .skeleton {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 1000px 100%;
+        animation: shimmer 2s infinite;
+        border-radius: 0.5rem;
+      }
+
+      .dark .skeleton {
+        background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+        background-size: 1000px 100%;
+      }
     </style>
 </head>
 <body>
+    <!-- Static Loading Screen -->
+    <div id="loading-screen">
+      <img src="/assets/logo_v2.svg" alt="ProxBalance" class="loading-logo" onerror="this.style.display='none'">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Loading ProxBalance</div>
+      <div class="loading-subtext">Initializing cluster management...</div>
+    </div>
+
     <div id="root"></div>
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
@@ -98,6 +181,36 @@
 const ProxBalanceLogo = ({ size = 32 }) => (
   <img src="/assets/logo_icon_v2.svg?v=2" alt="ProxBalance Logo" width={size} height={size} />
 );
+
+        // Skeleton Loader Components
+        const SkeletonCard = () => (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="skeleton h-6 w-32 mb-4"></div>
+            <div className="skeleton h-24 w-full mb-3"></div>
+            <div className="skeleton h-4 w-3/4"></div>
+          </div>
+        );
+
+        const SkeletonNodeCard = () => (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="skeleton h-6 w-24"></div>
+              <div className="skeleton h-8 w-16 rounded-full"></div>
+            </div>
+            <div className="space-y-3">
+              <div className="skeleton h-4 w-full"></div>
+              <div className="skeleton h-4 w-5/6"></div>
+              <div className="skeleton h-4 w-4/6"></div>
+            </div>
+          </div>
+        );
+
+        const SkeletonClusterMap = () => (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="skeleton h-6 w-40 mb-6"></div>
+            <div className="skeleton h-96 w-full"></div>
+          </div>
+        );
 
         const API_BASE = `/api`;
 
@@ -393,6 +506,20 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             fetchAutomationConfig();
             checkPermissions();
           }, []);
+
+          // Hide splash screen when data loads
+          useEffect(() => {
+            if (data) {
+              const splashScreen = document.getElementById('loading-screen');
+              if (splashScreen) {
+                splashScreen.classList.add('hidden');
+                // Remove from DOM after animation completes
+                setTimeout(() => {
+                  splashScreen.style.display = 'none';
+                }, 500);
+              }
+            }
+          }, [data]);
 
           // Update countdown timer every second
           useEffect(() => {
@@ -1842,10 +1969,32 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
           if (!data) {
             return (
-              <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-                <div className="text-center">
-                  <RefreshCw size={48} className="animate-spin mx-auto mb-4 text-blue-600 dark:text-blue-400" />
-                  <p className="text-gray-600 dark:text-gray-300">Loading cluster data...</p>
+              <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4">
+                <div className="max-w-7xl mx-auto">
+                  {/* Header Skeleton */}
+                  <div className="flex items-center justify-between mb-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="skeleton h-10 w-10 rounded-full"></div>
+                      <div className="skeleton h-8 w-48"></div>
+                    </div>
+                    <div className="skeleton h-10 w-32"></div>
+                  </div>
+
+                  {/* Dashboard Grid Skeleton */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <SkeletonClusterMap />
+                    <div className="space-y-6">
+                      <SkeletonCard />
+                      <SkeletonCard />
+                    </div>
+                  </div>
+
+                  {/* Node Cards Skeleton */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <SkeletonNodeCard />
+                    <SkeletonNodeCard />
+                    <SkeletonNodeCard />
+                  </div>
                 </div>
               </div>
             );
