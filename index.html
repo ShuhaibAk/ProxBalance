@@ -1009,7 +1009,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   // Update guestsMigrating state
                   setGuestsMigrating(prev => ({ ...prev, [vmid]: migrationStatus.is_migrating }));
 
-                  // If migration is no longer active, it's complete
+                  // If migration is no longer active, check if it completed or was canceled/failed
                   if (!migrationStatus.is_migrating) {
                     clearInterval(pollInterval);
 
@@ -1020,7 +1020,33 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       return updated;
                     });
 
-                    // Migration completed - fetch new location
+                    // Check task exit status to determine if migration succeeded or failed
+                    const wasCanceled = taskStatus.status === 'stopped' &&
+                                      (taskStatus.exitstatus === 'unexpected status' ||
+                                       taskStatus.exitstatus === 'migration aborted');
+
+                    if (wasCanceled) {
+                      console.log(`[trackMigration] Migration canceled for VMID ${vmid}`);
+                      setMigrationStatus(prev => ({ ...prev, [key]: 'failed' }));
+
+                      // Remove from active migrations
+                      setActiveMigrations(prev => {
+                        const newMigrations = { ...prev };
+                        delete newMigrations[key];
+                        return newMigrations;
+                      });
+
+                      // Clear guestsMigrating
+                      setGuestsMigrating(prev => {
+                        const updated = { ...prev };
+                        delete updated[vmid];
+                        return updated;
+                      });
+
+                      return; // Don't proceed with completion logic
+                    }
+
+                    // Migration completed successfully - fetch new location
                     const locationResponse = await fetch(`${API_BASE}/guests/${vmid}/location`);
                     const locationResult = await locationResponse.json();
 
@@ -1107,7 +1133,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                       // Trigger a fast refresh of cluster data to ensure Cluster Map is up-to-date
                       console.log(`[trackMigration] Triggering fast cluster refresh after migration`);
-                      fetchData();
+                      fetchGuestLocations();
                     }
                   }
                 }
@@ -5303,7 +5329,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 setPlanNode(null);
                                 setGuestActions({});
                                 alert('Evacuation started successfully!');
-                                fetchData(); // Refresh data
+                                fetchGuestLocations(); // Refresh data
                               } else {
                                 throw new Error(result.error || 'Failed to start evacuation');
                               }

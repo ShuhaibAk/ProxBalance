@@ -1273,9 +1273,11 @@ def execute_migration():
 
         # Execute migration via API
         if guest_type == "VM":
+            # Use kwargs with hyphenated parameter name for Proxmox API
             result = proxmox.nodes(source).qemu(vmid).migrate.post(
                 target=target,
-                online=1
+                online=1,
+                **{'with-local-disks': 1}  # Allow migration of VMs with local disks
             )
         else:  # CT
             result = proxmox.nodes(source).lxc(vmid).migrate.post(
@@ -4018,43 +4020,38 @@ def get_task_status(node, taskid):
             task_log = proxmox.nodes(node).tasks(taskid).log.get()
 
             # Parse log for progress information
-            # Look for patterns like "123456789 bytes (123 MB, 117 MiB) copied"
-            # or progress indicators in the log
+            # Look for patterns like:
+            # - "mirror-scsi0: transferred 11.3 GiB of 16.0 GiB (70.88%) in 16s"
+            # - "123456789 bytes (123 MB, 117 MiB) copied"
             if task_log:
-                latest_bytes = None
-                total_bytes = total_disk_size  # Use disk size as total if we have it
+                latest_percentage = None
+                latest_transferred = None
+                total_size = None
 
                 for entry in task_log:
                     line = entry.get('t', '')
 
-                    # Look for byte copy progress: "123456789 bytes (123 MB, 117 MiB) copied"
-                    if 'bytes' in line and 'copied' in line:
-                        match = re.search(r'(\d+)\s+bytes.*copied', line)
+                    # Look for mirror progress: "mirror-scsi0: transferred X GiB of Y GiB (Z%)"
+                    if 'mirror' in line and 'transferred' in line and 'GiB' in line:
+                        match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
                         if match:
-                            latest_bytes = int(match.group(1))
+                            transferred_gib = float(match.group(1))
+                            total_gib = float(match.group(2))
+                            percentage = float(match.group(3))
 
-                    # Look for total size in log (this appears at the end)
-                    if 'bytes' in line and 'copied' in line and 's,' in line and 'MB/s' in line:
-                        # This is likely the final summary line with total
-                        match = re.search(r'(\d+)\s+bytes.*copied.*s,', line)
-                        if match:
-                            total_candidate = int(match.group(1))
-                            # Only update total if this is larger than current (indicates final size)
-                            if not total_bytes or total_candidate > (total_bytes or 0):
-                                total_bytes = total_candidate
+                            latest_transferred = transferred_gib
+                            total_size = total_gib
+                            latest_percentage = int(percentage)
 
-                if latest_bytes:
+                if latest_percentage is not None and latest_transferred is not None:
                     progress_info = {
-                        "bytes_copied": latest_bytes,
-                        "human_readable": f"{latest_bytes / (1024**3):.2f} GB"
+                        "transferred_gib": latest_transferred,
+                        "total_gib": total_size,
+                        "percentage": latest_percentage,
+                        "human_readable": f"{latest_transferred:.1f} GiB of {total_size:.1f} GiB"
                     }
-
-                    if total_bytes and total_bytes > latest_bytes:
-                        progress_info["total_bytes"] = total_bytes
-                        progress_info["total_human_readable"] = f"{total_bytes / (1024**3):.2f} GB"
-                        progress_info["percentage"] = int((latest_bytes / total_bytes) * 100)
-        except:
-            pass  # If we can't get log, just return status without progress
+        except Exception as e:
+            app.logger.debug(f"Could not parse progress from task log: {str(e)}")
 
         response = {
             "success": True,
@@ -4167,7 +4164,8 @@ def stop_task(node, taskid):
             token_name=token_name,
             token_value=token_secret,
             port=proxmox_port,
-            verify_ssl=verify_ssl
+            verify_ssl=verify_ssl,
+            timeout=30  # Increase timeout for task cancellation (can take a while)
         )
 
         # Stop the task
