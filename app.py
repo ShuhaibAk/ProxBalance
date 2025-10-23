@@ -4852,5 +4852,45 @@ def automigrate_config():
             return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/automigrate/logs", methods=["GET"])
+def automigrate_logs():
+    """Get logs from the automated migration service"""
+    try:
+        import subprocess
+
+        # Get number of lines to fetch (default 100, max 1000)
+        lines = request.args.get('lines', 100, type=int)
+        lines = min(lines, 1000)  # Cap at 1000 lines
+
+        # Fetch logs from journalctl for the automigrate service
+        result = subprocess.run(
+            ['/bin/journalctl', '-u', 'proxmox-balance-automigrate.service', '-n', str(lines), '--no-pager'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode == 0:
+            logs = result.stdout
+            return jsonify({
+                "success": True,
+                "logs": logs,
+                "lines": len(logs.split('\n'))
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Failed to fetch logs: {result.stderr}"
+            }), 500
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "error": "Timeout fetching logs"}), 500
+    except Exception as e:
+        print(f"Error fetching automigrate logs: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
