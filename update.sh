@@ -75,6 +75,10 @@ echo "Updating ProxBalance..."
 # Pull updates
 pct exec $CTID -- bash -c 'cd /opt/proxmox-balance-manager && git pull origin main'
 
+# Install/update Python dependencies
+echo "Installing dependencies..."
+pct exec $CTID -- bash -c 'cd /opt/proxmox-balance-manager && source venv/bin/activate && pip install -q -r requirements.txt'
+
 # Copy index.html to web root
 echo "Updating web interface..."
 pct exec $CTID -- cp /opt/proxmox-balance-manager/index.html /var/www/html/
