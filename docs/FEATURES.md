@@ -145,12 +145,22 @@ Scheduled automation with comprehensive safety features.
 - **Maintenance Mode Integration** - Automatically evacuates maintenance nodes
 
 ### Real-Time Tracking & Monitoring
+- **In-Progress Migration Tracking** - Live display of currently running migrations
+  - Shows VM/CT name, ID, and source node
+  - Displays start time and elapsed time (e.g., "2m 34s")
+  - Blue pulsing border with animated spinner
+  - Queries Proxmox cluster tasks API for real-time status
+  - Auto-refreshes every 10 seconds
 - Real-time migration task polling with accurate completion status
 - Live error reporting in Recent Auto-Migrations UI
-- Auto-refresh status every 10 seconds (no page reload needed)
 - Migration log viewer with terminal-style display
 - Download logs directly from the UI
 - Shows VM/CT ID alongside names for easy identification
+- **Target Node Scores** - Displays migration suitability scores
+  - Shown in Migration Recommendations UI
+  - Included in automation logs and Recent Auto-Migrations
+  - Lower score = better target node
+  - Exported in CSV downloads
 
 ### Storage Compatibility Checks
 Intelligent validation before migration:
@@ -162,12 +172,18 @@ Intelligent validation before migration:
 
 ### Safety Features
 Multiple safeguards for automated operations:
+- **Duplicate Migration Prevention** - Prevents concurrent migrations
+  - Queries Proxmox cluster tasks API before starting migrations
+  - Skips VMs that already have active migrations
+  - Prevents lock conflicts across automation runs
+  - Logs clear messages when migrations are skipped
 - **Min Confidence Score** - Only execute high-confidence migrations
 - **Max Migrations Per Run** - Rate limiting (default: 3)
 - **Cluster Health Checks** - Verify quorum and node status
 - **Cooldown Periods** - Time between migrations per guest
 - **Tag Respecting** - Honor ignore/exclude tags
 - **Validation Before Execution** - Pre-flight checks
+- **Penalty-Based Scoring** - No hard disqualifications, flexible targeting
 
 ### Tag-Based Controls
 Fine-grained control over automation:

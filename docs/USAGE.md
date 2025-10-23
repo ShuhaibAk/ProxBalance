@@ -284,15 +284,41 @@ After adding/changing tags, trigger a data refresh:
 - System starts running on schedule
 - Check interval: default 5 minutes
 
+### Safety Features
+
+**Duplicate Migration Prevention:**
+- Automatically checks Proxmox cluster tasks before starting migrations
+- Queries `/api2/json/cluster/tasks` endpoint for running migrations
+- Skips VMs that already have active migrations
+- Prevents lock conflicts from concurrent automation runs
+- Logs clear messages: "VM X already has a migration in progress, skipping"
+- Works across separate automation runs (5-minute intervals)
+
+**Migration Conflict Detection:**
+- Each automation run checks for in-progress migrations
+- VMs with active migrations are automatically excluded
+- Prevents "can't lock file" errors
+- Ensures only one migration per VM at a time
+
 ### Monitoring Automation
+
+**Migrations In Progress:**
+- Real-time display of currently running migrations
+- Shows VM/CT name and ID
+- Displays source node (target determined during migration)
+- Start time in local timezone
+- **Elapsed time** - Live countdown (e.g., "2m 34s")
+- Auto-refreshes every 10 seconds
+- Blue pulsing border with animated spinner
+- Appears above Recent Auto-Migrations when active
 
 **Recent Auto-Migrations Card:**
 - Auto-refreshes every 10 seconds
-- Shows last 10 migrations
+- Shows last 10 completed migrations
 - Displays VM/CT ID and name
-- Shows source → target nodes
+- Shows source → target nodes with **target node score**
 - Confidence score and reason
-- Status (success/failed/in progress)
+- Status (success/failed)
 - Migration duration
 
 **Migration Log Viewer:**
@@ -448,8 +474,10 @@ See [AI Features Guide](AI_FEATURES.md) for detailed setup and troubleshooting.
 - Last 10 automated migrations
 - Auto-refreshes every 10 seconds
 - Status, duration, confidence
-- Source → target nodes
+- Source → target nodes with **target node scores**
+- Target score shows migration suitability (lower = better)
 - Error reporting
+- CSV export includes scores
 
 ### Tagged Guests & Affinity Rules
 - Ignored guests list
@@ -460,7 +488,9 @@ See [AI Features Guide](AI_FEATURES.md) for detailed setup and troubleshooting.
 ### Migration Recommendations
 - Standard algorithm recommendations
 - AI recommendations (if enabled)
-- Confidence scores
+- Confidence scores with **target node scores**
+- Target scores show suitability (lower = better target)
+- Penalty-based scoring system
 - One-click execution
 - Detailed reasoning
 
