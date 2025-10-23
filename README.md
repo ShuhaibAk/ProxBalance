@@ -1,4 +1,3 @@
-# ProxBalance
 <div align="center">
 
 <img src="assets/logo_v2.svg" alt="ProxBalance Logo" width="200"/>
@@ -44,7 +43,6 @@ ProxBalance is a web-based cluster analyzer and migration manager for Proxmox VE
 - **Automated Migrations** - Scheduled load balancing with configurable safety rules (experimental)
 - **Anti-Affinity Rules** - Tag-based system to enforce workload separation
 - **Storage Compatibility** - Pre-migration validation prevents compatibility errors
-- **Performance Optimizations** - Flask compression, caching, and lazy loading for 60-70% faster performance
 
 See [Complete Feature List](docs/FEATURES.md) for detailed capabilities.
 
@@ -121,38 +119,7 @@ Once installed, open `http://<container-ip>` in your browser.
 
 ## 🔧 Basic Usage
 
-### Node Maintenance
-1. Click a node in the Cluster Map
-2. Toggle Maintenance Mode
-3. Plan and execute evacuation
-4. Perform maintenance
-5. Disable Maintenance Mode when complete
-
 See [Usage Guide](docs/USAGE.md) for detailed workflows.
-
-### Tagging Guests
-
-**Ignore automatic migration:**
-```bash
-pvesh set /nodes/<node>/qemu/<vmid>/config --tags "ignore"
-```
-
-**Anti-affinity (keep separated):**
-```bash
-pvesh set /nodes/<node1>/qemu/<vmid1>/config --tags "exclude_database"
-pvesh set /nodes/<node2>/qemu/<vmid2>/config --tags "exclude_database"
-```
-
-**Allow auto-migration (whitelist mode):**
-```bash
-pvesh set /nodes/<node>/qemu/<vmid>/config --tags "auto-migrate-ok"
-```
-
-### Health Check
-
-```bash
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)" _ <container-id>
-```
 
 ---
 
