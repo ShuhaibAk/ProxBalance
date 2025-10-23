@@ -63,6 +63,19 @@ ProxBalance is a web-based cluster analyzer and migration manager for Proxmox VE
   - Migration windows and blackout periods
   - Container restart support for non-live migrations
   - Maintenance mode integration - automatically evacuates nodes in maintenance
+- **Storage Compatibility Checks** - Intelligent validation before migration
+  - Automatically verifies target nodes have all required storage volumes
+  - Filters out incompatible targets from recommendations
+  - Prevents migration failures due to missing storage
+  - Works with both VMs (QEMU) and Containers (LXC)
+  - Logs storage incompatibilities for debugging
+- **Real-Time Tracking & Monitoring** - Enhanced visibility and control
+  - Real-time migration task polling with accurate completion status
+  - Live error reporting in Recent Auto-Migrations UI
+  - Auto-refresh status every 10 seconds (no page reload needed)
+  - Migration log viewer with terminal-style display
+  - Download logs directly from the UI
+  - Shows VM/CT ID alongside names for easy identification
 - **Safety Features** - Multiple safeguards for automated operations
   - Min confidence score requirements
   - Max migrations per run limits
@@ -280,6 +293,71 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main
 - Unprivileged LXC container
 - Local network design
 - Optional SSL/TLS support
+
+---
+
+## 🔍 Monitoring & Troubleshooting
+
+### Viewing Migration Logs
+
+ProxBalance provides multiple ways to view and troubleshoot migrations:
+
+#### 1. **UI Log Viewer** (Automated Migrations Page)
+Navigate to **Automated Migrations** configuration page to access the built-in log viewer:
+- Click **"Refresh"** to load the latest 500 log lines
+- Click **"Download"** to save logs as a text file
+- Terminal-style display with auto-scrolling
+- Shows last update timestamp
+
+#### 2. **Recent Auto-Migrations Card**
+The dashboard displays recent migrations with:
+- Real-time status updates (auto-refreshes every 10 seconds)
+- VM/CT ID and name for easy identification
+- Detailed error messages for failed migrations
+- Migration reason and confidence scores
+- Actual migration duration
+
+#### 3. **Command Line Log Access**
+For advanced troubleshooting, access logs directly on the ProxBalance container:
+
+```bash
+# View recent automigrate logs
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service -n 100
+
+# Follow logs in real-time
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service -f
+
+# Search for specific VM/CT migrations
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service | grep "VM 120"
+
+# Search for storage compatibility issues
+pct exec <container-id> -- journalctl -u proxmox-balance.service | grep -i "storage incompatibility"
+
+# View migration errors
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service | grep -i "error\|failed"
+
+# Check logs for specific time period
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service --since "1 hour ago"
+```
+
+### Common Issues and Solutions
+
+#### **Storage Incompatibility Errors**
+If migrations fail with storage-related errors:
+- Check logs for: `Storage incompatibility: Guest X requires storage {Y} not available on Z`
+- Verify target node has required storage pools configured
+- Use Proxmox UI: Datacenter → Storage to check which nodes have access to storage
+- ProxBalance automatically filters these from recommendations
+
+#### **Migration Status Not Updating**
+- Recent Auto-Migrations auto-refreshes every 10 seconds
+- Check browser console for API errors
+- Verify ProxBalance service is running: `pct exec <container-id> -- systemctl status proxmox-balance.service`
+
+#### **Incomplete Migration Data**
+- Older migrations may show 0s duration (before real-time tracking was added)
+- New migrations include actual completion time and detailed error messages
+- Task IDs are now stored for reference
 
 ---
 
