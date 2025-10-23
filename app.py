@@ -518,6 +518,138 @@ def get_threshold_suggestions():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/node-scores", methods=["POST"])
+def node_scores():
+    """Calculate migration suitability scores for all nodes"""
+    try:
+        cache_data = read_cache()
+        if not cache_data:
+            return jsonify({"success": False, "error": "No data available"}), 503
+
+        # Get thresholds from request body
+        req_data = request.get_json() or {}
+        cpu_threshold = float(req_data.get("cpu_threshold", 60))
+        mem_threshold = float(req_data.get("mem_threshold", 70))
+        iowait_threshold = float(req_data.get("iowait_threshold", 15))
+        maintenance_nodes = set(req_data.get("maintenance_nodes", []))
+
+        nodes = cache_data.get('nodes', {})
+        node_scores = {}
+
+        # Use a dummy small guest for scoring (1 core, 1GB RAM)
+        dummy_guest = {
+            'cores': 1,
+            'maxmem': 1073741824  # 1GB in bytes
+        }
+
+        for node_name, node in nodes.items():
+            if node.get('status') != 'online':
+                node_scores[node_name] = {
+                    'score': 999999,
+                    'suitable': False,
+                    'reason': 'Node offline'
+                }
+                continue
+
+            if node_name in maintenance_nodes:
+                node_scores[node_name] = {
+                    'score': 999999,
+                    'suitable': False,
+                    'reason': 'In maintenance mode'
+                }
+                continue
+
+            # Calculate the actual score using the same function as recommendations
+            # pending_target_guests is empty since we're just calculating base scores
+            score = calculate_target_node_score(
+                target_node=node,
+                guest=dummy_guest,
+                pending_target_guests={},
+                cpu_threshold=cpu_threshold,
+                mem_threshold=mem_threshold
+            )
+
+            # Get weighted metrics for display
+            metrics = node.get('metrics', {})
+            immediate_cpu = metrics.get("current_cpu", 0)
+            immediate_mem = metrics.get("current_mem", 0)
+
+            short_cpu = metrics.get("avg_cpu", 0)
+            short_mem = metrics.get("avg_mem", 0)
+
+            long_cpu = metrics.get("avg_cpu_week", 0)
+            long_mem = metrics.get("avg_mem_week", 0)
+
+            if metrics.get("has_historical"):
+                weighted_cpu = (immediate_cpu * 0.5) + (short_cpu * 0.3) + (long_cpu * 0.2)
+                weighted_mem = (immediate_mem * 0.5) + (short_mem * 0.3) + (long_mem * 0.2)
+            else:
+                weighted_cpu = immediate_cpu
+                weighted_mem = immediate_mem
+
+            # Determine suitability based on score thresholds
+            # Lower scores are better migration targets
+            if score < 50:
+                suitable = True
+                if score < 20:
+                    reason = 'Excellent target'
+                else:
+                    reason = 'Good target'
+            elif score < 100:
+                suitable = True
+                reason = 'Acceptable target'
+            elif score < 200:
+                suitable = False
+                reason = 'Poor target'
+            else:
+                suitable = False
+                # Determine primary issue for high scores
+                if immediate_cpu > (cpu_threshold + 20):
+                    reason = f'Very high current CPU ({immediate_cpu:.1f}%)'
+                elif immediate_mem > (mem_threshold + 20):
+                    reason = f'Very high current memory ({immediate_mem:.1f}%)'
+                elif immediate_cpu > (cpu_threshold + 10):
+                    reason = f'High current CPU ({immediate_cpu:.1f}%)'
+                elif immediate_mem > (mem_threshold + 10):
+                    reason = f'High current memory ({immediate_mem:.1f}%)'
+                elif long_cpu > 90:
+                    reason = f'Sustained high CPU ({long_cpu:.1f}% 7-day avg)'
+                elif long_mem > 90:
+                    reason = f'Sustained high memory ({long_mem:.1f}% 7-day avg)'
+                elif weighted_cpu > cpu_threshold:
+                    reason = f'CPU above threshold ({weighted_cpu:.1f}%)'
+                elif weighted_mem > mem_threshold:
+                    reason = f'Memory above threshold ({weighted_mem:.1f}%)'
+                else:
+                    reason = f'High penalty score'
+
+            # Get additional metrics for display
+            max_cpu_week = metrics.get("max_cpu_week", 0)
+            max_mem_week = metrics.get("max_mem_week", 0)
+
+            node_scores[node_name] = {
+                'score': round(score, 2),
+                'suitable': suitable,
+                'reason': reason,
+                'weighted_cpu': round(weighted_cpu, 1),
+                'weighted_mem': round(weighted_mem, 1),
+                'current_cpu': round(immediate_cpu, 1),
+                'current_mem': round(immediate_mem, 1),
+                'max_cpu_week': round(max_cpu_week, 1),
+                'max_mem_week': round(max_mem_week, 1)
+            }
+
+        return jsonify({
+            "success": True,
+            "scores": node_scores
+        })
+    except Exception as e:
+        print(f"Error in node_scores: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 def calculate_intelligent_thresholds(nodes: Dict) -> Dict:
     """
     Analyze cluster health and suggest optimal thresholds
@@ -807,10 +939,30 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     target_name = target_node.get("name")
     metrics = target_node.get("metrics", {})
 
-    # Use 7-day averages for more stable decisions - prefer nodes with consistent low load
-    current_cpu = metrics.get("avg_cpu_week", 0) or metrics.get("avg_cpu", 0) if metrics.get("has_historical") else metrics.get("current_cpu", 0)
-    current_mem = metrics.get("avg_mem_week", 0) or metrics.get("avg_mem", 0) if metrics.get("has_historical") else metrics.get("current_mem", 0)
-    current_iowait = metrics.get("avg_iowait_week", 0) or metrics.get("avg_iowait", 0) if metrics.get("has_historical") else metrics.get("current_iowait", 0)
+    # Weighted time-based scoring: 50% current, 30% short-term (24h), 20% long-term (7-day)
+    # This balances responsiveness with stability
+    immediate_cpu = metrics.get("current_cpu", 0)
+    immediate_mem = metrics.get("current_mem", 0)
+    immediate_iowait = metrics.get("current_iowait", 0)
+
+    short_cpu = metrics.get("avg_cpu", 0)  # 24-hour average
+    short_mem = metrics.get("avg_mem", 0)
+    short_iowait = metrics.get("avg_iowait", 0)
+
+    long_cpu = metrics.get("avg_cpu_week", 0)  # 7-day average
+    long_mem = metrics.get("avg_mem_week", 0)
+    long_iowait = metrics.get("avg_iowait_week", 0)
+
+    # Calculate weighted scores
+    if metrics.get("has_historical"):
+        current_cpu = (immediate_cpu * 0.5) + (short_cpu * 0.3) + (long_cpu * 0.2)
+        current_mem = (immediate_mem * 0.5) + (short_mem * 0.3) + (long_mem * 0.2)
+        current_iowait = (immediate_iowait * 0.5) + (short_iowait * 0.3) + (long_iowait * 0.2)
+    else:
+        # No historical data, use current only
+        current_cpu = immediate_cpu
+        current_mem = immediate_mem
+        current_iowait = immediate_iowait
 
     # Get max values over the week to avoid migrating to nodes that spike
     max_cpu_week = metrics.get("max_cpu_week", metrics.get("max_cpu", 0))
@@ -820,38 +972,63 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     cpu_trend = metrics.get("cpu_trend", "stable")
     mem_trend = metrics.get("mem_trend", "stable")
 
-    # Trend penalty (add to score, making it less desirable)
-    trend_penalty = 0
+    # Initialize penalty accumulator
+    penalties = 0
+
+    # Current load penalty - heavily penalize nodes with high current load
+    if immediate_cpu > (cpu_threshold + 20):
+        penalties += 100  # Extreme current CPU load
+    elif immediate_cpu > (cpu_threshold + 10):
+        penalties += 50   # Very high current CPU load
+    elif immediate_cpu > cpu_threshold:
+        penalties += 20   # High current CPU load
+
+    if immediate_mem > (mem_threshold + 20):
+        penalties += 100  # Extreme current memory load
+    elif immediate_mem > (mem_threshold + 10):
+        penalties += 50   # Very high current memory load
+    elif immediate_mem > mem_threshold:
+        penalties += 20   # High current memory load
+
+    # Sustained load penalty - penalize sustained high averages
+    if long_cpu > 90:
+        penalties += 150  # Critically high sustained CPU
+    elif long_cpu > 80:
+        penalties += 80   # Very high sustained CPU
+    elif long_cpu > 70:
+        penalties += 40   # High sustained CPU
+
+    if long_mem > 90:
+        penalties += 150  # Critically high sustained memory
+    elif long_mem > 80:
+        penalties += 80   # Very high sustained memory
+    elif long_mem > 70:
+        penalties += 40   # High sustained memory
+
+    # Trend penalty - penalize rising load trends
     if cpu_trend == "rising":
-        trend_penalty += 15  # Significantly penalize rising CPU
+        penalties += 15  # Rising CPU trend
     if mem_trend == "rising":
-        trend_penalty += 15  # Significantly penalize rising memory
+        penalties += 15  # Rising memory trend
 
-    # Max load penalty - avoid nodes that have spiked high even if average is low
-    # More aggressive penalties to avoid nodes with prolonged high load
-    max_load_penalty = 0
-    if max_cpu_week > 80:
-        max_load_penalty += 30  # Heavily penalize nodes that have hit very high CPU
+    # Max spike penalty - penalize brief spikes (less severe than sustained)
+    if max_cpu_week > 95:
+        penalties += 30  # Extreme CPU spike
+    elif max_cpu_week > 90:
+        penalties += 20  # Very high CPU spike
+    elif max_cpu_week > 80:
+        penalties += 10  # High CPU spike
     elif max_cpu_week > 70:
-        max_load_penalty += 20  # Significant penalty for high CPU spikes
-    elif max_cpu_week > 60:
-        max_load_penalty += 15  # Penalize nodes with CPU above threshold
-    elif max_cpu_week > 50:
-        max_load_penalty += 5   # Light penalty for moderately high CPU
+        penalties += 5   # Moderate CPU spike
 
-    if max_mem_week > 85:
-        max_load_penalty += 30
+    if max_mem_week > 95:
+        penalties += 30  # Extreme memory spike
+    elif max_mem_week > 90:
+        penalties += 20  # Very high memory spike
+    elif max_mem_week > 85:
+        penalties += 10  # High memory spike
     elif max_mem_week > 75:
-        max_load_penalty += 20
-    elif max_mem_week > 65:
-        max_load_penalty += 10
-
-    # Disqualify nodes with concerning historical patterns
-    # Don't migrate to nodes that have shown problematic behavior
-    if max_cpu_week > 70:  # Node has had severe CPU spikes (>70% for extended periods)
-        return 999999  # Completely disqualify
-    if max_mem_week > 80:  # Node has had severe memory pressure
-        return 999999  # Completely disqualify
+        penalties += 5   # Moderate memory spike
 
     # Predict post-migration load
     predicted = predict_post_migration_load(target_node, guest, adding=True)
@@ -867,9 +1044,20 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
                 adding=True
             )
 
-    # Disqualify if predicted load exceeds thresholds
-    if predicted["cpu"] > cpu_threshold or predicted["mem"] > mem_threshold:
-        return 999999  # Disqualify
+    # Penalize if predicted load exceeds thresholds (don't disqualify)
+    if predicted["cpu"] > (cpu_threshold + 20):
+        penalties += 100  # Predicted CPU way over threshold
+    elif predicted["cpu"] > (cpu_threshold + 10):
+        penalties += 50   # Predicted CPU significantly over threshold
+    elif predicted["cpu"] > cpu_threshold:
+        penalties += 25   # Predicted CPU over threshold
+
+    if predicted["mem"] > (mem_threshold + 20):
+        penalties += 100  # Predicted memory way over threshold
+    elif predicted["mem"] > (mem_threshold + 10):
+        penalties += 50   # Predicted memory significantly over threshold
+    elif predicted["mem"] > mem_threshold:
+        penalties += 25   # Predicted memory over threshold
 
     # Health score (current state)
     health_score = calculate_node_health_score(target_node, metrics)
@@ -898,14 +1086,13 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
 
     # Combined weighted score (lower is better)
     # Current health: 25%, Predicted health: 40%, Headroom: 20%, Storage: 15%
-    # Plus penalties for trends and historical spikes
+    # Plus all accumulated penalties (current load, sustained load, trends, spikes, predicted)
     total_score = (
         health_score * 0.25 +
         predicted_health * 0.40 +
         headroom_score * 0.20 +
         storage_score * 0.15 +
-        trend_penalty +      # Penalty for rising load trends
-        max_load_penalty     # Penalty for historical high loads
+        penalties  # All accumulated penalties
     )
 
     return total_score
@@ -1309,6 +1496,7 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, me
                         "type": guest.get("type", "unknown"),
                         "source_node": src_node_name,
                         "target_node": best_target,
+                        "target_node_score": round(best_score, 2),  # Lower score = better target
                         "reason": reason,
                         "mem_gb": guest.get("mem_max_gb", 0),
                         "command": "{} migrate {} {} {}".format(cmd_type, vmid_int, best_target, cmd_flag),
@@ -4655,6 +4843,56 @@ def get_automigrate_status():
         # Get recent migrations (last 10)
         recent = history.get('migrations', [])[-10:]
 
+        # Check for in-progress migrations using cluster tasks endpoint
+        in_progress_migrations = []
+        try:
+            import requests
+            cache_data = read_cache()
+            token_id = config.get('proxmox_api_token_id', '')
+            token_secret = config.get('proxmox_api_token_secret', '')
+            proxmox_host = config.get('proxmox_host', 'localhost')
+            proxmox_port = config.get('proxmox_port', 8006)
+            verify_ssl = config.get('proxmox_verify_ssl', False)
+
+            if token_id and token_secret and cache_data:
+                try:
+                    # Query cluster tasks endpoint
+                    url = f"https://{proxmox_host}:{proxmox_port}/api2/json/cluster/tasks"
+                    headers = {
+                        'Authorization': f'PVEAPIToken={token_id}={token_secret}'
+                    }
+
+                    response = requests.get(url, headers=headers, verify=verify_ssl, timeout=10)
+
+                    if response.status_code == 200:
+                        tasks_data = response.json().get('data', [])
+
+                        # Find running migration tasks (they have a 'pid' key when running)
+                        for task in tasks_data:
+                            if (task.get('type') in ['qmigrate', 'vzmigrate'] and
+                                task.get('pid') is not None):  # Running tasks have pid
+
+                                vmid = task.get('id')
+                                guest = cache_data.get('guests', {}).get(str(vmid), {})
+
+                                in_progress_migrations.append({
+                                    'vmid': vmid,
+                                    'name': guest.get('name', f'VM-{vmid}'),
+                                    'source_node': task.get('node', 'unknown'),
+                                    'status': 'running',
+                                    'task_id': task.get('upid'),
+                                    'starttime': task.get('starttime'),
+                                    'type': 'VM' if task.get('type') == 'qmigrate' else 'CT'
+                                })
+                    else:
+                        print(f"Failed to fetch cluster tasks: HTTP {response.status_code}", file=sys.stderr)
+
+                except Exception as e:
+                    print(f"Error querying Proxmox cluster tasks: {e}", file=sys.stderr)
+
+        except Exception as e:
+            print(f"Error checking in-progress migrations: {e}", file=sys.stderr)
+
         return jsonify({
             "success": True,
             "enabled": auto_config.get('enabled', False),
@@ -4662,6 +4900,7 @@ def get_automigrate_status():
             "timer_active": timer_active,
             "check_interval_minutes": auto_config.get('check_interval_minutes', 5),
             "recent_migrations": recent,
+            "in_progress_migrations": in_progress_migrations,
             "state": history.get('state', {})
         })
 

@@ -530,6 +530,55 @@ def execute_migration(
         return {"success": False, "error": str(e)}
 
 
+def is_migration_in_progress(vmid: int, source_node: str, config: Dict[str, Any]) -> bool:
+    """
+    Check if a migration is currently in progress for this VM by querying Proxmox cluster tasks.
+
+    Args:
+        vmid: VM ID to check
+        source_node: Source node name
+        config: Configuration dictionary with Proxmox credentials
+
+    Returns:
+        True if migration is in progress, False otherwise
+    """
+    try:
+        # Query Proxmox cluster tasks API
+        proxmox_host = config.get('proxmox_host', 'localhost')
+        proxmox_port = config.get('proxmox_port', 8006)
+        token_id = config.get('proxmox_api_token_id', '')
+        token_secret = config.get('proxmox_api_token_secret', '')
+        verify_ssl = config.get('proxmox_verify_ssl', False)
+
+        if not token_id or not token_secret:
+            logger.warning("Missing Proxmox API credentials, cannot check migration status")
+            return False
+
+        url = f"https://{proxmox_host}:{proxmox_port}/api2/json/cluster/tasks"
+        headers = {
+            'Authorization': f'PVEAPIToken={token_id}={token_secret}'
+        }
+
+        response = requests.get(url, headers=headers, verify=verify_ssl, timeout=10)
+
+        if response.status_code == 200:
+            tasks_data = response.json().get('data', [])
+
+            # Check for running migration tasks for this VM (running tasks have a 'pid')
+            for task in tasks_data:
+                if (task.get('type') in ['qmigrate', 'vzmigrate'] and
+                    str(task.get('id')) == str(vmid) and
+                    task.get('pid') is not None):  # Running tasks have pid
+                    logger.info(f"Found active migration task for VM {vmid}: {task.get('upid')}")
+                    return True
+
+        return False
+    except Exception as e:
+        logger.warning(f"Could not check migration status for VM {vmid}: {e}")
+        # If we can't check, assume no migration in progress (fail open)
+        return False
+
+
 def is_vm_in_cooldown(vmid: int, cooldown_minutes: int) -> bool:
     """
     Check if a VM was recently migrated and is still in cooldown period.
@@ -804,7 +853,21 @@ def main():
             source = rec['source_node']
             guest_type = rec.get('type', 'VM')  # Default to VM if type not specified
 
-            logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) to {target} - {rec['reason']}")
+            # Check if this VM already has a migration in progress
+            if is_migration_in_progress(vmid, source, config):
+                logger.info(f"VM {vmid} already has a migration in progress, skipping")
+                guest = cache_data.get('guests', {}).get(str(vmid), {})
+                activity_log.append({
+                    'timestamp': datetime.utcnow().isoformat() + 'Z',
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'action': 'skipped',
+                    'reason': 'Migration already in progress'
+                })
+                continue
+
+            target_score = rec.get('target_node_score', 'N/A')
+            logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) to {target} (score: {target_score}) - {rec['reason']}")
 
             result = execute_migration(vmid, target, source, guest_type, config, dry_run=dry_run)
 
@@ -822,6 +885,7 @@ def main():
                 'name': rec['name'],
                 'source_node': rec['source_node'],
                 'target_node': target,
+                'target_node_score': rec.get('target_node_score'),  # Include node score
                 'reason': rec['reason'],
                 'confidence_score': rec['confidence_score'],
                 'status': status,

@@ -257,6 +257,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           });
           const [thresholdSuggestions, setThresholdSuggestions] = useState(null);
           const [clusterHealth, setClusterHealth] = useState(null);
+          const [nodeScores, setNodeScores] = useState(null); // Migration suitability scores for all nodes
           const [migrationStatus, setMigrationStatus] = useState({});
           const [activeMigrations, setActiveMigrations] = useState({}); // Track task IDs for cancellation
           const [guestsMigrating, setGuestsMigrating] = useState({}); // Track which guests are migrating (from Proxmox API)
@@ -904,6 +905,28 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               setAiRecommendations({ success: false, error: err.message });
             }
             setLoadingAi(false);
+          };
+
+          const fetchNodeScores = async () => {
+            if (!data) return;
+            try {
+              const response = await fetch(`${API_BASE}/node-scores`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  cpu_threshold: cpuThreshold,
+                  mem_threshold: memThreshold,
+                  iowait_threshold: iowaitThreshold,
+                  maintenance_nodes: Array.from(maintenanceNodes)
+                })
+              });
+              const result = await response.json();
+              if (result.success) {
+                setNodeScores(result.scores);
+              }
+            } catch (err) {
+              console.error('Error fetching node scores:', err);
+            }
           };
 
           const fetchAiModels = async (provider, apiKey = null, baseUrl = null) => {
@@ -1733,6 +1756,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           useEffect(() => {
             if (data && !loadingRecommendations) {
               fetchRecommendations();
+              fetchNodeScores();
             }
           }, [data, cpuThreshold, memThreshold, iowaitThreshold, maintenanceNodes]);
 
@@ -5107,6 +5131,48 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </div>
                     )}
 
+                    {/* In-Progress Migrations */}
+                    {automationStatus.in_progress_migrations && automationStatus.in_progress_migrations.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                          <RefreshCw size={14} className="animate-spin text-blue-600 dark:text-blue-400" />
+                          Migrations In Progress
+                        </h4>
+                        <div className="space-y-2">
+                          {automationStatus.in_progress_migrations.map((migration, idx) => {
+                            // Calculate elapsed time
+                            const elapsedSeconds = migration.starttime ? Math.floor(Date.now() / 1000 - migration.starttime) : 0;
+                            const minutes = Math.floor(elapsedSeconds / 60);
+                            const seconds = elapsedSeconds % 60;
+                            const elapsedTime = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+                            return (
+                              <div key={idx} className="text-sm bg-blue-50 dark:bg-blue-900/20 rounded p-2 border-2 border-blue-300 dark:border-blue-600 animate-pulse">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <span className="text-gray-900 dark:text-white font-medium">{migration.name} ({migration.vmid})</span>
+                                    <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                      {migration.source_node} → ?
+                                    </span>
+                                  </div>
+                                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 flex items-center gap-1">
+                                    <RefreshCw size={12} className="animate-spin" />
+                                    Running
+                                  </span>
+                                </div>
+                                {migration.starttime && (
+                                  <div className="mt-1 text-xs text-gray-600 dark:text-gray-400 flex items-center gap-3">
+                                    <span>Started: {new Date(migration.starttime * 1000).toLocaleTimeString()}</span>
+                                    <span className="font-semibold text-blue-600 dark:text-blue-400">Elapsed: {elapsedTime}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {automationStatus.recent_migrations && automationStatus.recent_migrations.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 recent-auto-migrations">
                         <div className="flex items-center justify-between mb-3">
@@ -5118,7 +5184,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               if (migrations.length === 0) return;
 
                               // CSV headers
-                              const headers = ['Timestamp', 'VM ID', 'VM Name', 'Source Node', 'Target Node', 'Reason', 'Confidence Score', 'Status', 'Duration (s)', 'Dry Run', 'Window'];
+                              const headers = ['Timestamp', 'VM ID', 'VM Name', 'Source Node', 'Target Node', 'Target Score', 'Reason', 'Confidence Score', 'Status', 'Duration (s)', 'Dry Run', 'Window'];
 
                               // CSV rows
                               const rows = migrations.map(m => [
@@ -5127,6 +5193,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 m.name || '',
                                 m.source_node || '',
                                 m.target_node || '',
+                                m.target_node_score || '',
                                 (m.reason || '').replace(/,/g, ';'), // Replace commas in reason
                                 m.confidence_score || '',
                                 m.status || '',
@@ -5218,6 +5285,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   <span className="text-gray-900 dark:text-white font-medium">{migration.name} ({migration.vmid})</span>
                                   <span className="text-gray-500 dark:text-gray-400 text-xs">
                                     {migration.source_node} → {migration.target_node}
+                                    {migration.target_node_score !== undefined && migration.target_node_score !== null && (
+                                      <span className="ml-1 text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
+                                        (score: {migration.target_node_score})
+                                      </span>
+                                    )}
                                   </span>
                                   {migration.dry_run && (
                                     <span className="px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded">
@@ -6252,6 +6324,97 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             </div>
                           </div>
                         </div>
+
+                        {/* Migration Suitability Metrics */}
+                        {selectedNode.metrics && (
+                          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Activity size={16} className="text-blue-600 dark:text-blue-400" />
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Migration Target Suitability</h4>
+                            </div>
+
+                            {/* Overall Score Display */}
+                            {nodeScores && nodeScores[selectedNode.name] && (
+                              <div className="mb-3 p-3 bg-white dark:bg-gray-800 rounded-lg border-2 border-blue-300 dark:border-blue-600">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Overall Suitability Score</div>
+                                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                                      {nodeScores[selectedNode.name].score}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${
+                                      nodeScores[selectedNode.name].suitable
+                                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                                    }`}>
+                                      {nodeScores[selectedNode.name].suitable ? (
+                                        <><CheckCircle size={12} /> Suitable</>
+                                      ) : (
+                                        <><XCircle size={12} /> Not Suitable</>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                      {nodeScores[selectedNode.name].reason}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                              Weighted scoring used for recommendations: 50% current, 30% 24h avg, 20% 7-day avg
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="bg-white dark:bg-gray-800 rounded p-2">
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">CPU Score</div>
+                                <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                  {(() => {
+                                    const current = selectedNode.cpu_percent || 0;
+                                    const short = selectedNode.metrics.avg_cpu || current;
+                                    const long = selectedNode.metrics.avg_cpu_week || short;
+                                    return ((current * 0.5) + (short * 0.3) + (long * 0.2)).toFixed(1);
+                                  })()}%
+                                </div>
+                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                  Now: {(selectedNode.cpu_percent || 0).toFixed(1)}% | 24h: {(selectedNode.metrics.avg_cpu || 0).toFixed(1)}% | 7d: {(selectedNode.metrics.avg_cpu_week || 0).toFixed(1)}%
+                                </div>
+                              </div>
+                              <div className="bg-white dark:bg-gray-800 rounded p-2">
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Memory Score</div>
+                                <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                                  {(() => {
+                                    const current = selectedNode.mem_percent || 0;
+                                    const short = selectedNode.metrics.avg_mem || current;
+                                    const long = selectedNode.metrics.avg_mem_week || short;
+                                    return ((current * 0.5) + (short * 0.3) + (long * 0.2)).toFixed(1);
+                                  })()}%
+                                </div>
+                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                  Now: {(selectedNode.mem_percent || 0).toFixed(1)}% | 24h: {(selectedNode.metrics.avg_mem || 0).toFixed(1)}% | 7d: {(selectedNode.metrics.avg_mem_week || 0).toFixed(1)}%
+                                </div>
+                              </div>
+                              <div className="bg-white dark:bg-gray-800 rounded p-2">
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">IOWait Score</div>
+                                <div className="text-sm font-semibold text-orange-600 dark:text-orange-400">
+                                  {(() => {
+                                    const current = selectedNode.metrics.current_iowait || 0;
+                                    const short = selectedNode.metrics.avg_iowait || current;
+                                    const long = selectedNode.metrics.avg_iowait_week || short;
+                                    return ((current * 0.5) + (short * 0.3) + (long * 0.2)).toFixed(1);
+                                  })()}%
+                                </div>
+                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                  Now: {(selectedNode.metrics.current_iowait || 0).toFixed(1)}% | 24h: {(selectedNode.metrics.avg_iowait || 0).toFixed(1)}% | 7d: {(selectedNode.metrics.avg_iowait_week || 0).toFixed(1)}%
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 italic">
+                              Lower scores = better migration target. High current load, sustained averages, and spikes add penalties to the score.
+                            </div>
+                          </div>
+                        )}
 
                         {/* Maintenance Mode Info */}
                         {maintenanceNodes.has(selectedNode.name) && (
@@ -7411,6 +7574,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   ) : (
                                     <>
                                       <span className="text-red-600 dark:text-red-400 font-medium">FROM:</span> {rec.source_node} → <span className="text-green-600 dark:text-green-400 font-medium">TO:</span> {rec.target_node}
+                                      {nodeScores && (
+                                        <span className="ml-2 text-[10px] text-gray-600 dark:text-gray-400">
+                                          (Target Score: <span className="font-semibold text-blue-600 dark:text-blue-400">{nodeScores[rec.target_node]?.score || 'N/A'}</span>)
+                                        </span>
+                                      )}
                                     </>
                                   )}
                                 </div>
