@@ -1529,4 +1529,65 @@ pct pull <ctid> /tmp/proxbalance-logs.tar.gz ./proxbalance-logs.tar.gz
 
 ---
 
+## 🔍 Viewing Migration Logs
+
+ProxBalance provides multiple ways to view and troubleshoot migrations:
+
+### 1. UI Log Viewer (Automated Migrations Page)
+Navigate to **Automated Migrations** configuration page to access the built-in log viewer:
+- Click **"Refresh"** to load the latest 500 log lines
+- Click **"Download"** to save logs as a text file
+- Terminal-style display with auto-scrolling
+- Shows last update timestamp
+
+### 2. Recent Auto-Migrations Card
+The dashboard displays recent migrations with:
+- Real-time status updates (auto-refreshes every 10 seconds)
+- VM/CT ID and name for easy identification
+- Detailed error messages for failed migrations
+- Migration reason and confidence scores
+- Actual migration duration
+
+### 3. Command Line Log Access
+For advanced troubleshooting, access logs directly on the ProxBalance container:
+
+```bash
+# View recent automigrate logs
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service -n 100
+
+# Follow logs in real-time
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service -f
+
+# Search for specific VM/CT migrations
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service | grep "VM 120"
+
+# Search for storage compatibility issues
+pct exec <container-id> -- journalctl -u proxmox-balance.service | grep -i "storage incompatibility"
+
+# View migration errors
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service | grep -i "error\|failed"
+
+# Check logs for specific time period
+pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service --since "1 hour ago"
+```
+
+### Storage Incompatibility Errors
+If migrations fail with storage-related errors:
+- Check logs for: `Storage incompatibility: Guest X requires storage {Y} not available on Z`
+- Verify target node has required storage pools configured
+- Use Proxmox UI: Datacenter → Storage to check which nodes have access to storage
+- ProxBalance automatically filters these from recommendations
+
+### Migration Status Not Updating
+- Recent Auto-Migrations auto-refreshes every 10 seconds
+- Check browser console for API errors
+- Verify ProxBalance service is running: `pct exec <container-id> -- systemctl status proxmox-balance.service`
+
+### Incomplete Migration Data
+- Older migrations may show 0s duration (before real-time tracking was added)
+- New migrations include actual completion time and detailed error messages
+- Task IDs are now stored for reference
+
+---
+
 [⬆ Back to README](../README.md)

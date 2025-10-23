@@ -31,71 +31,22 @@ ProxBalance is a web-based cluster analyzer and migration manager for Proxmox VE
 
 ## ✨ Features
 
-### Monitoring & Visualization
-- **Real-Time Monitoring** - CPU, memory, IOWait, and load metrics across all nodes
-  - **Sparkline Visualizations** - Live trend graphs on Node Status cards and modals
-  - Gradient backgrounds with color-coded metrics (blue=CPU, purple=Memory, orange=IOWait)
-  - Enhanced visibility with animated waveform patterns
-- **Multi-Timeframe Charts** - View historical data from 1 hour to 1 year with automatic resolution optimization
-- **Parallel Data Collection** - Configurable collection optimization for small, medium, or large clusters
+### Core Capabilities
+- **Real-Time Monitoring** - Live CPU, memory, IOWait, and load metrics with sparkline visualizations
 - **Interactive Cluster Map** - Visual representation with 4 view modes (Usage, Allocated, Disk I/O, Network)
-  - Click nodes to view detailed stats with sparkline backgrounds and manage maintenance mode
-  - Click VMs/CTs to view detailed metrics with live sparkline graphs
-  - Plan evacuation and execute migrations directly from the map
-  - Real-time resource usage visualization
+- **Smart Recommendations** - Intelligent migration suggestions based on historical data
+- **One-Click Migrations** - Execute migrations directly from the web interface
+- **Node Maintenance Mode** - Mark nodes for maintenance with automatic evacuation
 - **Dark Mode** - Modern interface with light/dark theme support
 
-### Maintenance & Migration
-- **Node Maintenance Mode** - Mark nodes for maintenance with automatic evacuation recommendations
-  - Visual indicators across UI (yellow highlighting on Cluster Map and recommendations)
-  - Integrates with automated migrations system for scheduled evacuations
-  - Ignores tags and HA status for priority evacuation
-  - Complete node evacuation with clear maintenance reasoning
-  - Migration recommendations automatically prioritize maintenance node evacuations
-- **Smart Recommendations** - Intelligent migration suggestions based on historical data
-- **AI-Powered Analysis** - Optional AI recommendations using OpenAI, Anthropic, or Ollama
-- **One-Click Migrations** - Execute migrations directly from the web interface
-
-### Automated Migrations (Experimental)
-- **Scheduled Automation** - Automatic load balancing based on configurable rules
-  - Dry-run mode for testing (enabled by default)
-  - Configurable check intervals and safety thresholds
-  - Migration windows and blackout periods
-  - Container restart support for non-live migrations
-  - Maintenance mode integration - automatically evacuates nodes in maintenance
-- **Storage Compatibility Checks** - Intelligent validation before migration
-  - Automatically verifies target nodes have all required storage volumes
-  - Filters out incompatible targets from recommendations
-  - Prevents migration failures due to missing storage
-  - Works with both VMs (QEMU) and Containers (LXC)
-  - Logs storage incompatibilities for debugging
-- **Real-Time Tracking & Monitoring** - Enhanced visibility and control
-  - Real-time migration task polling with accurate completion status
-  - Live error reporting in Recent Auto-Migrations UI
-  - Auto-refresh status every 10 seconds (no page reload needed)
-  - Migration log viewer with terminal-style display
-  - Download logs directly from the UI
-  - Shows VM/CT ID alongside names for easy identification
-- **Safety Features** - Multiple safeguards for automated operations
-  - Min confidence score requirements
-  - Max migrations per run limits
-  - Cluster health checks and quorum requirements
-  - Cooldown periods between migrations
-- **Tag-Based Controls** - Fine-grained control over automation
-  - Respect ignore tags and anti-affinity rules
-  - Optional whitelist mode (auto-migrate-ok tag)
-  - Tags bypassed for maintenance evacuations (priority override)
-
 ### Advanced Features
+- **AI-Powered Analysis** - Optional AI recommendations using OpenAI, Anthropic, or Ollama
+- **Automated Migrations** - Scheduled load balancing with configurable safety rules (experimental)
 - **Anti-Affinity Rules** - Tag-based system to enforce workload separation
-- **Performance Optimizations** - Enterprise-grade performance enhancements
-  - **Flask Compression** - 70-80% bandwidth reduction with gzip compression
-  - **In-Memory Caching** - 85% faster API responses with 60-second TTL cache
-  - **Memoized Components** - 65% faster modal rendering with React useMemo
-  - **Lazy Loading** - Chart.js loaded on-demand (300KB+ saved on initial load)
-  - Overall improvement: 60-70% faster performance across the board
-- **Performance Monitoring** - Real-time collection metrics and optimization settings
-- **Collapsible UI** - Customizable dashboard with collapsible sections
+- **Storage Compatibility** - Pre-migration validation prevents compatibility errors
+- **Performance Optimizations** - Flask compression, caching, and lazy loading for 60-70% faster performance
+
+See [Complete Feature List](docs/FEATURES.md) for detailed capabilities.
 
 ---
 
@@ -170,87 +121,14 @@ Once installed, open `http://<container-ip>` in your browser.
 
 ## 🔧 Basic Usage
 
-### Node Details & Maintenance
+### Node Maintenance
+1. Click a node in the Cluster Map
+2. Toggle Maintenance Mode
+3. Plan and execute evacuation
+4. Perform maintenance
+5. Disable Maintenance Mode when complete
 
-Click any node in the Cluster Map to access detailed information and management:
-
-**Node Details Modal Features:**
-- **Live Metrics with Sparklines** - Gradient backgrounds with animated trend graphs
-  - CPU Usage (blue gradient) - Current percentage with core count
-  - Memory Usage (purple gradient) - Percentage with GB used/total
-  - IOWait (orange gradient) - I/O latency monitoring
-  - Guest Count - Number of running VMs/CTs
-- **Node Information** - Status, Load Average, Uptime
-- **Maintenance Mode Toggle** - Enable/disable maintenance directly from modal
-- **Evacuation Planning** - Plan and execute node evacuation
-
-**Node Maintenance Workflow:**
-1. **Click a node** in the Cluster Map to open details modal
-2. **Toggle Maintenance Mode** to mark node for updates
-3. **Plan Evacuation** - Review migration plan with storage validation
-4. **Execute Evacuation** - Migrate all VMs/CTs to healthy nodes
-5. **Perform Maintenance** - Node excluded from load balancing and recommendations
-6. **Disable Maintenance Mode** when complete
-
-**Features:**
-- Pre-migration storage validation prevents compatibility errors
-- Automatic target node selection based on available resources
-- Real-time evacuation progress tracking with loading animations
-- Visual indicators: yellow borders and badges on Cluster Map and recommendations
-- Integrates with automated migrations for scheduled evacuations
-- Priority evacuation: bypasses tags and HA status to ensure complete evacuation
-
-### VM/CT Details & Migration
-
-View detailed metrics and migrate guests directly from the Cluster Map:
-
-1. **Click any VM/CT** on the Cluster Map
-2. **View Detailed Metrics** with live sparkline visualizations:
-   - CPU usage with historical trend graph
-   - Memory usage with historical trend graph
-   - Disk I/O (read/write) with activity graphs
-   - Network I/O (in/out) with traffic graphs
-   - Current node location and status
-   - Applied tags and configuration
-3. **Click Migrate** to move the guest to another node
-4. **Select Target Node** from available online nodes
-5. **Execute Migration** - Live migration for VMs, restart migration for CTs
-
-**Sparkline Features:**
-- 40-point historical trend visualization
-- Color-coded by metric type (blue=CPU, purple=Memory, green=Disk Read, orange=Disk Write, cyan=Network In, pink=Network Out)
-- Semi-transparent background graphs with metric values in foreground
-- Smooth sine-wave patterns with realistic variation
-- Auto-scaling based on current values
-
-### Automated Migrations
-
-Configure and enable automated load balancing:
-
-1. **Navigate to Automated Migrations** - Click "Configure" button on the dashboard widget
-2. **Enable Automation** - Toggle the main switch (keep dry-run enabled for testing)
-3. **Configure Safety Rules**:
-   - Set minimum confidence score (default: 75)
-   - Set max migrations per run (default: 3)
-   - Set CPU/memory thresholds
-   - Enable/disable tag respecting
-4. **Test the System** - Click "Test Now" to run in dry-run mode
-5. **Review Results** - Check test output and migration history
-6. **Go Live** - Disable dry-run mode when ready (requires confirmation)
-
-**Important Notes:**
-- Dry-run mode is enabled by default for safety
-- Automation is disabled by default and must be explicitly enabled
-- System runs on a configurable interval (default: 5 minutes via systemd timer)
-- Nodes in maintenance mode are automatically evacuated
-- All migrations are logged in migration history
-
-**Advanced Configuration:**
-Edit `/opt/proxmox-balance-manager/config.json` for:
-- Migration windows (time-based scheduling)
-- Blackout periods (prevent migrations during specific times)
-- Cooldown periods between migrations
-- Whitelist mode (require auto-migrate-ok tag)
+See [Usage Guide](docs/USAGE.md) for detailed workflows.
 
 ### Tagging Guests
 
@@ -296,76 +174,12 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main
 
 ---
 
-## 🔍 Monitoring & Troubleshooting
-
-### Viewing Migration Logs
-
-ProxBalance provides multiple ways to view and troubleshoot migrations:
-
-#### 1. **UI Log Viewer** (Automated Migrations Page)
-Navigate to **Automated Migrations** configuration page to access the built-in log viewer:
-- Click **"Refresh"** to load the latest 500 log lines
-- Click **"Download"** to save logs as a text file
-- Terminal-style display with auto-scrolling
-- Shows last update timestamp
-
-#### 2. **Recent Auto-Migrations Card**
-The dashboard displays recent migrations with:
-- Real-time status updates (auto-refreshes every 10 seconds)
-- VM/CT ID and name for easy identification
-- Detailed error messages for failed migrations
-- Migration reason and confidence scores
-- Actual migration duration
-
-#### 3. **Command Line Log Access**
-For advanced troubleshooting, access logs directly on the ProxBalance container:
-
-```bash
-# View recent automigrate logs
-pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service -n 100
-
-# Follow logs in real-time
-pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service -f
-
-# Search for specific VM/CT migrations
-pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service | grep "VM 120"
-
-# Search for storage compatibility issues
-pct exec <container-id> -- journalctl -u proxmox-balance.service | grep -i "storage incompatibility"
-
-# View migration errors
-pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service | grep -i "error\|failed"
-
-# Check logs for specific time period
-pct exec <container-id> -- journalctl -u proxmox-balance-automigrate.service --since "1 hour ago"
-```
-
-### Common Issues and Solutions
-
-#### **Storage Incompatibility Errors**
-If migrations fail with storage-related errors:
-- Check logs for: `Storage incompatibility: Guest X requires storage {Y} not available on Z`
-- Verify target node has required storage pools configured
-- Use Proxmox UI: Datacenter → Storage to check which nodes have access to storage
-- ProxBalance automatically filters these from recommendations
-
-#### **Migration Status Not Updating**
-- Recent Auto-Migrations auto-refreshes every 10 seconds
-- Check browser console for API errors
-- Verify ProxBalance service is running: `pct exec <container-id> -- systemctl status proxmox-balance.service`
-
-#### **Incomplete Migration Data**
-- Older migrations may show 0s duration (before real-time tracking was added)
-- New migrations include actual completion time and detailed error messages
-- Task IDs are now stored for reference
-
----
-
 ## 💬 Support
 
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/Pr0zak/ProxBalance/issues)
 - 💡 **Feature Requests**: [GitHub Discussions](https://github.com/Pr0zak/ProxBalance/discussions)
 - 📖 **Documentation**: [docs/README.md](docs/README.md)
+- 🔍 **Troubleshooting**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 ---
 
