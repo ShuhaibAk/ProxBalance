@@ -5133,8 +5133,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 flex-1">
                                   <span className="text-gray-900 dark:text-white font-medium">{migration.name} ({migration.vmid})</span>
-                                  <span className="text-gray-500 dark:text-gray-400">→</span>
-                                  <span className="text-gray-700 dark:text-gray-300">{migration.target_node}</span>
+                                  <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                    {migration.source_node} → {migration.target_node}
+                                  </span>
                                   {migration.dry_run && (
                                     <span className="px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded">
                                       DRY RUN
