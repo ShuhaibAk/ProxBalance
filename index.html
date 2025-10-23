@@ -185,6 +185,7 @@
         const Loader = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>);
         const Plus = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>);
         const List = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>);
+        const Terminal = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>);
         const Info = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>);
         const ArrowRight = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>);
         const History = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><polyline points="12 7 12 12 15 15"></polyline></svg>);
@@ -1914,37 +1915,20 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     },
                     annotation: {
                       annotations: {
-                        cpuThresholdLine: {
+                        scoreLine: {
                           type: 'line',
-                          yMin: cpuThreshold,
-                          yMax: cpuThreshold,
-                          borderColor: 'rgba(239, 68, 68, 0.7)',
+                          yMin: 5,
+                          yMax: 5,
+                          borderColor: isDark ? 'rgba(156, 163, 175, 0.5)' : 'rgba(107, 114, 128, 0.5)',
                           borderWidth: 2,
                           borderDash: [5, 5],
                           label: {
                             display: true,
-                            content: `CPU Threshold: ${cpuThreshold}%`,
-                            position: 'end',
-                            backgroundColor: 'rgba(239, 68, 68, 0.85)',
-                            color: '#ffffff',
-                            font: { size: 10 },
-                            padding: 4
-                          }
-                        },
-                        memThresholdLine: {
-                          type: 'line',
-                          yMin: memThreshold,
-                          yMax: memThreshold,
-                          borderColor: 'rgba(249, 115, 22, 0.7)',
-                          borderWidth: 2,
-                          borderDash: [5, 5],
-                          label: {
-                            display: true,
-                            content: `Mem Threshold: ${memThreshold}%`,
+                            content: `Node Score: ${nodeScores && nodeScores[node.name] ? nodeScores[node.name].score.toFixed(1) : 'N/A'}`,
                             position: 'start',
-                            backgroundColor: 'rgba(249, 115, 22, 0.85)',
-                            color: '#ffffff',
-                            font: { size: 10 },
+                            backgroundColor: isDark ? 'rgba(75, 85, 99, 0.9)' : 'rgba(243, 244, 246, 0.9)',
+                            color: isDark ? '#ffffff' : '#111827',
+                            font: { size: 11, weight: 'bold' },
                             padding: 4
                           }
                         }
@@ -4884,6 +4868,46 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             </div>
                           );
                         })()}
+                        {automationStatus.enabled && (
+                          <button
+                            onClick={async () => {
+                              if (confirm(`Are you sure you want to ${automationStatus.timer_active ? 'pause' : 'resume'} automated migrations?`)) {
+                                try {
+                                  const response = await fetch('/api/automation/toggle-timer', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ active: !automationStatus.timer_active })
+                                  });
+                                  if (response.ok) {
+                                    fetchAutomationStatus();
+                                  } else {
+                                    alert('Failed to toggle timer');
+                                  }
+                                } catch (error) {
+                                  alert('Error: ' + error.message);
+                                }
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
+                              automationStatus.timer_active
+                                ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                                : 'bg-green-600 hover:bg-green-700 text-white'
+                            }`}
+                            title={automationStatus.timer_active ? 'Pause scheduled checks' : 'Resume scheduled checks'}
+                          >
+                            {automationStatus.timer_active ? (
+                              <>
+                                <Pause size={16} />
+                                Pause
+                              </>
+                            ) : (
+                              <>
+                                <Play size={16} />
+                                Resume
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => setCurrentPage('automation')}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
@@ -4894,9 +4918,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         <div className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
                           automationStatus.enabled
                             ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                            : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                            : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-700 dark:text-gray-300'
                         }`}>
-                          {automationStatus.enabled ? 'Active' : 'Disabled'}
+                          {automationStatus.enabled ? (automationStatus.timer_active ? 'Active' : 'Paused') : 'Disabled'}
                         </div>
                       </div>
                     </div>
@@ -7135,7 +7159,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             <div className="relative">
                               <div className="flex justify-between items-center relative z-10">
                                 <span className="text-gray-600 dark:text-gray-400">CPU:</span>
-                                <span className={`font-semibold ${(node.cpu_percent || 0) > cpuThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                <span className="font-semibold text-blue-600 dark:text-blue-400">
                                   {(node.cpu_percent || 0).toFixed(1)}%
                                 </span>
                               </div>
@@ -7144,7 +7168,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   fill="none"
                                   stroke="currentColor"
                                   strokeWidth="4"
-                                  className={(node.cpu_percent || 0) > cpuThreshold ? 'text-red-500' : 'text-blue-500'}
+                                  className="text-blue-500"
                                   points={generateSparkline(node.cpu_percent || 0, 100, 30, 0.3)}
                                 />
                               </svg>
@@ -7154,7 +7178,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             <div className="relative">
                               <div className="flex justify-between items-center relative z-10">
                                 <span className="text-gray-600 dark:text-gray-400">Memory:</span>
-                                <span className={`font-semibold ${(node.mem_percent || 0) > memThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                <span className="font-semibold text-purple-600 dark:text-purple-400">
                                   {(node.mem_percent || 0).toFixed(1)}%
                                 </span>
                               </div>
@@ -7163,7 +7187,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   fill="none"
                                   stroke="currentColor"
                                   strokeWidth="4"
-                                  className={(node.mem_percent || 0) > memThreshold ? 'text-red-500' : 'text-purple-500'}
+                                  className="text-purple-500"
                                   points={generateSparkline(node.mem_percent || 0, 100, 30, 0.25)}
                                 />
                               </svg>
@@ -7173,7 +7197,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             <div className="relative">
                               <div className="flex justify-between items-center relative z-10">
                                 <span className="text-gray-600 dark:text-gray-400">IOWait:</span>
-                                <span className={`font-semibold ${(node.metrics?.current_iowait || 0) > 20 ? 'text-red-600 dark:text-red-400' : (node.metrics?.current_iowait || 0) > 10 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
+                                <span className="font-semibold text-orange-600 dark:text-orange-400">
                                   {(node.metrics?.current_iowait || 0).toFixed(1)}%
                                 </span>
                               </div>
@@ -7182,13 +7206,17 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   fill="none"
                                   stroke="currentColor"
                                   strokeWidth="4"
-                                  className={(node.metrics?.current_iowait || 0) > 20 ? 'text-red-500' : (node.metrics?.current_iowait || 0) > 10 ? 'text-yellow-500' : 'text-green-500'}
+                                  className="text-orange-500"
                                   points={generateSparkline(node.metrics?.current_iowait || 0, 100, 30, 0.35)}
                                 />
                               </svg>
                             </div>
 
                             <div className="flex justify-between pt-1 border-t border-gray-200 dark:border-gray-600">
+                              <span className="text-gray-600 dark:text-gray-400">Score:</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">{nodeScores && nodeScores[node.name] ? nodeScores[node.name].score.toFixed(1) : 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between">
                               <span className="text-gray-600 dark:text-gray-400">Guests:</span>
                               <span className="font-semibold text-gray-900 dark:text-white">{node.guests?.length || 0}</span>
                             </div>
@@ -7210,10 +7238,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           <span className={`text-sm font-medium ${node.status === 'online' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{node.status}</span>
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm mb-4">
-                          <div><span className="text-gray-600 dark:text-gray-400">CPU:</span> <span className={`font-semibold ${(node.cpu_percent || 0) > cpuThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{(node.cpu_percent || 0).toFixed(1)}%</span></div>
-                          <div><span className="text-gray-600 dark:text-gray-400">Memory:</span> <span className={`font-semibold ${(node.mem_percent || 0) > memThreshold ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{(node.mem_percent || 0).toFixed(1)}%</span></div>
-                          <div><span className="text-gray-600 dark:text-gray-400">IOWait:</span> <span className={`font-semibold ${(node.metrics?.current_iowait || 0) > 20 ? 'text-red-600 dark:text-red-400' : (node.metrics?.current_iowait || 0) > 10 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>{(node.metrics?.current_iowait || 0).toFixed(1)}%</span></div>
+                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-sm mb-4">
+                          <div><span className="text-gray-600 dark:text-gray-400">CPU:</span> <span className="font-semibold text-blue-600 dark:text-blue-400">{(node.cpu_percent || 0).toFixed(1)}%</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Memory:</span> <span className="font-semibold text-purple-600 dark:text-purple-400">{(node.mem_percent || 0).toFixed(1)}%</span></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">IOWait:</span> <span className="font-semibold text-orange-600 dark:text-orange-400">{(node.metrics?.current_iowait || 0).toFixed(1)}%</span></div>
                           <div><span className="text-gray-600 dark:text-gray-400">Cores:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.cpu_cores || 0}</span></div>
                           <div><span className="text-gray-600 dark:text-gray-400">Guests:</span> <span className="font-semibold text-gray-900 dark:text-white">{node.guests?.length || 0}</span></div>
                         </div>
@@ -7302,137 +7330,26 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </div>
                     </div>
 
-                    {/* Threshold Mode Toggle and Suggestions */}
+                    {/* Score-Based Recommendation Info */}
                     {!collapsedSections.recommendations && (
-                      <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-3">
-                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Threshold Mode:</span>
-                              <div className="flex items-center gap-2 bg-white dark:bg-gray-700 rounded-lg p-1 border border-gray-300 dark:border-gray-600">
-                                <button
-                                  onClick={() => setThresholdMode('manual')}
-                                  className={`px-3 py-1 text-sm font-medium rounded transition-all ${
-                                    thresholdMode === 'manual'
-                                      ? 'bg-blue-600 text-white'
-                                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600'
-                                  }`}
-                                >
-                                  Manual
-                                </button>
-                                <button
-                                  onClick={() => setThresholdMode('auto')}
-                                  className={`px-3 py-1 text-sm font-medium rounded transition-all ${
-                                    thresholdMode === 'auto'
-                                      ? 'bg-green-600 text-white'
-                                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600'
-                                  }`}
-                                >
-                                  Auto
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                              <RefreshCw size={12} className="text-green-600 dark:text-green-400" />
-                              <span className="text-green-600 dark:text-green-400 font-medium">
-                                Auto-recalculates every {config?.ui_refresh_interval_minutes || 15} minutes
-                              </span>
-                            </div>
+                      <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-300 dark:border-blue-700">
+                        <div className="flex items-start gap-3">
+                          <Info size={20} className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                          <div className="text-sm text-blue-900 dark:text-blue-100">
+                            <p className="font-semibold mb-2">Pure Score-Based Recommendations</p>
+                            <p className="text-blue-800 dark:text-blue-200">
+                              ProxBalance uses intelligent scoring to evaluate every guest on every node. Migrations are recommended when moving a guest would improve its score by <span className="font-bold">15+ points</span>.
+                            </p>
+                            <ul className="mt-2 ml-4 space-y-1 text-blue-700 dark:text-blue-300 text-xs list-disc">
+                              <li>Lower score = better node for that guest</li>
+                              <li>Scoring considers: current load (50%), 24h average (30%), 7-day average (20%)</li>
+                              <li>Penalties for: high CPU/memory, rising trends, load spikes, predicted overload</li>
+                              <li>No arbitrary thresholds - purely data-driven decisions</li>
+                            </ul>
                           </div>
-                          {thresholdSuggestions && thresholdMode === 'manual' && (
-                            <button
-                              onClick={() => {
-                                setCpuThreshold(thresholdSuggestions.suggested_cpu_threshold);
-                                setMemThreshold(thresholdSuggestions.suggested_mem_threshold);
-                                setIowaitThreshold(thresholdSuggestions.suggested_iowait_threshold);
-                              }}
-                              className="flex items-center gap-2 px-3 py-1 text-sm bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600"
-                            >
-                              <CheckCircle size={14} />
-                              Apply Suggested
-                            </button>
-                          )}
                         </div>
-                        {thresholdSuggestions && (
-                          <div className="text-xs space-y-2 mt-3 p-3 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-gray-700 dark:text-gray-300">Intelligent Analysis</span>
-                                <span className="text-gray-500 dark:text-gray-500">({thresholdSuggestions.analysis_period} of data)</span>
-                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                  thresholdSuggestions.confidence === 'high' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' :
-                                  thresholdSuggestions.confidence === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' :
-                                  'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                                }`}>
-                                  {thresholdSuggestions.confidence} confidence
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => setCollapsedSections(prev => ({...prev, analysisDetails: !prev.analysisDetails}))}
-                                className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                              >
-                                {collapsedSections.analysisDetails ? 'Show Details' : 'Hide Details'}
-                                {collapsedSections.analysisDetails ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-                              </button>
-                            </div>
-
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <span className="font-medium text-gray-700 dark:text-gray-300">Suggested Thresholds:</span>
-                              <span className="text-blue-600 dark:text-blue-400 font-semibold">CPU: {thresholdSuggestions.suggested_cpu_threshold}%</span>
-                              <span className="text-purple-600 dark:text-purple-400 font-semibold">Memory: {thresholdSuggestions.suggested_mem_threshold}%</span>
-                              <span className="text-orange-600 dark:text-orange-400 font-semibold">IOWait: {thresholdSuggestions.suggested_iowait_threshold}%</span>
-                            </div>
-
-                            <p className="text-gray-600 dark:text-gray-400 italic">{thresholdSuggestions.summary}</p>
-
-                            {!collapsedSections.analysisDetails && thresholdSuggestions.adjustments && (
-                              <div className="mt-3 space-y-2 border-t border-gray-200 dark:border-gray-700 pt-2">
-                                <div className="font-medium text-gray-700 dark:text-gray-300">Threshold Adjustments:</div>
-                                {thresholdSuggestions.adjustments.map((adj, idx) => (
-                                  <div key={idx} className="flex items-start gap-2 text-xs">
-                                    <span className={`px-2 py-0.5 rounded font-mono ${
-                                      adj.adjustment.startsWith('+') ? 'bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300' :
-                                      adj.adjustment.startsWith('-') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' :
-                                      'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                                    }`}>
-                                      {adj.adjustment}
-                                    </span>
-                                    <div className="flex-1">
-                                      <span className="font-medium text-gray-700 dark:text-gray-300">{adj.factor}:</span>
-                                      <span className="text-gray-600 dark:text-gray-400"> {adj.value}</span>
-                                      <span className="text-gray-500 dark:text-gray-500 italic"> → {adj.direction}</span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {thresholdMode === 'auto' && (
-                              <p className="text-green-600 dark:text-green-400 font-medium mt-2">✓ Auto mode enabled - thresholds update automatically</p>
-                            )}
-                          </div>
-                        )}
                       </div>
                     )}
-
-                    <div className="flex flex-wrap gap-4">
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">CPU Threshold:</label>
-                        <input type="range" min="30" max="90" value={cpuThreshold} onChange={(e) => setCpuThreshold(Number(e.target.value))} className="w-32" disabled={thresholdMode === 'auto'} />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{cpuThreshold}%</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Memory Threshold:</label>
-                        <input type="range" min="40" max="95" value={memThreshold} onChange={(e) => setMemThreshold(Number(e.target.value))} className="w-32" disabled={thresholdMode === 'auto'} />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{memThreshold}%</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">IOWait Threshold:</label>
-                        <input type="range" min="10" max="50" value={iowaitThreshold} onChange={(e) => setIowaitThreshold(Number(e.target.value))} className="w-32" disabled={thresholdMode === 'auto'} />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{iowaitThreshold}%</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-500 italic">(&lt;10% good, 10-20% acceptable, 20-30% high, &gt;30% critical)</span>
-                      </div>
-                    </div>
                   </div>
 
                   {/* Batch Migration Status Panel */}
@@ -7612,11 +7529,47 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     </div>
                                   </div>
                                 )}
-                                <div className={`text-xs font-mono p-1 rounded mt-1 ${
-                                  isCompleted
-                                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-                                    : 'bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300'
-                                }`}>{rec.command}</div>
+                                <div className="mt-1">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const commandKey = `command-${idx}`;
+                                      setCollapsedSections(prev => ({
+                                        ...prev,
+                                        [commandKey]: !prev[commandKey]
+                                      }));
+                                    }}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                                  >
+                                    <Terminal size={12} />
+                                    {collapsedSections[`command-${idx}`] ? 'Show' : 'Hide'} command
+                                  </button>
+                                  {!collapsedSections[`command-${idx}`] && (
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigator.clipboard.writeText(rec.command);
+                                        // Show tooltip or feedback
+                                        const btn = e.currentTarget;
+                                        const originalText = btn.textContent;
+                                        btn.textContent = 'Copied!';
+                                        btn.classList.add('bg-green-100', 'dark:bg-green-900');
+                                        setTimeout(() => {
+                                          btn.textContent = originalText;
+                                          btn.classList.remove('bg-green-100', 'dark:bg-green-900');
+                                        }, 1000);
+                                      }}
+                                      className={`text-xs font-mono p-2 rounded mt-1 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all ${
+                                        isCompleted
+                                          ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                                          : 'bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300'
+                                      }`}
+                                      title="Click to copy"
+                                    >
+                                      {rec.command}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                               <div className="ml-4 flex items-center gap-2 shrink-0">
                                 {(() => {
@@ -8650,8 +8603,41 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   </div>
                                 )}
 
-                                <div className="text-xs font-mono bg-gray-200 dark:bg-gray-700 p-2 rounded mt-2 text-gray-700 dark:text-gray-300">
-                                  {rec.command}
+                                <div className="mt-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const commandKey = `ai-command-${idx}`;
+                                      setCollapsedSections(prev => ({
+                                        ...prev,
+                                        [commandKey]: !prev[commandKey]
+                                      }));
+                                    }}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                                  >
+                                    <Terminal size={12} />
+                                    {collapsedSections[`ai-command-${idx}`] ? 'Show' : 'Hide'} command
+                                  </button>
+                                  {!collapsedSections[`ai-command-${idx}`] && (
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigator.clipboard.writeText(rec.command);
+                                        const btn = e.currentTarget;
+                                        const originalText = btn.textContent;
+                                        btn.textContent = 'Copied!';
+                                        btn.classList.add('bg-green-100', 'dark:bg-green-900');
+                                        setTimeout(() => {
+                                          btn.textContent = originalText;
+                                          btn.classList.remove('bg-green-100', 'dark:bg-green-900');
+                                        }, 1000);
+                                      }}
+                                      className="text-xs font-mono bg-gray-200 dark:bg-gray-700 p-2 rounded mt-1 text-gray-700 dark:text-gray-300 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
+                                      title="Click to copy"
+                                    >
+                                      {rec.command}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>

@@ -1273,18 +1273,26 @@ def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: 
         return True  # Allow migration on error to avoid blocking valid migrations
 
 
-def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, mem_threshold: float, iowait_threshold: float = 30.0, maintenance_nodes: set = None) -> List[Dict]:
+def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 60.0, mem_threshold: float = 70.0, iowait_threshold: float = 30.0, maintenance_nodes: set = None) -> List[Dict]:
     """
-    Generate intelligent migration recommendations using comprehensive cluster analysis
+    Generate intelligent migration recommendations using pure score-based analysis
 
-    Enhanced algorithm considers:
-    - CPU, Memory, IOWait, Load Average, Storage pressure
-    - Predictive load calculation (post-migration state)
-    - Historical trend analysis
-    - HA status (avoids migrating HA-managed guests)
-    - Smart guest selection (knapsack algorithm)
-    - Weighted target scoring with headroom analysis
-    - Storage compatibility (ensures target has required storage)
+    Pure score-based approach:
+    - Calculates suitability score for each guest on its current node
+    - Calculates suitability score for each guest on all potential target nodes
+    - Recommends migration if score improvement is significant (>15 points)
+    - No arbitrary thresholds - uses penalty-based scoring system
+
+    Scoring factors (lower score = better):
+    - Current load (CPU, Memory, IOWait) - weighted 50% current, 30% 24h, 20% 7d
+    - Predicted load after migration
+    - Historical trends (rising/falling)
+    - Load spikes and sustained high load
+    - Storage compatibility
+    - Anti-affinity rules
+    - Maintenance mode (priority evacuation)
+
+    Thresholds are only used internally by calculate_target_node_score for reference
     """
     if maintenance_nodes is None:
         maintenance_nodes = set()
@@ -1317,108 +1325,47 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, me
     except Exception as e:
         print(f"Warning: Could not initialize Proxmox client for storage checks: {e}", file=sys.stderr)
 
-    # Step 1: Identify overloaded nodes and maintenance nodes
-    overloaded = []
+    # Minimum score improvement required to recommend migration (in points)
+    MIN_SCORE_IMPROVEMENT = 15
 
-    # First, add maintenance nodes (highest priority for evacuation)
-    for node_name in maintenance_nodes:
-        if node_name in nodes:
-            node = nodes[node_name]
-            metrics = node.get("metrics", {})
-            overloaded.append({
-                "node": node_name,
-                "node_obj": node,
-                "cpu": metrics.get("current_cpu", 0),
-                "mem": metrics.get("current_mem", 0),
-                "iowait": metrics.get("current_iowait", 0),
-                "reason": "maintenance",
-                "health_score": 200  # Highest priority for evacuation
-            })
+    # Maintenance nodes get priority evacuation regardless of score
+    MAINTENANCE_SCORE_BOOST = 100  # Extra improvement to prioritize evacuation
 
-    # Then check for overloaded nodes (skip maintenance nodes as they're already added)
-    for node_name, node in nodes.items():
-        if node_name in maintenance_nodes:
-            continue
+    # Step 1: Calculate current score for each guest on its current node
+    # Step 2: Calculate potential scores on all other nodes
+    # Step 3: Recommend migration if score improvement is significant
 
+    # Create list of all migration candidates sorted by potential benefit
+    migration_candidates = []
+
+    for vmid_key, guest in guests.items():
         try:
-            metrics = node.get("metrics", {})
+            src_node_name = guest.get("node")
+            if not src_node_name or src_node_name not in nodes:
+                continue
 
-            # Use 7-day averages for more stable, trend-aware decisions
-            # Fall back to 24-hour if week data unavailable, then current
-            cpu_check = metrics.get("avg_cpu_week", 0) or metrics.get("avg_cpu", 0) if metrics.get("has_historical") else metrics.get("current_cpu", 0)
-            mem_check = metrics.get("avg_mem_week", 0) or metrics.get("avg_mem", 0) if metrics.get("has_historical") else metrics.get("current_mem", 0)
-            iowait_check = metrics.get("avg_iowait_week", 0) or metrics.get("avg_iowait", 0) if metrics.get("has_historical") else metrics.get("current_iowait", 0)
+            src_node = nodes[src_node_name]
+            if src_node.get("status") != "online":
+                continue
 
-            # Consider trends: if load is falling, be less aggressive about migrations
-            cpu_trend = metrics.get("cpu_trend", "stable")
-            mem_trend = metrics.get("mem_trend", "stable")
+            # Skip guests with ignore tag (unless on maintenance node)
+            if guest.get("tags", {}).get("has_ignore", False) and src_node_name not in maintenance_nodes:
+                continue
 
-            # Adjust thresholds based on trends
-            cpu_threshold_adjusted = cpu_threshold
-            mem_threshold_adjusted = mem_threshold
+            # Skip HA-managed guests (unless on maintenance node)
+            if guest.get("ha_managed", False) and src_node_name not in maintenance_nodes:
+                continue
 
-            # If trending down, increase threshold (less likely to trigger migration)
-            if cpu_trend == "falling":
-                cpu_threshold_adjusted += 10  # More tolerant if load is decreasing
-            elif cpu_trend == "rising":
-                cpu_threshold_adjusted -= 5   # More aggressive if load is increasing
+            # Calculate current score (how well current node suits this guest)
+            current_score = calculate_target_node_score(src_node, guest, {}, cpu_threshold, mem_threshold)
 
-            if mem_trend == "falling":
-                mem_threshold_adjusted += 10
-            elif mem_trend == "rising":
-                mem_threshold_adjusted -= 5
+            # For maintenance nodes, artificially inflate current score to prioritize evacuation
+            if src_node_name in maintenance_nodes:
+                current_score += MAINTENANCE_SCORE_BOOST
 
-            # Check if overloaded (CPU, Memory, or high IOWait) using trend-adjusted thresholds
-            is_overloaded = False
-            reason = None
-
-            if cpu_check > cpu_threshold_adjusted:
-                is_overloaded = True
-                reason = "cpu"
-            elif mem_check > mem_threshold_adjusted:
-                is_overloaded = True
-                reason = "mem"
-            elif iowait_check > iowait_threshold:
-                is_overloaded = True
-                reason = "iowait"
-
-            if is_overloaded:
-                overloaded.append({
-                    "node": node_name,
-                    "node_obj": node,
-                    "cpu": cpu_check,
-                    "mem": mem_check,
-                    "iowait": iowait_check,
-                    "reason": reason,
-                    "health_score": calculate_node_health_score(node, metrics)
-                })
-        except Exception as e:
-            print(f"Error analyzing node {node_name}: {str(e)}", file=sys.stderr)
-            import traceback
-            traceback.print_exc()
-            continue
-
-    # Sort overloaded nodes by health score (worst first)
-    overloaded.sort(key=lambda x: x["health_score"], reverse=True)
-
-    # Step 2: For each overloaded node, find best migrations
-    for overload in overloaded:
-        src_node_name = overload["node"]
-        src_node = overload["node_obj"]
-
-        # Select guests to migrate using intelligent selection
-        selected_vmids = select_guests_to_migrate(src_node, guests, cpu_threshold, mem_threshold, overload["reason"])
-
-        if not selected_vmids:
-            continue
-
-        # Step 3: For each selected guest, find best target
-        for vmid_key in selected_vmids:
-            guest = guests[vmid_key]
-
-            # Find best target node
+            # Find best alternative target
             best_target = None
-            best_score = 999999
+            best_target_score = 999999
 
             for tgt_name, tgt_node in nodes.items():
                 try:
@@ -1461,8 +1408,8 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, me
                     # Calculate target suitability score
                     score = calculate_target_node_score(tgt_node, guest, pending_target_guests, cpu_threshold, mem_threshold)
 
-                    if score < best_score:
-                        best_score = score
+                    if score < best_target_score:
+                        best_target_score = score
                         best_target = tgt_name
 
                 except Exception as e:
@@ -1471,48 +1418,87 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, me
                     traceback.print_exc()
                     continue
 
-            # Create recommendation if target found
-            if best_target and best_score < 999999:
-                try:
-                    cmd_type = "qm" if guest.get("type") == "VM" else "pct"
-                    cmd_flag = "--online" if guest.get("type") == "VM" else "--restart"
-                    vmid_int = int(vmid_key) if isinstance(vmid_key, str) else vmid_key
+            # Calculate score improvement
+            score_improvement = current_score - best_target_score
 
-                    # Enhanced reason with more context
-                    if overload["reason"] == "maintenance":
-                        reason = f"Node maintenance - evacuating {src_node_name}"
-                    elif overload["reason"] == "cpu":
-                        reason = f"Balance CPU load (src: {overload['cpu']:.1f}%, target: {nodes[best_target].get('metrics', {}).get('avg_cpu', 0):.1f}%)"
-                    elif overload["reason"] == "mem":
-                        reason = f"Balance Memory load (src: {overload['mem']:.1f}%, target: {nodes[best_target].get('metrics', {}).get('avg_mem', 0):.1f}%)"
-                    elif overload["reason"] == "iowait":
-                        reason = f"Reduce IOWait pressure (src: {overload['iowait']:.1f}%)"
-                    else:
-                        reason = "Balance cluster load"
+            # Only recommend if improvement is significant
+            if best_target and score_improvement >= MIN_SCORE_IMPROVEMENT:
+                migration_candidates.append({
+                    "vmid": vmid_key,
+                    "guest": guest,
+                    "source_node": src_node_name,
+                    "target_node": best_target,
+                    "current_score": current_score,
+                    "target_score": best_target_score,
+                    "improvement": score_improvement,
+                    "is_maintenance": src_node_name in maintenance_nodes
+                })
 
-                    recommendations.append({
-                        "vmid": vmid_int,
-                        "name": guest.get("name", "unknown"),
-                        "type": guest.get("type", "unknown"),
-                        "source_node": src_node_name,
-                        "target_node": best_target,
-                        "target_node_score": round(best_score, 2),  # Lower score = better target
-                        "reason": reason,
-                        "mem_gb": guest.get("mem_max_gb", 0),
-                        "command": "{} migrate {} {} {}".format(cmd_type, vmid_int, best_target, cmd_flag),
-                        "confidence_score": round(100 - best_score, 1)  # Higher score = more confident
-                    })
+        except Exception as e:
+            print(f"Error analyzing guest {vmid_key}: {str(e)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            continue
 
-                    # Track pending migration
-                    if best_target not in pending_target_guests:
-                        pending_target_guests[best_target] = []
-                    pending_target_guests[best_target].append(guest)
+    # Sort candidates by improvement (best first), prioritizing maintenance evacuations
+    migration_candidates.sort(key=lambda x: (not x["is_maintenance"], -x["improvement"]))
 
-                except Exception as e:
-                    print(f"Error creating recommendation for {vmid_key}: {str(e)}", file=sys.stderr)
-                    import traceback
-                    traceback.print_exc()
-                    continue
+    # Build final recommendations from candidates
+    for candidate in migration_candidates:
+        try:
+            vmid_key = candidate["vmid"]
+            guest = candidate["guest"]
+            src_node_name = candidate["source_node"]
+            best_target = candidate["target_node"]
+            best_score = candidate["target_score"]
+            score_improvement = candidate["improvement"]
+
+            cmd_type = "qm" if guest.get("type") == "VM" else "pct"
+            cmd_flag = "--online" if guest.get("type") == "VM" else "--restart"
+            vmid_int = int(vmid_key) if isinstance(vmid_key, str) else vmid_key
+
+            # Generate reason based on primary benefit
+            if candidate["is_maintenance"]:
+                reason = f"Node maintenance - evacuating {src_node_name}"
+            else:
+                src_metrics = nodes[src_node_name].get("metrics", {})
+                tgt_metrics = nodes[best_target].get("metrics", {})
+
+                # Weighted metrics for reason
+                src_cpu = (src_metrics.get("current_cpu", 0) * 0.5 + src_metrics.get("avg_cpu", 0) * 0.3 + src_metrics.get("avg_cpu_week", 0) * 0.2)
+                src_mem = (src_metrics.get("current_mem", 0) * 0.5 + src_metrics.get("avg_mem", 0) * 0.3 + src_metrics.get("avg_mem_week", 0) * 0.2)
+                tgt_cpu = (tgt_metrics.get("current_cpu", 0) * 0.5 + tgt_metrics.get("avg_cpu", 0) * 0.3 + tgt_metrics.get("avg_cpu_week", 0) * 0.2)
+                tgt_mem = (tgt_metrics.get("current_mem", 0) * 0.5 + tgt_metrics.get("avg_mem", 0) * 0.3 + tgt_metrics.get("avg_mem_week", 0) * 0.2)
+
+                if src_cpu > src_mem:
+                    reason = f"Balance CPU load (src: {src_cpu:.1f}%, target: {tgt_cpu:.1f}%)"
+                else:
+                    reason = f"Balance Memory load (src: {src_mem:.1f}%, target: {tgt_mem:.1f}%)"
+
+            recommendations.append({
+                "vmid": vmid_int,
+                "name": guest.get("name", "unknown"),
+                "type": guest.get("type", "unknown"),
+                "source_node": src_node_name,
+                "target_node": best_target,
+                "target_node_score": round(best_score, 2),  # Lower score = better target
+                "score_improvement": round(score_improvement, 2),  # How much better
+                "reason": reason,
+                "mem_gb": guest.get("mem_max_gb", 0),
+                "command": "{} migrate {} {} {}".format(cmd_type, vmid_int, best_target, cmd_flag),
+                "confidence_score": round(min(100, score_improvement * 2), 1)  # Convert improvement to confidence
+            })
+
+            # Track pending migration
+            if best_target not in pending_target_guests:
+                pending_target_guests[best_target] = []
+            pending_target_guests[best_target].append(guest)
+
+        except Exception as e:
+            print(f"Error creating recommendation for {vmid_key}: {str(e)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            continue
 
     return recommendations
 
