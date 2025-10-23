@@ -1015,6 +1015,77 @@ def select_guests_to_migrate(node: Dict, guests: Dict, cpu_threshold: float, mem
     return selected
 
 
+def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: str, proxmox) -> bool:
+    """
+    Check if target node has all storage volumes required by the guest.
+
+    Args:
+        guest: Guest dictionary with vmid and type
+        src_node_name: Source node name
+        tgt_node_name: Target node name
+        proxmox: ProxmoxAPI client
+
+    Returns:
+        True if target has all required storage, False otherwise
+    """
+    try:
+        vmid = guest.get('vmid')
+        guest_type = guest.get('type', 'VM')
+
+        # Get guest configuration to extract storage volumes
+        guest_config = None
+        try:
+            if guest_type == 'VM':
+                guest_config = proxmox.nodes(src_node_name).qemu(vmid).config.get()
+            else:  # CT
+                guest_config = proxmox.nodes(src_node_name).lxc(vmid).config.get()
+        except Exception as e:
+            print(f"Warning: Could not get config for guest {vmid}: {e}", file=sys.stderr)
+            return True  # Allow migration if we can't determine storage (avoid blocking valid migrations)
+
+        if not guest_config:
+            return True
+
+        # Extract storage volumes from config
+        storage_volumes = set()
+        for key, value in guest_config.items():
+            # Disk keys like scsi0, ide0, virtio0, mp0, rootfs
+            if any(key.startswith(prefix) for prefix in ['scsi', 'ide', 'virtio', 'sata', 'mp', 'rootfs']):
+                # Value format is typically "storage:vm-disk-id" or "storage:subvol-id"
+                if isinstance(value, str) and ':' in value:
+                    storage_id = value.split(':')[0]
+                    storage_volumes.add(storage_id)
+
+        if not storage_volumes:
+            return True  # No storage requirements, allow migration
+
+        # Get target node storage
+        try:
+            target_storage_list = proxmox.nodes(tgt_node_name).storage.get()
+            available_storage = set()
+            for storage in target_storage_list:
+                if storage.get('enabled', 1) and storage.get('active', 0):
+                    available_storage.add(storage.get('storage'))
+        except Exception as e:
+            print(f"Warning: Could not get storage for node {tgt_node_name}: {e}", file=sys.stderr)
+            return True  # Allow migration if we can't determine target storage
+
+        # Check if all required storage is available on target
+        missing_storage = storage_volumes - available_storage
+
+        if missing_storage:
+            print(f"Storage incompatibility: Guest {vmid} requires storage {missing_storage} not available on {tgt_node_name}", file=sys.stderr)
+            return False
+
+        return True
+
+    except Exception as e:
+        print(f"Error checking storage compatibility for guest {guest.get('vmid')}: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return True  # Allow migration on error to avoid blocking valid migrations
+
+
 def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, mem_threshold: float, iowait_threshold: float = 30.0, maintenance_nodes: set = None) -> List[Dict]:
     """
     Generate intelligent migration recommendations using comprehensive cluster analysis
@@ -1026,12 +1097,38 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, me
     - HA status (avoids migrating HA-managed guests)
     - Smart guest selection (knapsack algorithm)
     - Weighted target scoring with headroom analysis
+    - Storage compatibility (ensures target has required storage)
     """
     if maintenance_nodes is None:
         maintenance_nodes = set()
 
     recommendations = []
     pending_target_guests = {}
+
+    # Get Proxmox client for storage compatibility checks
+    proxmox = None
+    try:
+        from proxmoxer import ProxmoxAPI
+        config = load_config()
+
+        token_id = config.get('proxmox_api_token_id', '')
+        token_secret = config.get('proxmox_api_token_secret', '')
+        proxmox_host = config.get('proxmox_host', 'localhost')
+        proxmox_port = config.get('proxmox_port', 8006)
+        verify_ssl = config.get('proxmox_verify_ssl', False)
+
+        if token_id and token_secret:
+            user, token_name = token_id.split('!', 1)
+            proxmox = ProxmoxAPI(
+                proxmox_host,
+                user=user,
+                token_name=token_name,
+                token_value=token_secret,
+                port=proxmox_port,
+                verify_ssl=verify_ssl
+            )
+    except Exception as e:
+        print(f"Warning: Could not initialize Proxmox client for storage checks: {e}", file=sys.stderr)
 
     # Step 1: Identify overloaded nodes and maintenance nodes
     overloaded = []
@@ -1170,6 +1267,10 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, me
                     if conflict:
                         continue
 
+                    # Check storage compatibility (skip target if storage is incompatible)
+                    if proxmox and not check_storage_compatibility(guest, src_node_name, tgt_name, proxmox):
+                        continue
+
                     # Calculate target suitability score
                     score = calculate_target_node_score(tgt_node, guest, pending_target_guests, cpu_threshold, mem_threshold)
 
@@ -1298,6 +1399,9 @@ def execute_migration():
         })
 
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        app.logger.error(f"Migration error for VM {vmid}: {str(e)}\n{error_trace}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

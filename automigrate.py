@@ -404,6 +404,8 @@ def get_recommendations(config: Dict[str, Any]) -> Dict[str, Any]:
 def execute_migration(
     vmid: int,
     target_node: str,
+    source_node: str,
+    guest_type: str,
     config: Dict[str, Any],
     dry_run: bool = True
 ) -> Dict[str, Any]:
@@ -413,6 +415,7 @@ def execute_migration(
     Args:
         vmid: VM ID to migrate
         target_node: Target node name
+        source_node: Source node name
         config: Configuration dictionary
         dry_run: If True, don't actually migrate
 
@@ -420,28 +423,96 @@ def execute_migration(
         Result dictionary with success status
     """
     if dry_run:
-        logger.info(f"[DRY RUN] Would migrate VM {vmid} to {target_node}")
+        logger.info(f"[DRY RUN] Would migrate VM {vmid} from {source_node} to {target_node}")
         return {"success": True, "dry_run": True}
 
     try:
+        import time
+        start_time = time.time()
+
         # Call migration API endpoint
         response = requests.post(
             'http://127.0.0.1:5000/api/migrate',
             json={
                 'vmid': vmid,
-                'target_node': target_node
+                'target_node': target_node,
+                'source_node': source_node,
+                'type': guest_type
             },
             timeout=300
         )
         response.raise_for_status()
         result = response.json()
 
-        if result.get('success'):
-            logger.info(f"Successfully migrated VM {vmid} to {target_node}")
-        else:
-            logger.error(f"Failed to migrate VM {vmid}: {result.get('message', 'Unknown error')}")
+        if not result.get('success'):
+            logger.error(f"Failed to start migration for VM {vmid}: {result.get('error', 'Unknown error')}")
+            return result
 
-        return result
+        task_id = result.get('task_id')
+        if not task_id:
+            logger.warning(f"Migration started for VM {vmid} but no task_id returned")
+            return result
+
+        logger.info(f"Migration started for VM {vmid}, task_id: {task_id}. Polling for completion...")
+
+        # Poll task status until completion
+        max_wait = 600  # 10 minutes max
+        poll_interval = 5  # Check every 5 seconds
+        elapsed = 0
+
+        while elapsed < max_wait:
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+            try:
+                # Check task status
+                task_response = requests.get(
+                    f'http://127.0.0.1:5000/api/tasks/{source_node}/{task_id}',
+                    timeout=10
+                )
+
+                if task_response.status_code == 200:
+                    task_status = task_response.json()
+
+                    if task_status.get('success') and task_status.get('status'):
+                        status = task_status['status']
+
+                        # Check if task is complete
+                        if status == 'stopped':
+                            exitstatus = task_status.get('exitstatus', 'unknown')
+                            duration = int(time.time() - start_time)
+
+                            if exitstatus == 'OK':
+                                logger.info(f"Migration completed successfully for VM {vmid} (duration: {duration}s)")
+                                return {
+                                    "success": True,
+                                    "task_id": task_id,
+                                    "duration": duration,
+                                    "status": "completed"
+                                }
+                            else:
+                                logger.error(f"Migration failed for VM {vmid}: {exitstatus}")
+                                return {
+                                    "success": False,
+                                    "task_id": task_id,
+                                    "duration": duration,
+                                    "status": "failed",
+                                    "error": f"Task failed with status: {exitstatus}"
+                                }
+            except Exception as poll_err:
+                logger.warning(f"Error polling task status for VM {vmid}: {poll_err}")
+                continue
+
+        # Timeout reached
+        duration = int(time.time() - start_time)
+        logger.warning(f"Migration polling timeout for VM {vmid} after {duration}s")
+        return {
+            "success": True,  # Migration started, but we stopped polling
+            "task_id": task_id,
+            "duration": duration,
+            "status": "timeout",
+            "warning": "Migration status polling timed out"
+        }
 
     except Exception as e:
         logger.error(f"Error migrating VM {vmid}: {e}")
@@ -719,13 +790,21 @@ def main():
         for rec in to_migrate:
             vmid = rec['vmid']
             target = rec['target_node']
+            source = rec['source_node']
+            guest_type = rec.get('type', 'VM')  # Default to VM if type not specified
 
-            logger.info(f"Migrating VM {vmid} ({rec['name']}) to {target} - {rec['reason']}")
+            logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) to {target} - {rec['reason']}")
 
-            result = execute_migration(vmid, target, config, dry_run=dry_run)
+            result = execute_migration(vmid, target, source, guest_type, config, dry_run=dry_run)
 
-            # Record migration
-            record_migration({
+            # Determine status based on result
+            if result.get('success'):
+                status = result.get('status', 'completed')  # Use task status if available
+            else:
+                status = 'failed'
+
+            # Record migration with task_id if available
+            migration_record = {
                 'id': str(uuid.uuid4()),
                 'timestamp': datetime.utcnow().isoformat(),
                 'vmid': vmid,
@@ -734,12 +813,22 @@ def main():
                 'target_node': target,
                 'reason': rec['reason'],
                 'confidence_score': rec['confidence_score'],
-                'status': 'completed' if result.get('success') else 'failed',
+                'status': status,
                 'duration_seconds': result.get('duration', 0),
                 'initiated_by': 'automated',
                 'dry_run': dry_run,
                 'window_name': window_msg
-            })
+            }
+
+            # Add task_id if present
+            if result.get('task_id'):
+                migration_record['task_id'] = result['task_id']
+
+            # Add error message if present
+            if result.get('error'):
+                migration_record['error'] = result['error']
+
+            record_migration(migration_record)
 
             if result.get('success'):
                 success_count += 1
