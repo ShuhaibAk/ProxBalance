@@ -8,10 +8,83 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>ProxBalance - Cluster Optimization</title>
-    
+
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=2">
-    
+
+    <!-- Critical CSS - Loads instantly for splash screen -->
+    <style>
+      /* Reset and base styles */
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
+
+      /* Loading Screen - Critical CSS inline for instant display */
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.5s ease-out;
+      }
+      #loading-screen.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .loading-logo {
+        width: 120px;
+        height: 120px;
+        margin-bottom: 2rem;
+        filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.3));
+        animation: balance 2s ease-in-out infinite;
+        display: block;
+        background: transparent;
+        clip-path: inset(2px 2px 2px 2px);
+      }
+      @keyframes balance {
+        0% { transform: rotate(0deg) scale(1); }
+        15% { transform: rotate(-8deg) scale(1.05); }
+        30% { transform: rotate(8deg) scale(1.1); }
+        45% { transform: rotate(-6deg) scale(1.05); }
+        60% { transform: rotate(6deg) scale(1.08); }
+        75% { transform: rotate(-3deg) scale(1.03); }
+        85% { transform: rotate(2deg) scale(1.02); }
+        95% { transform: rotate(-1deg) scale(1.01); }
+        100% { transform: rotate(0deg) scale(1); }
+      }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .loading-spinner {
+        width: 60px;
+        height: 60px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1.5rem;
+      }
+      .loading-text {
+        color: white;
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+      .loading-subtext {
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.875rem;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+    </style>
+
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -52,64 +125,7 @@
         animation: balance 2s ease-in-out;
       }
 
-      /* Loading Screen Styles */
-      #loading-screen {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        transition: opacity 0.5s ease-out;
-      }
-
-      #loading-screen.hidden {
-        opacity: 0;
-        pointer-events: none;
-      }
-
-      .loading-logo {
-        width: 120px;
-        height: 120px;
-        margin-bottom: 2rem;
-        animation: balance 2s ease-in-out infinite;
-        filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.3));
-      }
-
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-
-      .loading-spinner {
-        width: 60px;
-        height: 60px;
-        border: 4px solid rgba(255, 255, 255, 0.2);
-        border-top-color: #fff;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 1.5rem;
-      }
-
-      .loading-text {
-        color: white;
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      }
-
-      .loading-subtext {
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 0.875rem;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-      }
-
+      /* Skeleton loader styles */
       @keyframes shimmer {
         0% { background-position: -1000px 0; }
         100% { background-position: 1000px 0; }
