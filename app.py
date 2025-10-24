@@ -5319,12 +5319,19 @@ def run_automigrate():
 
         # Run automation in background - return immediately without waiting
         # This allows long-running migrations to complete without HTTP timeout
-        subprocess.Popen(
-            [venv_python, script_path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=BASE_PATH
-        )
+        # Log output to file for debugging
+        log_file = os.path.join(BASE_PATH, 'automigrate_manual.log')
+        with open(log_file, 'a') as f:
+            f.write(f"\n\n{'='*80}\n")
+            f.write(f"Manual run started at {datetime.datetime.now().isoformat()}\n")
+            f.write(f"{'='*80}\n\n")
+            f.flush()
+            subprocess.Popen(
+                [venv_python, script_path],
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                cwd=BASE_PATH
+            )
 
         return jsonify({
             "success": True,

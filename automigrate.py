@@ -394,6 +394,42 @@ def check_target_node_safety(target_node: str, config: Dict[str, Any], cache_dat
     return True, "Target node is safe"
 
 
+def validates_resource_improvement(recommendation: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    Validate that a migration will actually improve the stated resource imbalance.
+
+    Parses the reason string (e.g., "Balance Memory load (src: 41.6%, target: 53.5%)")
+    and ensures target has lower load than source.
+
+    Args:
+        recommendation: Recommendation dict with 'reason' field
+
+    Returns:
+        Tuple of (is_valid, message)
+    """
+    import re
+
+    reason = recommendation.get('reason', '')
+
+    # Look for pattern like "Balance X load (src: Y%, target: Z%)"
+    pattern = r'Balance\s+(\w+)\s+load\s+\(src:\s+([\d.]+)%,\s+target:\s+([\d.]+)%\)'
+    match = re.search(pattern, reason)
+
+    if not match:
+        # No parseable balance reason - allow it (might be maintenance evac, etc.)
+        return True, "No resource balance pattern found"
+
+    resource_type = match.group(1)  # CPU, Memory, etc.
+    src_pct = float(match.group(2))
+    target_pct = float(match.group(3))
+
+    # Target should have LOWER load than source for balance migrations
+    if target_pct >= src_pct:
+        return False, f"Invalid balance: {resource_type} target load ({target_pct:.1f}%) >= source load ({src_pct:.1f}%)"
+
+    return True, f"Valid balance: {resource_type} source ({src_pct:.1f}%) > target ({target_pct:.1f}%)"
+
+
 def get_recommendations(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Get migration recommendations from the API.
@@ -835,6 +871,12 @@ def main():
                         guest, r['target_node'], cache_data, rules
                     )
                     if not ok:
+                        continue
+
+                    # Validate resource improvement for balance migrations
+                    is_valid, balance_msg = validates_resource_improvement(r)
+                    if not is_valid:
+                        logger.info(f"Skipping VM {vmid}: {balance_msg}")
                         continue
 
                 filtered.append(r)

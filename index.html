@@ -4896,44 +4896,61 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             </div>
                           );
                         })()}
-                        {automationStatus.enabled && (
-                          <button
-                            onClick={async () => {
-                              try {
-                                const response = await fetch('/api/automigrate/toggle-timer', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ active: !automationStatus.timer_active })
-                                });
-                                if (response.ok) {
-                                  fetchAutomationStatus();
-                                } else {
-                                  console.error('Failed to toggle timer');
-                                }
-                              } catch (error) {
-                                console.error('Error toggling timer:', error);
+
+                        {/* Combined Status & Pause/Resume Button */}
+                        <button
+                          onClick={async () => {
+                            if (!automationStatus.enabled) return;
+                            try {
+                              const response = await fetch('/api/automigrate/toggle-timer', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ active: !automationStatus.timer_active })
+                              });
+                              if (response.ok) {
+                                fetchAutomationStatus();
+                              } else {
+                                console.error('Failed to toggle timer');
                               }
-                            }}
-                            className={`px-3 py-1.5 rounded-lg border text-sm font-semibold transition-colors flex items-center gap-2 ${
-                              automationStatus.timer_active
-                                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/30'
-                                : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/30'
-                            }`}
-                            title={automationStatus.timer_active ? 'Pause scheduled checks' : 'Resume scheduled checks'}
-                          >
-                            {automationStatus.timer_active ? (
-                              <>
-                                <Pause size={16} />
-                                Pause
-                              </>
-                            ) : (
-                              <>
-                                <Play size={16} />
-                                Resume
-                              </>
-                            )}
-                          </button>
-                        )}
+                            } catch (error) {
+                              console.error('Error toggling timer:', error);
+                            }
+                          }}
+                          disabled={!automationStatus.enabled}
+                          className={`px-3 py-1.5 rounded-lg border text-sm font-semibold transition-colors flex items-center gap-2 ${
+                            !automationStatus.enabled
+                              ? 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-500 cursor-not-allowed'
+                              : automationStatus.timer_active
+                              ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/30 cursor-pointer'
+                              : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/30 cursor-pointer'
+                          }`}
+                          title={
+                            !automationStatus.enabled
+                              ? 'Enable automation in settings first'
+                              : automationStatus.timer_active
+                              ? 'Click to pause scheduled checks'
+                              : 'Click to resume scheduled checks'
+                          }
+                        >
+                          <div className={`w-2 h-2 rounded-full ${
+                            !automationStatus.enabled
+                              ? 'bg-gray-400'
+                              : automationStatus.timer_active
+                              ? 'bg-green-500 animate-pulse'
+                              : 'bg-yellow-500'
+                          }`}></div>
+                          {!automationStatus.enabled
+                            ? 'Disabled'
+                            : automationStatus.timer_active
+                            ? 'Active'
+                            : 'Paused'
+                          }
+                          {automationStatus.enabled && (
+                            automationStatus.timer_active ? <Pause size={14} /> : <Play size={14} />
+                          )}
+                        </button>
+
+                        {/* Configure Button */}
                         <button
                           onClick={() => setCurrentPage('automation')}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
@@ -4941,15 +4958,31 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           <Settings size={16} />
                           Configure
                         </button>
-                        <div className={`px-3 py-1.5 rounded-lg border text-sm font-semibold ${
-                          automationStatus.enabled
-                            ? automationStatus.timer_active
-                              ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
-                              : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-300'
-                            : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
-                        }`}>
-                          {automationStatus.enabled ? (automationStatus.timer_active ? 'Active' : 'Paused') : 'Disabled'}
-                        </div>
+
+                        {/* Run Now Button */}
+                        <button
+                          type="button"
+                          onClick={runAutomationNow}
+                          disabled={!automationStatus.enabled || runningAutomation}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
+                            automationStatus.enabled && !runningAutomation
+                              ? 'bg-green-600 hover:bg-green-700 text-white'
+                              : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                          }`}
+                          title={!automationStatus.enabled ? "Enable automation first" : runningAutomation ? "Running..." : "Run automation check now"}
+                        >
+                          {runningAutomation ? (
+                            <>
+                              <Loader size={14} className="animate-spin" />
+                              Running...
+                            </>
+                          ) : (
+                            <>
+                              <Play size={14} />
+                              Run Now
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
 
@@ -4984,32 +5017,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         </div>
                       </div>
                       <div className="bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-xs text-gray-500 dark:text-gray-400">Next Check</div>
-                          <button
-                            type="button"
-                            onClick={runAutomationNow}
-                            disabled={!automationStatus.enabled || runningAutomation}
-                            className={`px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                              automationStatus.enabled && !runningAutomation
-                                ? 'bg-green-600 hover:bg-green-700 text-white'
-                                : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                            }`}
-                            title={!automationStatus.enabled ? "Enable automation first" : runningAutomation ? "Running..." : "Run automation check now"}
-                          >
-                            {runningAutomation ? (
-                              <>
-                                <Loader size={12} className="animate-spin" />
-                                Running...
-                              </>
-                            ) : (
-                              <>
-                                <Play size={12} />
-                                Run Now
-                              </>
-                            )}
-                          </button>
-                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Next Check</div>
                         <div className="flex items-center gap-2">
                           {(() => {
                             // Check if automated migrations are currently running
