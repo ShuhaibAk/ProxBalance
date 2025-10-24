@@ -4994,8 +4994,27 @@ def get_automigrate_status():
             except:
                 pass
 
-        # Get recent migrations (last 10)
-        recent = history.get('migrations', [])[-10:]
+        # Get recent migrations (last 7 days)
+        from datetime import datetime, timedelta
+        all_migrations = history.get('migrations', [])
+        seven_days_ago = datetime.now() - timedelta(days=7)
+
+        recent = []
+        for migration in all_migrations:
+            try:
+                # Parse timestamp (may or may not have 'Z' suffix)
+                timestamp_str = migration.get('timestamp', '')
+                if timestamp_str:
+                    # Remove 'Z' if present and parse
+                    timestamp_str = timestamp_str.rstrip('Z')
+                    migration_date = datetime.fromisoformat(timestamp_str)
+
+                    # Include if within last 7 days
+                    if migration_date >= seven_days_ago:
+                        recent.append(migration)
+            except (ValueError, TypeError):
+                # If timestamp parsing fails, include it anyway (better to show than hide)
+                recent.append(migration)
 
         # Check for in-progress migrations using cluster tasks endpoint
         in_progress_migrations = []
