@@ -5090,7 +5090,7 @@ def get_automigrate_status():
                                     task_upid = task.get('upid')
                                     source_node = task.get('node')
                                     if task_upid and source_node:
-                                        log_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/tasks/{task_upid}/log"
+                                        log_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/tasks/{task_upid}/log?limit=0"
                                         log_response = requests.get(
                                             log_url,
                                             headers={'Authorization': f'PVEAPIToken={token_id}={token_secret}'},
