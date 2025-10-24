@@ -933,6 +933,7 @@ systemctl daemon-reload
 systemctl enable proxmox-balance.service
 systemctl enable proxmox-collector.timer
 systemctl enable proxmox-balance-recommendations.timer
+systemctl enable proxmox-balance-automigrate.timer
 EOF
   
   msg_ok "Services configured"
@@ -1498,6 +1499,7 @@ start_services() {
     pct exec "$CTID" -- bash <<'EOF'
 systemctl start proxmox-balance.service
 systemctl start proxmox-collector.timer
+systemctl start proxmox-balance-automigrate.timer
 EOF
     sleep 3
   ) &

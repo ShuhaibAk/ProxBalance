@@ -103,6 +103,15 @@ if [ -d /opt/proxmox-balance-manager/systemd ]; then
       systemctl start proxmox-balance-recommendations.timer
     fi
   fi
+
+  # Enable automigrate timer if it exists and isn't already enabled
+  if [ -f /etc/systemd/system/proxmox-balance-automigrate.timer ]; then
+    if ! systemctl is-enabled proxmox-balance-automigrate.timer >/dev/null 2>&1; then
+      echo "  ✓ Enabling automigrate timer..."
+      systemctl enable proxmox-balance-automigrate.timer
+      systemctl start proxmox-balance-automigrate.timer
+    fi
+  fi
 fi
 SERVICES_EOF
 

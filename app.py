@@ -17,6 +17,7 @@ import threading
 import uuid
 from datetime import datetime
 from typing import Dict, List
+from pathlib import Path
 from ai_provider import AIProviderFactory
 
 app = Flask(__name__, static_folder='.', static_url_path='')
@@ -1451,6 +1452,10 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
 
             # Skip HA-managed guests (unless on maintenance node)
             if guest.get("ha_managed", False) and src_node_name not in maintenance_nodes:
+                continue
+
+            # Skip stopped guests (unless on maintenance node)
+            if guest.get("status") != "running" and src_node_name not in maintenance_nodes:
                 continue
 
             # Calculate current score (how well current node suits this guest)
@@ -4958,14 +4963,54 @@ def get_automigrate_status():
                                 vmid = task.get('id')
                                 guest = cache_data.get('guests', {}).get(str(vmid), {})
 
+                                # Try to find target node from recent migration history
+                                target_node = 'unknown'
+                                task_upid = task.get('upid')
+                                for migration in reversed(recent):  # Search most recent first
+                                    if (migration.get('vmid') == vmid and
+                                        migration.get('task_id') == task_upid):
+                                        target_node = migration.get('target_node', 'unknown')
+                                        break
+
+                                # If not found in history, try to parse from task log (for manual migrations)
+                                if target_node == 'unknown' and task_upid:
+                                    try:
+                                        source_node = task.get('node')
+                                        log_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/tasks/{task_upid}/log"
+                                        log_response = requests.get(
+                                            log_url,
+                                            headers={'Authorization': f'PVEAPIToken={token_id}={token_secret}'},
+                                            verify=verify_ssl,
+                                            timeout=5
+                                        )
+                                        if log_response.status_code == 200:
+                                            log_data = log_response.json().get('data', [])
+                                            # Look for "starting migration of CT/VM XXX to node 'target'"
+                                            import re
+                                            for log_entry in log_data:
+                                                log_text = log_entry.get('t', '')
+                                                match = re.search(r"to node ['\"]([^'\"]+)", log_text)
+                                                if match:
+                                                    target_node = match.group(1)
+                                                    break
+                                    except Exception as log_err:
+                                        pass  # Ignore log parsing errors, keep 'unknown'
+
+                                # Determine who initiated the migration
+                                task_user = task.get('user', '')
+                                initiated_by = 'automated' if 'proxbalance' in task_user else 'manual'
+
                                 in_progress_migrations.append({
                                     'vmid': vmid,
                                     'name': guest.get('name', f'VM-{vmid}'),
                                     'source_node': task.get('node', 'unknown'),
+                                    'target_node': target_node,
                                     'status': 'running',
                                     'task_id': task.get('upid'),
                                     'starttime': task.get('starttime'),
-                                    'type': 'VM' if task.get('type') == 'qmigrate' else 'CT'
+                                    'type': 'VM' if task.get('type') == 'qmigrate' else 'CT',
+                                    'initiated_by': initiated_by,
+                                    'user': task_user
                                 })
                     else:
                         print(f"Failed to fetch cluster tasks: HTTP {response.status_code}", file=sys.stderr)
@@ -5160,6 +5205,33 @@ def automigrate_config():
             # Save configuration
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(config, f, indent=2)
+
+            # Update systemd timer if check_interval_minutes changed
+            if 'check_interval_minutes' in updates:
+                try:
+                    interval_minutes = updates['check_interval_minutes']
+
+                    # Create systemd drop-in override
+                    override_dir = Path("/etc/systemd/system/proxmox-balance-automigrate.timer.d")
+                    override_dir.mkdir(parents=True, exist_ok=True)
+
+                    override_file = override_dir / "interval.conf"
+                    override_content = f"""[Timer]
+OnUnitActiveSec=
+OnUnitActiveSec={interval_minutes}min
+"""
+
+                    with open(override_file, 'w') as f:
+                        f.write(override_content)
+
+                    # Reload systemd and restart timer to apply changes
+                    subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/systemctl', 'restart', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
+
+                    print(f"✓ Automigrate timer interval updated to {interval_minutes} minutes", file=sys.stderr)
+                except Exception as timer_err:
+                    print(f"Warning: Failed to update systemd timer interval: {timer_err}", file=sys.stderr)
+                    # Don't fail the request if timer update fails - config was still saved
 
             return jsonify({
                 "success": True,
