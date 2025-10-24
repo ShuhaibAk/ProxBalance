@@ -792,24 +792,24 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const fetchGuestLocations = async () => {
             // Fast API call to get current guest locations (for immediate Cluster Map update on refresh)
             try {
-              console.log('[fetchGuestLocations] Fetching fast guest locations...');
+              // console.log('[fetchGuestLocations] Fetching fast guest locations...');
               const response = await fetch(`${API_BASE}/guests/locations`);
               const result = await response.json();
 
-              console.log('[fetchGuestLocations] API response:', result);
+              // console.log('[fetchGuestLocations] API response:', result);
 
               if (result.success && result.guests && result.nodes) {
-                console.log('[fetchGuestLocations] Updating guest locations in state...');
-                console.log('[fetchGuestLocations] Found', Object.keys(result.guests).length, 'guests');
+                // console.log('[fetchGuestLocations] Updating guest locations in state...');
+                // console.log('[fetchGuestLocations] Found', Object.keys(result.guests).length, 'guests');
 
                 // Update data state with new locations
                 setData(prevData => {
                   if (!prevData) {
-                    console.log('[fetchGuestLocations] No prevData, skipping update');
+                    // console.log('[fetchGuestLocations] No prevData, skipping update');
                     return prevData;
                   }
 
-                  console.log('[fetchGuestLocations] Merging location data with existing state');
+                  // console.log('[fetchGuestLocations] Merging location data with existing state');
                   const newData = { ...prevData };
 
                   // Update guest locations
@@ -821,7 +821,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       const oldNode = newData.guests[vmid].node;
                       const newNode = locationGuest.node;
                       if (oldNode !== newNode) {
-                        console.log(`[fetchGuestLocations] Guest ${vmid} moved: ${oldNode} → ${newNode}`);
+                        // console.log(`[fetchGuestLocations] Guest ${vmid} moved: ${oldNode} → ${newNode}`);
                       }
                       newData.guests[vmid] = {
                         ...newData.guests[vmid],
@@ -843,7 +843,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     }
                   });
 
-                  console.log(`[fetchGuestLocations] Updated ${updatedCount} guests, returning new state`);
+                  // console.log(`[fetchGuestLocations] Updated ${updatedCount} guests, returning new state`);
                   return newData;
                 });
               } else {
@@ -868,7 +868,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 }
               } else if (result.cache_missing) {
                 // No cache exists, generate initial recommendations
-                console.log('No cached recommendations, generating initial set');
+                // console.log('No cached recommendations, generating initial set');
                 generateRecommendations();
               }
             } catch (err) {
@@ -1076,7 +1076,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               const result = await response.json();
 
               if (result.success) {
-                console.log('Automation run completed:', result.message);
+                // console.log('Automation run completed:', result.message);
                 // Refresh automation status to show updated last_run time
                 await fetchAutomationStatus();
                 // Wait a moment for state file to be written
@@ -1231,7 +1231,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const trackMigration = async (vmid, sourceNode, targetNode, taskId, guestType) => {
             const key = `${vmid}-${targetNode}`;
 
-            console.log(`[trackMigration] Starting tracking for VMID ${vmid} from ${sourceNode} to ${targetNode}, taskId: ${taskId}`);
+            // console.log(`[trackMigration] Starting tracking for VMID ${vmid} from ${sourceNode} to ${targetNode}, taskId: ${taskId}`);
 
             // Store migration info for cancellation
             setActiveMigrations(prev => ({
@@ -1240,12 +1240,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }));
 
             // Immediately mark guest as migrating
-            console.log(`[trackMigration] Setting guestsMigrating[${vmid}] = true`);
-            setGuestsMigrating(prev => {
-              const updated = { ...prev, [vmid]: true };
-              console.log('[trackMigration] New guestsMigrating state:', updated);
-              return updated;
-            });
+            setGuestsMigrating(prev => ({ ...prev, [vmid]: true }));
 
             // Poll migration status every 3 seconds using Proxmox cluster tasks API
             const pollInterval = setInterval(async () => {
@@ -1258,17 +1253,17 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 const taskStatusResponse = await fetch(`${API_BASE}/tasks/${sourceNode}/${taskId}`);
                 const taskStatus = await taskStatusResponse.json();
 
-                console.log(`[trackMigration] Task status for VMID ${vmid}:`, taskStatus);
+                // console.log(`[trackMigration] Task status for VMID ${vmid}:`, taskStatus);
 
                 // Update progress if available
                 if (taskStatus.success && taskStatus.progress) {
-                  console.log(`[trackMigration] Progress data for VMID ${vmid}:`, taskStatus.progress);
+                  // console.log(`[trackMigration] Progress data for VMID ${vmid}:`, taskStatus.progress);
                   setMigrationProgress(prev => ({
                     ...prev,
                     [vmid]: taskStatus.progress
                   }));
                 } else {
-                  console.log(`[trackMigration] No progress data for VMID ${vmid}`);
+                  // console.log(`[trackMigration] No progress data for VMID ${vmid}`);
                 }
 
                 if (migrationStatus.success) {
@@ -1292,7 +1287,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                        taskStatus.exitstatus === 'migration aborted');
 
                     if (wasCanceled) {
-                      console.log(`[trackMigration] Migration canceled for VMID ${vmid}`);
+                      // console.log(`[trackMigration] Migration canceled for VMID ${vmid}`);
                       setMigrationStatus(prev => ({ ...prev, [key]: 'failed' }));
 
                       // Remove from active migrations
@@ -1317,7 +1312,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     const locationResult = await locationResponse.json();
 
                     if (locationResult.success && data) {
-                      console.log(`[trackMigration] Migration completed successfully for VMID ${vmid}. New location: ${locationResult.node}`);
+                      // console.log(`[trackMigration] Migration completed successfully for VMID ${vmid}. New location: ${locationResult.node}`);
 
                       // Update guest location in state - need to update BOTH guests object and nodes array
                       setData(prevData => {
@@ -1357,12 +1352,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           };
                         }
 
-                        console.log(`[trackMigration] Updated cluster map: removed ${vmid} from ${oldNode}, added to ${newNode}`);
+                        // console.log(`[trackMigration] Updated cluster map: removed ${vmid} from ${oldNode}, added to ${newNode}`);
                         return newData;
                       });
 
                       // Mark as completed with new location (don't remove from list, grey it out instead)
-                      console.log(`[trackMigration] Marking VMID ${vmid} as completed in completedMigrations state`);
+                      // console.log(`[trackMigration] Marking VMID ${vmid} as completed in completedMigrations state`);
                       setCompletedMigrations(prev => {
                         const updated = {
                           ...prev,
@@ -1372,7 +1367,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             timestamp: Date.now()
                           }
                         };
-                        console.log('[trackMigration] New completedMigrations state:', updated);
+                        // console.log('[trackMigration] New completedMigrations state:', updated);
                         return updated;
                       });
 
@@ -1398,7 +1393,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       }, 5000);
 
                       // Trigger a fast refresh of cluster data to ensure Cluster Map is up-to-date
-                      console.log(`[trackMigration] Triggering fast cluster refresh after migration`);
+                      // console.log(`[trackMigration] Triggering fast cluster refresh after migration`);
                       fetchGuestLocations();
                     }
                   }
@@ -1414,7 +1409,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
           const executeMigration = async (rec) => {
             const key = `${rec.vmid}-${rec.target_node}`;
-            console.log(`[executeMigration] Starting migration for VMID ${rec.vmid} from ${rec.source_node} to ${rec.target_node}`);
+            // console.log(`[executeMigration] Starting migration for VMID ${rec.vmid} from ${rec.source_node} to ${rec.target_node}`);
             setMigrationStatus(prev => ({ ...prev, [key]: 'running' }));
 
             try {
@@ -1430,10 +1425,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               });
 
               const result = await response.json();
-              console.log(`[executeMigration] API response for VMID ${rec.vmid}:`, result);
+              // console.log(`[executeMigration] API response for VMID ${rec.vmid}:`, result);
 
               if (result.success) {
-                console.log(`[executeMigration] Migration started successfully, calling trackMigration with taskId: ${result.task_id}`);
+                // console.log(`[executeMigration] Migration started successfully, calling trackMigration with taskId: ${result.task_id}`);
                 // Start tracking migration (stores in activeMigrations state)
                 // Note: We don't clear migrationStatus here - the button logic will prioritize activeMigrations
                 trackMigration(rec.vmid, result.source_node, result.target_node, result.task_id, rec.type);
@@ -1466,7 +1461,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             setShowBatchConfirmation(false);
 
             const pendingMigrations = pendingBatchMigrations;
-            console.log('[Batch Migration] Starting batch migration for', pendingMigrations.length, 'guests');
+            // console.log('[Batch Migration] Starting batch migration for', pendingMigrations.length, 'guests');
 
             // Initialize batch status
             setBatchMigrationStatus({
@@ -1480,7 +1475,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             // Execute migrations one at a time
             for (let i = 0; i < pendingMigrations.length; i++) {
               const rec = pendingMigrations[i];
-              console.log(`[Batch Migration] Starting migration ${i + 1}/${pendingMigrations.length} for VMID ${rec.vmid}`);
+              // console.log(`[Batch Migration] Starting migration ${i + 1}/${pendingMigrations.length} for VMID ${rec.vmid}`);
 
               // Update current migration info
               setBatchMigrationStatus(prev => ({
@@ -1505,7 +1500,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 const result = await response.json();
 
                 if (result.success) {
-                  console.log(`[Batch Migration] Migration started for VMID ${rec.vmid}, task: ${result.task_id}`);
+                  // console.log(`[Batch Migration] Migration started for VMID ${rec.vmid}, task: ${result.task_id}`);
 
                   // Start tracking the migration (this handles progress updates automatically)
                   trackMigration(rec.vmid, result.source_node, result.target_node, result.task_id, rec.type);
@@ -1521,7 +1516,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         const completed = completedMigrations[rec.vmid];
                         const success = completed !== undefined;
 
-                        console.log(`[Batch Migration] Migration for VMID ${rec.vmid} completed. Success: ${success}`);
+                        // console.log(`[Batch Migration] Migration for VMID ${rec.vmid} completed. Success: ${success}`);
 
                         // Add to results
                         setBatchMigrationStatus(prev => ({
@@ -1583,7 +1578,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
 
             // Mark batch as complete
-            console.log('[Batch Migration] All migrations completed');
+            // console.log('[Batch Migration] All migrations completed');
             setBatchMigrationStatus(prev => ({
               ...prev,
               inProgress: false,
@@ -1860,7 +1855,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               const trendData = node.trend_data?.[sourceTimeframe] || node.trend_data?.day || [];
 
               if (!trendData || trendData.length === 0) {
-                console.log(`No trend data available for ${node.name} (timeframe: ${sourceTimeframe})`);
+                // console.log(`No trend data available for ${node.name} (timeframe: ${sourceTimeframe})`);
                 return;
               }
 
@@ -6616,10 +6611,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               }
 
                               // Set planning state
-                              console.log('Setting planning state for:', selectedNode.name);
+                              // console.log('Setting planning state for:', selectedNode.name);
                               setPlanningNodes(prev => {
                                 const newSet = new Set([...prev, selectedNode.name]);
-                                console.log('Planning nodes now:', Array.from(newSet));
+                                // console.log('Planning nodes now:', Array.from(newSet));
                                 return newSet;
                               });
 
@@ -6636,11 +6631,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 });
 
                                 const planResult = await planResponse.json();
-                                console.log('Plan result:', planResult);
+                                // console.log('Plan result:', planResult);
 
                                 if (planResult.success && planResult.plan) {
                                   // Show the plan modal
-                                  console.log('Setting evacuation plan for node:', selectedNode.name);
+                                  // console.log('Setting evacuation plan for node:', selectedNode.name);
                                   setEvacuationPlan(planResult);
                                   setPlanNode(selectedNode.name);
                                   setSelectedNode(null); // Close the node details modal
@@ -6653,11 +6648,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 alert(`Error generating plan: ${error.message}`);
                               } finally {
                                 // Clear planning state
-                                console.log('Clearing planning state for:', selectedNode.name);
+                                // console.log('Clearing planning state for:', selectedNode.name);
                                 setPlanningNodes(prev => {
                                   const newSet = new Set(prev);
                                   newSet.delete(selectedNode.name);
-                                  console.log('Planning nodes after clear:', Array.from(newSet));
+                                  // console.log('Planning nodes after clear:', Array.from(newSet));
                                   return newSet;
                                 });
                               }
@@ -7723,10 +7718,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   const isMigrating = guestsMigrating[rec.vmid] === true;
                                   const migrationKey = `${rec.vmid}-${rec.target_node}`;
 
-                                  if (rec.vmid === 120 || rec.vmid === 123) {
-                                    console.log(`[Button] VMID ${rec.vmid}: isMigrating=${isMigrating}, status=${status}, guestsMigrating=`, guestsMigrating);
-                                  }
-
                                   if (isMigrating && canMigrate) {
                                     const progress = migrationProgress[rec.vmid];
                                     let progressText = '';
@@ -7757,10 +7748,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                                   return (
                                     <button
-                                      onClick={() => {
-                                        console.log(`[Button Click] Migrate button clicked for VMID ${rec.vmid}`);
-                                        executeMigration(rec);
-                                      }}
+                                      onClick={() => executeMigration(rec)}
                                       disabled={!canMigrate || status === 'running' || isMigrating}
                                       className="px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
                                       title={!canMigrate ? 'Read-only API token (PVEAuditor) - Cannot perform migrations' : isMigrating ? 'Migration in progress' : ''}
@@ -8028,7 +8016,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                         return (
                                           <button
                                             onClick={() => {
-                                              console.log(`[AI Migration] Starting migration for VMID ${rec.vmid} from ${rec.source_node} to ${rec.target_node}`);
+                                              // console.log(`[AI Migration] Starting migration for VMID ${rec.vmid} from ${rec.source_node} to ${rec.target_node}`);
                                               // Use the AI-specific key format
                                               const aiKey = `ai-${rec.vmid}-${rec.target_node}`;
                                               setMigrationStatus(prev => ({ ...prev, [aiKey]: 'running' }));
@@ -8045,9 +8033,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                               })
                                               .then(response => response.json())
                                               .then(result => {
-                                                console.log(`[AI Migration] API response for VMID ${rec.vmid}:`, result);
+                                                // console.log(`[AI Migration] API response for VMID ${rec.vmid}:`, result);
                                                 if (result.success) {
-                                                  console.log(`[AI Migration] Migration started successfully, calling trackMigration with taskId: ${result.task_id}`);
+                                                  // console.log(`[AI Migration] Migration started successfully, calling trackMigration with taskId: ${result.task_id}`);
                                                   // Start tracking (button logic will prioritize activeMigrations over migrationStatus)
                                                   trackMigration(rec.vmid, result.source_node, result.target_node, result.task_id, rec.type);
 
