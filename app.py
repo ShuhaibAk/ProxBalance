@@ -1814,6 +1814,43 @@ def execute_batch_migration():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/migrations/<path:task_id>/cancel", methods=["POST"])
+def cancel_migration(task_id):
+    """Cancel a running migration by stopping the Proxmox task"""
+    try:
+        config = load_config()
+        proxmox_host = config['proxmox']['host']
+        proxmox_port = config['proxmox'].get('port', 8006)
+        token_id = config['proxmox']['token_id']
+        token_secret = config['proxmox']['token_secret']
+        verify_ssl = config['proxmox'].get('verify_ssl', False)
+
+        # Parse UPID to extract node: UPID:node:pid:pstart:starttime:type:vmid:user
+        parts = task_id.split(':')
+        if len(parts) < 2:
+            return jsonify({"success": False, "error": "Invalid task ID format"}), 400
+
+        node = parts[1]
+
+        # Stop the task via Proxmox API
+        import requests
+        url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{node}/tasks/{task_id}"
+        headers = {
+            'Authorization': f'PVEAPIToken={token_id}={token_secret}'
+        }
+
+        response = requests.delete(url, headers=headers, verify=verify_ssl, timeout=10)
+
+        if response.status_code == 200:
+            return jsonify({"success": True, "message": "Migration cancelled"}), 200
+        else:
+            return jsonify({"success": False, "error": f"Failed to cancel: HTTP {response.status_code}"}), response.status_code
+
+    except Exception as e:
+        print(f"Cancel migration error: {str(e)}", file=sys.stderr)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/nodes/evacuate/status/<session_id>", methods=["GET"])
 def get_evacuation_status(session_id):
     """Get the status of an ongoing evacuation"""
@@ -5045,30 +5082,71 @@ def get_automigrate_status():
                                         if log_response.status_code == 200:
                                             task_log = log_response.json().get('data', [])
 
-                                            latest_percentage = None
-                                            latest_transferred = None
-                                            total_size = None
+                                            # Track progress per disk (disk_name -> {transferred, total, line_number})
+                                            disk_progress = {}
 
-                                            for entry in task_log:
+                                            for idx, entry in enumerate(task_log):
                                                 line = entry.get('t', '')
-                                                # Look for mirror progress: "mirror-scsi0: transferred X GiB of Y GiB (Z%)"
-                                                if 'mirror' in line and 'transferred' in line and 'GiB' in line:
+                                                # Look for mirror progress: "mirror-scsi0: transferred X GiB of Y GiB (Z%)" or "mirror-sata0: transferred X MiB of Y GiB (Z%)"
+                                                if 'mirror' in line and 'transferred' in line:
                                                     import re
-                                                    match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
-                                                    if match:
-                                                        latest_transferred = float(match.group(1))
-                                                        total_size = float(match.group(2))
-                                                        latest_percentage = int(float(match.group(3)))
+                                                    # Extract disk name (e.g., mirror-sata0, mirror-scsi0)
+                                                    disk_match = re.search(r'(mirror-\w+):', line)
+                                                    if disk_match:
+                                                        disk_name = disk_match.group(1)
 
-                                            if latest_percentage is not None and latest_transferred is not None:
-                                                progress_info = {
-                                                    "transferred_gib": latest_transferred,
-                                                    "total_gib": total_size,
-                                                    "percentage": latest_percentage,
-                                                    "human_readable": f"{latest_transferred:.1f} GiB of {total_size:.1f} GiB"
-                                                }
+                                                        # Try to match GiB/GiB pattern first
+                                                        match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
+                                                        if match:
+                                                            transferred = float(match.group(1))
+                                                            total = float(match.group(2))
+                                                            disk_progress[disk_name] = {'transferred': transferred, 'total': total, 'line_number': idx, 'name': disk_name}
+                                                        else:
+                                                            # Try MiB/GiB pattern
+                                                            match = re.search(r'transferred\s+([\d.]+)\s+MiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
+                                                            if match:
+                                                                transferred = float(match.group(1)) / 1024  # Convert MiB to GiB
+                                                                total = float(match.group(2))
+                                                                disk_progress[disk_name] = {'transferred': transferred, 'total': total, 'line_number': idx, 'name': disk_name}
+
+                                            # If we have multiple disks, calculate aggregate; otherwise just show the single disk
+                                            if disk_progress:
+                                                if len(disk_progress) > 1:
+                                                    # Multiple disks - show aggregate progress
+                                                    total_transferred = sum(d['transferred'] for d in disk_progress.values())
+                                                    total_size = sum(d['total'] for d in disk_progress.values())
+                                                    overall_percentage = int((total_transferred / total_size * 100)) if total_size > 0 else 0
+                                                    disk_names = ', '.join(sorted(disk_progress.keys()))
+
+                                                    progress_info = {
+                                                        "transferred_gib": total_transferred,
+                                                        "total_gib": total_size,
+                                                        "percentage": overall_percentage,
+                                                        "human_readable": f"{total_transferred:.1f} GiB of {total_size:.1f} GiB ({disk_names})"
+                                                    }
+                                                else:
+                                                    # Single disk - show its progress
+                                                    disk = list(disk_progress.values())[0]
+                                                    disk_percentage = int((disk['transferred'] / disk['total'] * 100)) if disk['total'] > 0 else 0
+
+                                                    progress_info = {
+                                                        "transferred_gib": disk['transferred'],
+                                                        "total_gib": disk['total'],
+                                                        "percentage": disk_percentage,
+                                                        "human_readable": f"{disk['transferred']:.1f} GiB of {disk['total']:.1f} GiB ({disk['name']})"
+                                                    }
                                 except Exception as progress_err:
                                     pass  # Ignore progress parsing errors
+
+                                # Extract starttime from UPID (format: UPID:node:pid:pstart:starttime:type:vmid:user)
+                                starttime = task.get('starttime')  # Try direct field first
+                                if not starttime and task_upid:
+                                    try:
+                                        upid_parts = task_upid.split(':')
+                                        if len(upid_parts) >= 5:
+                                            starttime = int(upid_parts[4], 16)  # starttime is in hex format
+                                    except (ValueError, IndexError):
+                                        pass
 
                                 migration_data = {
                                     'vmid': vmid,
@@ -5076,8 +5154,8 @@ def get_automigrate_status():
                                     'source_node': task.get('node', 'unknown'),
                                     'target_node': target_node,
                                     'status': 'running',
-                                    'task_id': task.get('upid'),
-                                    'starttime': task.get('starttime'),
+                                    'task_id': task_upid,
+                                    'starttime': starttime,
                                     'type': 'VM' if task.get('type') == 'qmigrate' else 'CT',
                                     'initiated_by': initiated_by,
                                     'user': task_user
@@ -5096,12 +5174,27 @@ def get_automigrate_status():
         except Exception as e:
             print(f"Error checking in-progress migrations: {e}", file=sys.stderr)
 
+        # Calculate next check time
+        next_check = None
+        last_run = history.get('state', {}).get('last_run')
+        check_interval_minutes = auto_config.get('check_interval_minutes', 5)
+
+        if last_run and auto_config.get('enabled', False) and timer_active:
+            try:
+                from datetime import datetime, timedelta
+                last_run_dt = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
+                next_check_dt = last_run_dt + timedelta(minutes=check_interval_minutes)
+                next_check = next_check_dt.isoformat().replace('+00:00', 'Z')
+            except (ValueError, TypeError):
+                pass
+
         return jsonify({
             "success": True,
             "enabled": auto_config.get('enabled', False),
             "dry_run": auto_config.get('dry_run', True),
             "timer_active": timer_active,
-            "check_interval_minutes": auto_config.get('check_interval_minutes', 5),
+            "check_interval_minutes": check_interval_minutes,
+            "next_check": next_check,
             "recent_migrations": recent,
             "in_progress_migrations": in_progress_migrations,
             "state": history.get('state', {})

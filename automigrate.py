@@ -707,6 +707,14 @@ def main():
         lock_fd = acquire_lock()
         logger.info("Starting automated migration check")
 
+        # Update last_run immediately at start of check (so UI knows we're running)
+        try:
+            history = load_history()
+            history.setdefault('state', {})['last_run'] = datetime.utcnow().isoformat() + 'Z'
+            save_history(history)
+        except Exception as e:
+            logger.error(f"Failed to update last_run at start: {e}")
+
         # 1. Load configuration
         config = load_config()
         auto_config = config.get('automated_migrations', {})
