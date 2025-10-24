@@ -264,7 +264,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [guestsMigrating, setGuestsMigrating] = useState({}); // Track which guests are migrating (from Proxmox API)
           const [migrationProgress, setMigrationProgress] = useState({}); // Track migration progress (bytes copied)
           const [completedMigrations, setCompletedMigrations] = useState({}); // Track successfully completed migrations with new location
-          const [batchMigrationStatus, setBatchMigrationStatus] = useState(null); // Track batch migration progress
           const [showBatchConfirmation, setShowBatchConfirmation] = useState(false); // Show batch migration confirmation modal
           const [pendingBatchMigrations, setPendingBatchMigrations] = useState([]); // Pending migrations to confirm: { inProgress: bool, current: index, total: count, results: [] }
           const [lastUpdate, setLastUpdate] = useState(null);
@@ -1442,149 +1441,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
           };
 
-          const executeBatchMigration = async () => {
-            // Filter out already completed migrations
-            const pendingMigrations = recommendations.filter(rec => !completedMigrations[rec.vmid]);
-
-            if (pendingMigrations.length === 0) {
-              alert('All migrations have already been completed!');
-              return;
-            }
-
-            // Show confirmation modal with task list
-            setPendingBatchMigrations(pendingMigrations);
-            setShowBatchConfirmation(true);
-          };
-
-          const confirmBatchMigration = async () => {
-            // Close the modal
-            setShowBatchConfirmation(false);
-
-            const pendingMigrations = pendingBatchMigrations;
-            // console.log('[Batch Migration] Starting batch migration for', pendingMigrations.length, 'guests');
-
-            // Initialize batch status
-            setBatchMigrationStatus({
-              inProgress: true,
-              total: pendingMigrations.length,
-              current: 0,
-              currentGuest: null,
-              results: []
-            });
-
-            // Execute migrations one at a time
-            for (let i = 0; i < pendingMigrations.length; i++) {
-              const rec = pendingMigrations[i];
-              // console.log(`[Batch Migration] Starting migration ${i + 1}/${pendingMigrations.length} for VMID ${rec.vmid}`);
-
-              // Update current migration info
-              setBatchMigrationStatus(prev => ({
-                ...prev,
-                current: i + 1,
-                currentGuest: rec
-              }));
-
-              try {
-                // Start the migration
-                const response = await fetch(`${API_BASE}/migrate`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    source_node: rec.source_node,
-                    vmid: rec.vmid,
-                    target_node: rec.target_node,
-                    type: rec.type
-                  })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                  // console.log(`[Batch Migration] Migration started for VMID ${rec.vmid}, task: ${result.task_id}`);
-
-                  // Start tracking the migration (this handles progress updates automatically)
-                  trackMigration(rec.vmid, result.source_node, result.target_node, result.task_id, rec.type);
-
-                  // Wait for migration to complete by polling guestsMigrating state
-                  await new Promise((resolve) => {
-                    const checkInterval = setInterval(() => {
-                      // Check if this guest is no longer migrating
-                      if (!guestsMigrating[rec.vmid]) {
-                        clearInterval(checkInterval);
-
-                        // Check if it completed successfully
-                        const completed = completedMigrations[rec.vmid];
-                        const success = completed !== undefined;
-
-                        // console.log(`[Batch Migration] Migration for VMID ${rec.vmid} completed. Success: ${success}`);
-
-                        // Add to results
-                        setBatchMigrationStatus(prev => ({
-                          ...prev,
-                          results: [...prev.results, {
-                            vmid: rec.vmid,
-                            name: rec.name,
-                            success: success,
-                            error: success ? null : 'Migration failed or was cancelled',
-                            newNode: completed?.newNode
-                          }]
-                        }));
-
-                        resolve();
-                      }
-                    }, 1000);
-
-                    // Timeout after 10 minutes
-                    setTimeout(() => {
-                      clearInterval(checkInterval);
-                      console.error(`[Batch Migration] Timeout waiting for VMID ${rec.vmid} to complete`);
-                      setBatchMigrationStatus(prev => ({
-                        ...prev,
-                        results: [...prev.results, {
-                          vmid: rec.vmid,
-                          name: rec.name,
-                          success: false,
-                          error: 'Migration timeout (10 minutes)'
-                        }]
-                      }));
-                      resolve();
-                    }, 600000);
-                  });
-
-                } else {
-                  console.error(`[Batch Migration] Failed to start migration for VMID ${rec.vmid}:`, result.error);
-                  setBatchMigrationStatus(prev => ({
-                    ...prev,
-                    results: [...prev.results, {
-                      vmid: rec.vmid,
-                      name: rec.name,
-                      success: false,
-                      error: result.error || 'Failed to start migration'
-                    }]
-                  }));
-                }
-              } catch (err) {
-                console.error(`[Batch Migration] Exception for VMID ${rec.vmid}:`, err);
-                setBatchMigrationStatus(prev => ({
-                  ...prev,
-                  results: [...prev.results, {
-                    vmid: rec.vmid,
-                    name: rec.name,
-                    success: false,
-                    error: err.message
-                  }]
-                }));
-              }
-            }
-
-            // Mark batch as complete
-            // console.log('[Batch Migration] All migrations completed');
-            setBatchMigrationStatus(prev => ({
-              ...prev,
-              inProgress: false,
-              currentGuest: null
-            }));
-          };
 
           const checkAffinityViolations = () => {
             if (!data) return [];
@@ -7463,26 +7319,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             </>
                           )}
                         </button>
-                        {recommendations.length > 0 && (
-                        <button
-                          onClick={executeBatchMigration}
-                          disabled={!canMigrate || loading}
-                          className="flex items-center gap-2 px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                          title={!canMigrate ? 'Read-only API token (PVEAuditor) - Cannot perform migrations' : ''}
-                        >
-                          {!canMigrate ? (
-                            <>
-                              <Lock size={18} />
-                              Read-Only Mode
-                            </>
-                          ) : (
-                            <>
-                              <Play size={18} />
-                              Migrate All ({recommendations.length})
-                            </>
-                          )}
-                        </button>
-                        )}
                       </div>
                     </div>
 
@@ -7507,90 +7343,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </div>
                     )}
                   </div>
-
-                  {/* Batch Migration Status Panel */}
-                  {batchMigrationStatus && !collapsedSections.recommendations && (
-                    <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 rounded-lg p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <RefreshCw size={20} className={`text-blue-600 dark:text-blue-400 ${batchMigrationStatus.inProgress ? 'animate-spin' : ''}`} />
-                        <div className="flex-1">
-                          <h3 className="font-bold text-blue-900 dark:text-blue-200">
-                            {batchMigrationStatus.inProgress ? 'Batch Migration In Progress' : 'Batch Migration Complete'}
-                          </h3>
-                          <p className="text-sm text-blue-700 dark:text-blue-300">
-                            {batchMigrationStatus.inProgress
-                              ? `Migrating ${batchMigrationStatus.current} of ${batchMigrationStatus.total}...`
-                              : `Completed ${batchMigrationStatus.results.filter(r => r.success).length} of ${batchMigrationStatus.total} migrations`
-                            }
-                          </p>
-                        </div>
-                        {!batchMigrationStatus.inProgress && (
-                          <button
-                            onClick={() => setBatchMigrationStatus(null)}
-                            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800 rounded"
-                            title="Close"
-                          >
-                            <XCircle size={20} className="text-blue-600 dark:text-blue-400" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Current Migration */}
-                      {batchMigrationStatus.inProgress && batchMigrationStatus.currentGuest && (
-                        <div className="bg-white dark:bg-gray-800 rounded p-3 mb-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                            <span className="font-semibold text-gray-900 dark:text-white">
-                              Currently Migrating: [{batchMigrationStatus.currentGuest.type} {batchMigrationStatus.currentGuest.vmid}] {batchMigrationStatus.currentGuest.name}
-                            </span>
-                          </div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
-                            {batchMigrationStatus.currentGuest.source_node} → {batchMigrationStatus.currentGuest.target_node}
-                          </div>
-                          {migrationProgress[batchMigrationStatus.currentGuest.vmid] && (
-                            <div className="mt-2 text-sm font-semibold text-blue-600 dark:text-blue-400">
-                              Progress: {migrationProgress[batchMigrationStatus.currentGuest.vmid].percentage || 0}%
-                              {migrationProgress[batchMigrationStatus.currentGuest.vmid].total_human_readable && (
-                                <span className="ml-2 text-xs">
-                                  ({migrationProgress[batchMigrationStatus.currentGuest.vmid].human_readable} / {migrationProgress[batchMigrationStatus.currentGuest.vmid].total_human_readable})
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Results List */}
-                      {batchMigrationStatus.results.length > 0 && (
-                        <div className="space-y-2">
-                          <h4 className="font-semibold text-sm text-blue-900 dark:text-blue-200 mb-2">
-                            {batchMigrationStatus.inProgress ? 'Completed:' : 'Results:'}
-                          </h4>
-                          {batchMigrationStatus.results.map((result, idx) => (
-                            <div key={idx} className={`flex items-center justify-between p-2 rounded text-sm ${
-                              result.success
-                                ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                                : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
-                            }`}>
-                              <div className="flex items-center gap-2">
-                                {result.success ? (
-                                  <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
-                                ) : (
-                                  <XCircle size={16} className="text-red-600 dark:text-red-400" />
-                                )}
-                                <span className="font-medium">
-                                  [VMID {result.vmid}] {result.name}
-                                </span>
-                              </div>
-                              <span className="text-xs">
-                                {result.success ? `→ ${result.newNode}` : result.error}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {!collapsedSections.recommendations && (
                   <div className="transition-all duration-300 ease-in-out">
