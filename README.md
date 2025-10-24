@@ -28,21 +28,56 @@ ProxBalance is a web-based cluster analyzer and migration manager for Proxmox VE
 
 ---
 
+## 🆕 Recent Updates
+
+### Intelligent Penalty-Based Scoring System
+ProxBalance features a sophisticated **penalty-based scoring algorithm** with **Suitability Ratings (0-100%)** for intuitive migration decisions. The system evaluates CPU, memory, IOWait, load distribution, storage compatibility, and anti-affinity rules to find optimal migration targets without hard disqualifications.
+
+**Key benefits:**
+- 100% = Perfect target, 0% = Poor target (easy to understand)
+- IOWait penalties prioritize I/O performance for better VM responsiveness
+- Flexible scoring allows evacuating overloaded nodes without restrictions
+- Seamlessly integrates with automated migrations
+
+➡️ **[Read the complete Scoring Algorithm Guide](docs/SCORING_ALGORITHM.md)** for detailed explanation, examples, and configuration options.
+
+### Migration & Monitoring Enhancements
+- **Real-Time Transfer Speed** - Live MB/s transfer rates during migrations
+- **Multi-Disk Progress Tracking** - Accurate progress for VMs with multiple disks
+- **Migration History Pagination** - Configurable page size (5-100 entries) with 7-day accurate timeline
+
+### Automation Improvements
+- **Automated Recommendations** - Dynamic cluster-aware recommendation generation via systemd timer
+- **Infinite Polling with Resource Validation** - Enhanced monitoring prevents conflicts and validates resources
+- **Enhanced Concurrency** - Improved tracking of concurrent automated migrations
+
+### UI/UX & Performance
+- **Enhanced Status Displays** - Better real-time feedback for migrations and automation
+- **Optimized Section Layout** - Improved workflow with better UI organization
+- **VM Clumping Prevention** - Enhanced load distribution logic
+- **Migration Conflict Prevention** - Better detection and prevention of concurrent operations
+
+---
+
 ## ✨ Features
 
 ### Core Capabilities
 - **Real-Time Monitoring** - Live CPU, memory, IOWait, and load metrics with sparkline visualizations
 - **Interactive Cluster Map** - Visual representation with 4 view modes (Usage, Allocated, Disk I/O, Network)
-- **Smart Recommendations** - Intelligent migration suggestions based on historical data
-- **One-Click Migrations** - Execute migrations directly from the web interface
+- **Smart Recommendations** - Intelligent migration suggestions with Suitability Rating (0-100%)
+- **One-Click Migrations** - Execute migrations with real-time progress tracking and transfer speed
 - **Node Maintenance Mode** - Mark nodes for maintenance with automatic evacuation
 - **Dark Mode** - Modern interface with light/dark theme support
+- **Migration History** - 7-day migration timeline with pagination and export capabilities
 
 ### Advanced Features
 - **AI-Powered Analysis** - Optional AI recommendations using OpenAI, Anthropic, or Ollama
-- **Automated Migrations** - Scheduled load balancing with configurable safety rules (experimental)
+- **Automated Migrations** - Scheduled load balancing with infinite polling and resource validation
+- **Automated Recommendations** - Dynamic cluster-aware recommendation generation
 - **Anti-Affinity Rules** - Tag-based system to enforce workload separation
 - **Storage Compatibility** - Pre-migration validation prevents compatibility errors
+- **Multi-Disk Progress Tracking** - Accurate migration progress for VMs with multiple disks
+- **IOWait-Aware Scoring** - Node scoring algorithm includes I/O wait penalties
 
 See [Complete Feature List](docs/FEATURES.md) for detailed capabilities.
 
@@ -109,6 +144,7 @@ Once installed, open `http://<container-ip>` in your browser.
 | Document | Description |
 |----------|-------------|
 | **[Installation Guide](docs/INSTALL.md)** | Detailed installation and configuration |
+| **[Scoring Algorithm](docs/SCORING_ALGORITHM.md)** | How the penalty-based scoring system works |
 | **[AI Features](docs/AI_FEATURES.md)** | AI-powered recommendations setup |
 | **[Troubleshooting](docs/TROUBLESHOOTING.md)** | Common issues and solutions |
 | **[Contributing](docs/CONTRIBUTING.md)** | How to contribute |
