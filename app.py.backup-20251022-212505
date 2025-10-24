@@ -17,7 +17,6 @@ import threading
 import uuid
 from datetime import datetime
 from typing import Dict, List
-from pathlib import Path
 from ai_provider import AIProviderFactory
 
 app = Flask(__name__, static_folder='.', static_url_path='')
@@ -484,68 +483,15 @@ def get_recommendations():
                 print(f"Warning: AI enhancement failed (continuing with algorithm-only): {str(e)}", file=sys.stderr)
                 # Continue without AI enhancement - graceful degradation
 
-        # Cache the recommendations result
-        recommendations_cache = {
+        return jsonify({
             "success": True,
             "recommendations": recommendations,
             "count": len(recommendations),
             "threshold_suggestions": threshold_suggestions,
-            "ai_enhanced": ai_enhanced,
-            "generated_at": datetime.utcnow().isoformat() + 'Z',
-            "parameters": {
-                "cpu_threshold": cpu_threshold,
-                "mem_threshold": mem_threshold,
-                "iowait_threshold": iowait_threshold,
-                "maintenance_nodes": list(maintenance_nodes)
-            }
-        }
-
-        # Save to cache file
-        recommendations_cache_file = os.path.join(BASE_PATH, 'recommendations_cache.json')
-        try:
-            with open(recommendations_cache_file, 'w') as f:
-                json.dump(recommendations_cache, f, indent=2)
-        except Exception as cache_err:
-            print(f"Warning: Failed to cache recommendations: {cache_err}", file=sys.stderr)
-
-        return jsonify(recommendations_cache)
+            "ai_enhanced": ai_enhanced
+        })
     except Exception as e:
         print(f"Error in get_recommendations: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/recommendations", methods=["GET"])
-def get_cached_recommendations():
-    """Get cached recommendations without regenerating"""
-    try:
-        recommendations_cache_file = os.path.join(BASE_PATH, 'recommendations_cache.json')
-
-        # Check if cache file exists
-        if not os.path.exists(recommendations_cache_file):
-            return jsonify({
-                "success": False,
-                "error": "No cached recommendations available. Please generate recommendations first.",
-                "cache_missing": True
-            }), 404
-
-        # Read cached recommendations
-        try:
-            with open(recommendations_cache_file, 'r') as f:
-                cached_data = json.load(f)
-
-            return jsonify(cached_data)
-        except Exception as read_err:
-            print(f"Error reading recommendations cache: {read_err}", file=sys.stderr)
-            return jsonify({
-                "success": False,
-                "error": "Failed to read cached recommendations",
-                "cache_error": True
-            }), 500
-
-    except Exception as e:
-        print(f"Error in get_cached_recommendations: {str(e)}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -567,144 +513,6 @@ def get_threshold_suggestions():
         })
     except Exception as e:
         print(f"Error in get_threshold_suggestions: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/node-scores", methods=["POST"])
-def node_scores():
-    """Calculate migration suitability scores for all nodes"""
-    try:
-        cache_data = read_cache()
-        if not cache_data:
-            return jsonify({"success": False, "error": "No data available"}), 503
-
-        # Get thresholds from request body
-        req_data = request.get_json() or {}
-        cpu_threshold = float(req_data.get("cpu_threshold", 60))
-        mem_threshold = float(req_data.get("mem_threshold", 70))
-        iowait_threshold = float(req_data.get("iowait_threshold", 15))
-        maintenance_nodes = set(req_data.get("maintenance_nodes", []))
-
-        nodes = cache_data.get('nodes', {})
-        node_scores = {}
-
-        # Use a dummy small guest for scoring (1 core, 1GB RAM)
-        dummy_guest = {
-            'cores': 1,
-            'maxmem': 1073741824  # 1GB in bytes
-        }
-
-        for node_name, node in nodes.items():
-            if node.get('status') != 'online':
-                node_scores[node_name] = {
-                    'score': 999999,
-                    'suitability_rating': 0,
-                    'suitable': False,
-                    'reason': 'Node offline'
-                }
-                continue
-
-            if node_name in maintenance_nodes:
-                node_scores[node_name] = {
-                    'score': 999999,
-                    'suitability_rating': 0,
-                    'suitable': False,
-                    'reason': 'In maintenance mode'
-                }
-                continue
-
-            # Calculate the actual score using the same function as recommendations
-            # pending_target_guests is empty since we're just calculating base scores
-            score = calculate_target_node_score(
-                target_node=node,
-                guest=dummy_guest,
-                pending_target_guests={},
-                cpu_threshold=cpu_threshold,
-                mem_threshold=mem_threshold
-            )
-
-            # Get weighted metrics for display
-            metrics = node.get('metrics', {})
-            immediate_cpu = metrics.get("current_cpu", 0)
-            immediate_mem = metrics.get("current_mem", 0)
-
-            short_cpu = metrics.get("avg_cpu", 0)
-            short_mem = metrics.get("avg_mem", 0)
-
-            long_cpu = metrics.get("avg_cpu_week", 0)
-            long_mem = metrics.get("avg_mem_week", 0)
-
-            if metrics.get("has_historical"):
-                weighted_cpu = (immediate_cpu * 0.5) + (short_cpu * 0.3) + (long_cpu * 0.2)
-                weighted_mem = (immediate_mem * 0.5) + (short_mem * 0.3) + (long_mem * 0.2)
-            else:
-                weighted_cpu = immediate_cpu
-                weighted_mem = immediate_mem
-
-            # Determine suitability based on score thresholds
-            # Lower scores are better migration targets
-            if score < 50:
-                suitable = True
-                if score < 20:
-                    reason = 'Excellent target'
-                else:
-                    reason = 'Good target'
-            elif score < 100:
-                suitable = True
-                reason = 'Acceptable target'
-            elif score < 200:
-                suitable = False
-                reason = 'Poor target'
-            else:
-                suitable = False
-                # Determine primary issue for high scores
-                if immediate_cpu > (cpu_threshold + 20):
-                    reason = f'Very high current CPU ({immediate_cpu:.1f}%)'
-                elif immediate_mem > (mem_threshold + 20):
-                    reason = f'Very high current memory ({immediate_mem:.1f}%)'
-                elif immediate_cpu > (cpu_threshold + 10):
-                    reason = f'High current CPU ({immediate_cpu:.1f}%)'
-                elif immediate_mem > (mem_threshold + 10):
-                    reason = f'High current memory ({immediate_mem:.1f}%)'
-                elif long_cpu > 90:
-                    reason = f'Sustained high CPU ({long_cpu:.1f}% 7-day avg)'
-                elif long_mem > 90:
-                    reason = f'Sustained high memory ({long_mem:.1f}% 7-day avg)'
-                elif weighted_cpu > cpu_threshold:
-                    reason = f'CPU above threshold ({weighted_cpu:.1f}%)'
-                elif weighted_mem > mem_threshold:
-                    reason = f'Memory above threshold ({weighted_mem:.1f}%)'
-                else:
-                    reason = f'High penalty score'
-
-            # Get additional metrics for display
-            max_cpu_week = metrics.get("max_cpu_week", 0)
-            max_mem_week = metrics.get("max_mem_week", 0)
-
-            # Convert to suitability rating (0-100, higher is better)
-            suitability_rating = round(max(0, 100 - min(score, 100)), 1)
-
-            node_scores[node_name] = {
-                'score': round(score, 2),
-                'suitability_rating': suitability_rating,
-                'suitable': suitable,
-                'reason': reason,
-                'weighted_cpu': round(weighted_cpu, 1),
-                'weighted_mem': round(weighted_mem, 1),
-                'current_cpu': round(immediate_cpu, 1),
-                'current_mem': round(immediate_mem, 1),
-                'max_cpu_week': round(max_cpu_week, 1),
-                'max_mem_week': round(max_mem_week, 1)
-            }
-
-        return jsonify({
-            "success": True,
-            "scores": node_scores
-        })
-    except Exception as e:
-        print(f"Error in node_scores: {str(e)}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -999,30 +807,10 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     target_name = target_node.get("name")
     metrics = target_node.get("metrics", {})
 
-    # Weighted time-based scoring: 50% current, 30% short-term (24h), 20% long-term (7-day)
-    # This balances responsiveness with stability
-    immediate_cpu = metrics.get("current_cpu", 0)
-    immediate_mem = metrics.get("current_mem", 0)
-    immediate_iowait = metrics.get("current_iowait", 0)
-
-    short_cpu = metrics.get("avg_cpu", 0)  # 24-hour average
-    short_mem = metrics.get("avg_mem", 0)
-    short_iowait = metrics.get("avg_iowait", 0)
-
-    long_cpu = metrics.get("avg_cpu_week", 0)  # 7-day average
-    long_mem = metrics.get("avg_mem_week", 0)
-    long_iowait = metrics.get("avg_iowait_week", 0)
-
-    # Calculate weighted scores
-    if metrics.get("has_historical"):
-        current_cpu = (immediate_cpu * 0.5) + (short_cpu * 0.3) + (long_cpu * 0.2)
-        current_mem = (immediate_mem * 0.5) + (short_mem * 0.3) + (long_mem * 0.2)
-        current_iowait = (immediate_iowait * 0.5) + (short_iowait * 0.3) + (long_iowait * 0.2)
-    else:
-        # No historical data, use current only
-        current_cpu = immediate_cpu
-        current_mem = immediate_mem
-        current_iowait = immediate_iowait
+    # Use 7-day averages for more stable decisions - prefer nodes with consistent low load
+    current_cpu = metrics.get("avg_cpu_week", 0) or metrics.get("avg_cpu", 0) if metrics.get("has_historical") else metrics.get("current_cpu", 0)
+    current_mem = metrics.get("avg_mem_week", 0) or metrics.get("avg_mem", 0) if metrics.get("has_historical") else metrics.get("current_mem", 0)
+    current_iowait = metrics.get("avg_iowait_week", 0) or metrics.get("avg_iowait", 0) if metrics.get("has_historical") else metrics.get("current_iowait", 0)
 
     # Get max values over the week to avoid migrating to nodes that spike
     max_cpu_week = metrics.get("max_cpu_week", metrics.get("max_cpu", 0))
@@ -1032,78 +820,38 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     cpu_trend = metrics.get("cpu_trend", "stable")
     mem_trend = metrics.get("mem_trend", "stable")
 
-    # Initialize penalty accumulator
-    penalties = 0
-
-    # Current load penalty - heavily penalize nodes with high current load
-    if immediate_cpu > (cpu_threshold + 20):
-        penalties += 100  # Extreme current CPU load
-    elif immediate_cpu > (cpu_threshold + 10):
-        penalties += 50   # Very high current CPU load
-    elif immediate_cpu > cpu_threshold:
-        penalties += 20   # High current CPU load
-
-    if immediate_mem > (mem_threshold + 20):
-        penalties += 100  # Extreme current memory load
-    elif immediate_mem > (mem_threshold + 10):
-        penalties += 50   # Very high current memory load
-    elif immediate_mem > mem_threshold:
-        penalties += 20   # High current memory load
-
-    # Sustained load penalty - penalize sustained high averages
-    if long_cpu > 90:
-        penalties += 150  # Critically high sustained CPU
-    elif long_cpu > 80:
-        penalties += 80   # Very high sustained CPU
-    elif long_cpu > 70:
-        penalties += 40   # High sustained CPU
-
-    if long_mem > 90:
-        penalties += 150  # Critically high sustained memory
-    elif long_mem > 80:
-        penalties += 80   # Very high sustained memory
-    elif long_mem > 70:
-        penalties += 40   # High sustained memory
-
-    # IOWait penalty - penalize high disk wait times
-    if immediate_iowait > 30:
-        penalties += 80   # Extreme current IOWait
-    elif immediate_iowait > 20:
-        penalties += 40   # Very high current IOWait
-    elif immediate_iowait > 10:
-        penalties += 20   # High current IOWait
-
-    if long_iowait > 20:
-        penalties += 60   # Critically high sustained IOWait
-    elif long_iowait > 15:
-        penalties += 30   # High sustained IOWait
-    elif long_iowait > 10:
-        penalties += 15   # Elevated sustained IOWait
-
-    # Trend penalty - penalize rising load trends
+    # Trend penalty (add to score, making it less desirable)
+    trend_penalty = 0
     if cpu_trend == "rising":
-        penalties += 15  # Rising CPU trend
+        trend_penalty += 15  # Significantly penalize rising CPU
     if mem_trend == "rising":
-        penalties += 15  # Rising memory trend
+        trend_penalty += 15  # Significantly penalize rising memory
 
-    # Max spike penalty - penalize brief spikes (less severe than sustained)
-    if max_cpu_week > 95:
-        penalties += 30  # Extreme CPU spike
-    elif max_cpu_week > 90:
-        penalties += 20  # Very high CPU spike
-    elif max_cpu_week > 80:
-        penalties += 10  # High CPU spike
+    # Max load penalty - avoid nodes that have spiked high even if average is low
+    # More aggressive penalties to avoid nodes with prolonged high load
+    max_load_penalty = 0
+    if max_cpu_week > 80:
+        max_load_penalty += 30  # Heavily penalize nodes that have hit very high CPU
     elif max_cpu_week > 70:
-        penalties += 5   # Moderate CPU spike
+        max_load_penalty += 20  # Significant penalty for high CPU spikes
+    elif max_cpu_week > 60:
+        max_load_penalty += 15  # Penalize nodes with CPU above threshold
+    elif max_cpu_week > 50:
+        max_load_penalty += 5   # Light penalty for moderately high CPU
 
-    if max_mem_week > 95:
-        penalties += 30  # Extreme memory spike
-    elif max_mem_week > 90:
-        penalties += 20  # Very high memory spike
-    elif max_mem_week > 85:
-        penalties += 10  # High memory spike
+    if max_mem_week > 85:
+        max_load_penalty += 30
     elif max_mem_week > 75:
-        penalties += 5   # Moderate memory spike
+        max_load_penalty += 20
+    elif max_mem_week > 65:
+        max_load_penalty += 10
+
+    # Disqualify nodes with concerning historical patterns
+    # Don't migrate to nodes that have shown problematic behavior
+    if max_cpu_week > 70:  # Node has had severe CPU spikes (>70% for extended periods)
+        return 999999  # Completely disqualify
+    if max_mem_week > 80:  # Node has had severe memory pressure
+        return 999999  # Completely disqualify
 
     # Predict post-migration load
     predicted = predict_post_migration_load(target_node, guest, adding=True)
@@ -1119,20 +867,9 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
                 adding=True
             )
 
-    # Penalize if predicted load exceeds thresholds (don't disqualify)
-    if predicted["cpu"] > (cpu_threshold + 20):
-        penalties += 100  # Predicted CPU way over threshold
-    elif predicted["cpu"] > (cpu_threshold + 10):
-        penalties += 50   # Predicted CPU significantly over threshold
-    elif predicted["cpu"] > cpu_threshold:
-        penalties += 25   # Predicted CPU over threshold
-
-    if predicted["mem"] > (mem_threshold + 20):
-        penalties += 100  # Predicted memory way over threshold
-    elif predicted["mem"] > (mem_threshold + 10):
-        penalties += 50   # Predicted memory significantly over threshold
-    elif predicted["mem"] > mem_threshold:
-        penalties += 25   # Predicted memory over threshold
+    # Disqualify if predicted load exceeds thresholds
+    if predicted["cpu"] > cpu_threshold or predicted["mem"] > mem_threshold:
+        return 999999  # Disqualify
 
     # Health score (current state)
     health_score = calculate_node_health_score(target_node, metrics)
@@ -1161,13 +898,14 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
 
     # Combined weighted score (lower is better)
     # Current health: 25%, Predicted health: 40%, Headroom: 20%, Storage: 15%
-    # Plus all accumulated penalties (current load, sustained load, trends, spikes, predicted)
+    # Plus penalties for trends and historical spikes
     total_score = (
         health_score * 0.25 +
         predicted_health * 0.40 +
         headroom_score * 0.20 +
         storage_score * 0.15 +
-        penalties  # All accumulated penalties
+        trend_penalty +      # Penalty for rising load trends
+        max_load_penalty     # Penalty for historical high loads
     )
 
     return total_score
@@ -1277,135 +1015,17 @@ def select_guests_to_migrate(node: Dict, guests: Dict, cpu_threshold: float, mem
     return selected
 
 
-def build_storage_cache(nodes: Dict, proxmox) -> Dict[str, set]:
+def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float, mem_threshold: float, iowait_threshold: float = 30.0, maintenance_nodes: set = None) -> List[Dict]:
     """
-    Build a cache of available storage for all nodes.
+    Generate intelligent migration recommendations using comprehensive cluster analysis
 
-    Args:
-        nodes: Dictionary of nodes
-        proxmox: ProxmoxAPI client
-
-    Returns:
-        Dictionary mapping node names to sets of available storage IDs
-    """
-    storage_cache = {}
-
-    if not proxmox:
-        return storage_cache
-
-    for node_name in nodes:
-        try:
-            storage_list = proxmox.nodes(node_name).storage.get()
-            available_storage = set()
-            for storage in storage_list:
-                if storage.get('enabled', 1) and storage.get('active', 0):
-                    available_storage.add(storage.get('storage'))
-            storage_cache[node_name] = available_storage
-            print(f"Cached {len(available_storage)} storage volumes for node {node_name}", file=sys.stderr)
-        except Exception as e:
-            print(f"Warning: Could not get storage for node {node_name}: {e}", file=sys.stderr)
-            storage_cache[node_name] = set()
-
-    return storage_cache
-
-
-def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: str, proxmox, storage_cache: Dict[str, set] = None) -> bool:
-    """
-    Check if target node has all storage volumes required by the guest.
-
-    Args:
-        guest: Guest dictionary with vmid and type
-        src_node_name: Source node name
-        tgt_node_name: Target node name
-        proxmox: ProxmoxAPI client
-        storage_cache: Optional pre-built cache of node storage (for performance)
-
-    Returns:
-        True if target has all required storage, False otherwise
-    """
-    try:
-        vmid = guest.get('vmid')
-        guest_type = guest.get('type', 'VM')
-
-        # Get guest configuration to extract storage volumes
-        guest_config = None
-        try:
-            if guest_type == 'VM':
-                guest_config = proxmox.nodes(src_node_name).qemu(vmid).config.get()
-            else:  # CT
-                guest_config = proxmox.nodes(src_node_name).lxc(vmid).config.get()
-        except Exception as e:
-            print(f"Warning: Could not get config for guest {vmid}: {e}", file=sys.stderr)
-            return True  # Allow migration if we can't determine storage (avoid blocking valid migrations)
-
-        if not guest_config:
-            return True
-
-        # Extract storage volumes from config
-        storage_volumes = set()
-        for key, value in guest_config.items():
-            # Disk keys like scsi0, ide0, virtio0, mp0, rootfs
-            if any(key.startswith(prefix) for prefix in ['scsi', 'ide', 'virtio', 'sata', 'mp', 'rootfs']):
-                # Value format is typically "storage:vm-disk-id" or "storage:subvol-id"
-                if isinstance(value, str) and ':' in value:
-                    storage_id = value.split(':')[0]
-                    storage_volumes.add(storage_id)
-
-        if not storage_volumes:
-            return True  # No storage requirements, allow migration
-
-        # Get target node storage (use cache if available, otherwise query API)
-        available_storage = set()
-        if storage_cache and tgt_node_name in storage_cache:
-            # Use cached storage data (much faster!)
-            available_storage = storage_cache[tgt_node_name]
-        else:
-            # Fallback to API query if cache not available
-            try:
-                target_storage_list = proxmox.nodes(tgt_node_name).storage.get()
-                for storage in target_storage_list:
-                    if storage.get('enabled', 1) and storage.get('active', 0):
-                        available_storage.add(storage.get('storage'))
-            except Exception as e:
-                print(f"Warning: Could not get storage for node {tgt_node_name}: {e}", file=sys.stderr)
-                return True  # Allow migration if we can't determine target storage
-
-        # Check if all required storage is available on target
-        missing_storage = storage_volumes - available_storage
-
-        if missing_storage:
-            print(f"Storage incompatibility: Guest {vmid} requires storage {missing_storage} not available on {tgt_node_name}", file=sys.stderr)
-            return False
-
-        return True
-
-    except Exception as e:
-        print(f"Error checking storage compatibility for guest {guest.get('vmid')}: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return True  # Allow migration on error to avoid blocking valid migrations
-
-
-def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 60.0, mem_threshold: float = 70.0, iowait_threshold: float = 30.0, maintenance_nodes: set = None) -> List[Dict]:
-    """
-    Generate intelligent migration recommendations using pure score-based analysis
-
-    Pure score-based approach:
-    - Calculates suitability score for each guest on its current node
-    - Calculates suitability score for each guest on all potential target nodes
-    - Recommends migration if score improvement is significant (>15 points)
-    - No arbitrary thresholds - uses penalty-based scoring system
-
-    Scoring factors (lower score = better):
-    - Current load (CPU, Memory, IOWait) - weighted 50% current, 30% 24h, 20% 7d
-    - Predicted load after migration
-    - Historical trends (rising/falling)
-    - Load spikes and sustained high load
-    - Storage compatibility
-    - Anti-affinity rules
-    - Maintenance mode (priority evacuation)
-
-    Thresholds are only used internally by calculate_target_node_score for reference
+    Enhanced algorithm considers:
+    - CPU, Memory, IOWait, Load Average, Storage pressure
+    - Predictive load calculation (post-migration state)
+    - Historical trend analysis
+    - HA status (avoids migrating HA-managed guests)
+    - Smart guest selection (knapsack algorithm)
+    - Weighted target scoring with headroom analysis
     """
     if maintenance_nodes is None:
         maintenance_nodes = set()
@@ -1413,82 +1033,108 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
     recommendations = []
     pending_target_guests = {}
 
-    # Get Proxmox client for storage compatibility checks
-    proxmox = None
-    storage_cache = {}
-    try:
-        from proxmoxer import ProxmoxAPI
-        config = load_config()
+    # Step 1: Identify overloaded nodes and maintenance nodes
+    overloaded = []
 
-        token_id = config.get('proxmox_api_token_id', '')
-        token_secret = config.get('proxmox_api_token_secret', '')
-        proxmox_host = config.get('proxmox_host', 'localhost')
-        proxmox_port = config.get('proxmox_port', 8006)
-        verify_ssl = config.get('proxmox_verify_ssl', False)
+    # First, add maintenance nodes (highest priority for evacuation)
+    for node_name in maintenance_nodes:
+        if node_name in nodes:
+            node = nodes[node_name]
+            metrics = node.get("metrics", {})
+            overloaded.append({
+                "node": node_name,
+                "node_obj": node,
+                "cpu": metrics.get("current_cpu", 0),
+                "mem": metrics.get("current_mem", 0),
+                "iowait": metrics.get("current_iowait", 0),
+                "reason": "maintenance",
+                "health_score": 200  # Highest priority for evacuation
+            })
 
-        if token_id and token_secret:
-            user, token_name = token_id.split('!', 1)
-            proxmox = ProxmoxAPI(
-                proxmox_host,
-                user=user,
-                token_name=token_name,
-                token_value=token_secret,
-                port=proxmox_port,
-                verify_ssl=verify_ssl
-            )
+    # Then check for overloaded nodes (skip maintenance nodes as they're already added)
+    for node_name, node in nodes.items():
+        if node_name in maintenance_nodes:
+            continue
 
-            # Build storage cache once for all compatibility checks (major performance boost!)
-            print(f"Building storage cache for {len(nodes)} nodes...", file=sys.stderr)
-            storage_cache = build_storage_cache(nodes, proxmox)
-            print(f"✓ Storage cache built for {len(storage_cache)} nodes", file=sys.stderr)
-    except Exception as e:
-        print(f"Warning: Could not initialize Proxmox client for storage checks: {e}", file=sys.stderr)
-
-    # Minimum score improvement required to recommend migration (in points)
-    MIN_SCORE_IMPROVEMENT = 15
-
-    # Maintenance nodes get priority evacuation regardless of score
-    MAINTENANCE_SCORE_BOOST = 100  # Extra improvement to prioritize evacuation
-
-    # Step 1: Calculate current score for each guest on its current node
-    # Step 2: Calculate potential scores on all other nodes
-    # Step 3: Recommend migration if score improvement is significant
-
-    # Create list of all migration candidates sorted by potential benefit
-    migration_candidates = []
-
-    for vmid_key, guest in guests.items():
         try:
-            src_node_name = guest.get("node")
-            if not src_node_name or src_node_name not in nodes:
-                continue
+            metrics = node.get("metrics", {})
 
-            src_node = nodes[src_node_name]
-            if src_node.get("status") != "online":
-                continue
+            # Use 7-day averages for more stable, trend-aware decisions
+            # Fall back to 24-hour if week data unavailable, then current
+            cpu_check = metrics.get("avg_cpu_week", 0) or metrics.get("avg_cpu", 0) if metrics.get("has_historical") else metrics.get("current_cpu", 0)
+            mem_check = metrics.get("avg_mem_week", 0) or metrics.get("avg_mem", 0) if metrics.get("has_historical") else metrics.get("current_mem", 0)
+            iowait_check = metrics.get("avg_iowait_week", 0) or metrics.get("avg_iowait", 0) if metrics.get("has_historical") else metrics.get("current_iowait", 0)
 
-            # Skip guests with ignore tag (unless on maintenance node)
-            if guest.get("tags", {}).get("has_ignore", False) and src_node_name not in maintenance_nodes:
-                continue
+            # Consider trends: if load is falling, be less aggressive about migrations
+            cpu_trend = metrics.get("cpu_trend", "stable")
+            mem_trend = metrics.get("mem_trend", "stable")
 
-            # Skip HA-managed guests (unless on maintenance node)
-            if guest.get("ha_managed", False) and src_node_name not in maintenance_nodes:
-                continue
+            # Adjust thresholds based on trends
+            cpu_threshold_adjusted = cpu_threshold
+            mem_threshold_adjusted = mem_threshold
 
-            # Skip stopped guests (unless on maintenance node)
-            if guest.get("status") != "running" and src_node_name not in maintenance_nodes:
-                continue
+            # If trending down, increase threshold (less likely to trigger migration)
+            if cpu_trend == "falling":
+                cpu_threshold_adjusted += 10  # More tolerant if load is decreasing
+            elif cpu_trend == "rising":
+                cpu_threshold_adjusted -= 5   # More aggressive if load is increasing
 
-            # Calculate current score (how well current node suits this guest)
-            current_score = calculate_target_node_score(src_node, guest, {}, cpu_threshold, mem_threshold)
+            if mem_trend == "falling":
+                mem_threshold_adjusted += 10
+            elif mem_trend == "rising":
+                mem_threshold_adjusted -= 5
 
-            # For maintenance nodes, artificially inflate current score to prioritize evacuation
-            if src_node_name in maintenance_nodes:
-                current_score += MAINTENANCE_SCORE_BOOST
+            # Check if overloaded (CPU, Memory, or high IOWait) using trend-adjusted thresholds
+            is_overloaded = False
+            reason = None
 
-            # Find best alternative target
+            if cpu_check > cpu_threshold_adjusted:
+                is_overloaded = True
+                reason = "cpu"
+            elif mem_check > mem_threshold_adjusted:
+                is_overloaded = True
+                reason = "mem"
+            elif iowait_check > iowait_threshold:
+                is_overloaded = True
+                reason = "iowait"
+
+            if is_overloaded:
+                overloaded.append({
+                    "node": node_name,
+                    "node_obj": node,
+                    "cpu": cpu_check,
+                    "mem": mem_check,
+                    "iowait": iowait_check,
+                    "reason": reason,
+                    "health_score": calculate_node_health_score(node, metrics)
+                })
+        except Exception as e:
+            print(f"Error analyzing node {node_name}: {str(e)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            continue
+
+    # Sort overloaded nodes by health score (worst first)
+    overloaded.sort(key=lambda x: x["health_score"], reverse=True)
+
+    # Step 2: For each overloaded node, find best migrations
+    for overload in overloaded:
+        src_node_name = overload["node"]
+        src_node = overload["node_obj"]
+
+        # Select guests to migrate using intelligent selection
+        selected_vmids = select_guests_to_migrate(src_node, guests, cpu_threshold, mem_threshold, overload["reason"])
+
+        if not selected_vmids:
+            continue
+
+        # Step 3: For each selected guest, find best target
+        for vmid_key in selected_vmids:
+            guest = guests[vmid_key]
+
+            # Find best target node
             best_target = None
-            best_target_score = 999999
+            best_score = 999999
 
             for tgt_name, tgt_node in nodes.items():
                 try:
@@ -1524,15 +1170,11 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
                     if conflict:
                         continue
 
-                    # Check storage compatibility (skip target if storage is incompatible)
-                    if proxmox and not check_storage_compatibility(guest, src_node_name, tgt_name, proxmox, storage_cache):
-                        continue
-
                     # Calculate target suitability score
                     score = calculate_target_node_score(tgt_node, guest, pending_target_guests, cpu_threshold, mem_threshold)
 
-                    if score < best_target_score:
-                        best_target_score = score
+                    if score < best_score:
+                        best_score = score
                         best_target = tgt_name
 
                 except Exception as e:
@@ -1541,95 +1183,47 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
                     traceback.print_exc()
                     continue
 
-            # Calculate score improvement
-            score_improvement = current_score - best_target_score
+            # Create recommendation if target found
+            if best_target and best_score < 999999:
+                try:
+                    cmd_type = "qm" if guest.get("type") == "VM" else "pct"
+                    cmd_flag = "--online" if guest.get("type") == "VM" else "--restart"
+                    vmid_int = int(vmid_key) if isinstance(vmid_key, str) else vmid_key
 
-            # Only recommend if improvement is significant
-            if best_target and score_improvement >= MIN_SCORE_IMPROVEMENT:
-                migration_candidates.append({
-                    "vmid": vmid_key,
-                    "guest": guest,
-                    "source_node": src_node_name,
-                    "target_node": best_target,
-                    "current_score": current_score,
-                    "target_score": best_target_score,
-                    "improvement": score_improvement,
-                    "is_maintenance": src_node_name in maintenance_nodes
-                })
+                    # Enhanced reason with more context
+                    if overload["reason"] == "maintenance":
+                        reason = f"Node maintenance - evacuating {src_node_name}"
+                    elif overload["reason"] == "cpu":
+                        reason = f"Balance CPU load (src: {overload['cpu']:.1f}%, target: {nodes[best_target].get('metrics', {}).get('avg_cpu', 0):.1f}%)"
+                    elif overload["reason"] == "mem":
+                        reason = f"Balance Memory load (src: {overload['mem']:.1f}%, target: {nodes[best_target].get('metrics', {}).get('avg_mem', 0):.1f}%)"
+                    elif overload["reason"] == "iowait":
+                        reason = f"Reduce IOWait pressure (src: {overload['iowait']:.1f}%)"
+                    else:
+                        reason = "Balance cluster load"
 
-                # Track pending migration IMMEDIATELY so next guest evaluation considers it
-                if best_target not in pending_target_guests:
-                    pending_target_guests[best_target] = []
-                pending_target_guests[best_target].append(guest)
+                    recommendations.append({
+                        "vmid": vmid_int,
+                        "name": guest.get("name", "unknown"),
+                        "type": guest.get("type", "unknown"),
+                        "source_node": src_node_name,
+                        "target_node": best_target,
+                        "reason": reason,
+                        "mem_gb": guest.get("mem_max_gb", 0),
+                        "command": "{} migrate {} {} {}".format(cmd_type, vmid_int, best_target, cmd_flag),
+                        "confidence_score": round(100 - best_score, 1)  # Higher score = more confident
+                    })
 
-        except Exception as e:
-            print(f"Error analyzing guest {vmid_key}: {str(e)}", file=sys.stderr)
-            import traceback
-            traceback.print_exc()
-            continue
+                    # Track pending migration
+                    if best_target not in pending_target_guests:
+                        pending_target_guests[best_target] = []
+                    pending_target_guests[best_target].append(guest)
 
-    # Sort candidates by improvement (best first), prioritizing maintenance evacuations
-    migration_candidates.sort(key=lambda x: (not x["is_maintenance"], -x["improvement"]))
-
-    # Build final recommendations from candidates
-    for candidate in migration_candidates:
-        try:
-            vmid_key = candidate["vmid"]
-            guest = candidate["guest"]
-            src_node_name = candidate["source_node"]
-            best_target = candidate["target_node"]
-            best_score = candidate["target_score"]
-            score_improvement = candidate["improvement"]
-
-            cmd_type = "qm" if guest.get("type") == "VM" else "pct"
-            cmd_flag = "--online" if guest.get("type") == "VM" else "--restart"
-            vmid_int = int(vmid_key) if isinstance(vmid_key, str) else vmid_key
-
-            # Generate reason based on primary benefit
-            if candidate["is_maintenance"]:
-                reason = f"Node maintenance - evacuating {src_node_name}"
-            else:
-                src_metrics = nodes[src_node_name].get("metrics", {})
-                tgt_metrics = nodes[best_target].get("metrics", {})
-
-                # Weighted metrics for reason
-                src_cpu = (src_metrics.get("current_cpu", 0) * 0.5 + src_metrics.get("avg_cpu", 0) * 0.3 + src_metrics.get("avg_cpu_week", 0) * 0.2)
-                src_mem = (src_metrics.get("current_mem", 0) * 0.5 + src_metrics.get("avg_mem", 0) * 0.3 + src_metrics.get("avg_mem_week", 0) * 0.2)
-                tgt_cpu = (tgt_metrics.get("current_cpu", 0) * 0.5 + tgt_metrics.get("avg_cpu", 0) * 0.3 + tgt_metrics.get("avg_cpu_week", 0) * 0.2)
-                tgt_mem = (tgt_metrics.get("current_mem", 0) * 0.5 + tgt_metrics.get("avg_mem", 0) * 0.3 + tgt_metrics.get("avg_mem_week", 0) * 0.2)
-
-                if src_cpu > src_mem:
-                    reason = f"Balance CPU load (src: {src_cpu:.1f}%, target: {tgt_cpu:.1f}%)"
-                else:
-                    reason = f"Balance Memory load (src: {src_mem:.1f}%, target: {tgt_mem:.1f}%)"
-
-            # Convert raw score to suitability rating (0-100, higher is better)
-            # Raw scores are penalties (lower = better), so invert them
-            # Cap at 100 for the conversion formula
-            suitability_rating = round(max(0, 100 - min(best_score, 100)), 1)
-
-            recommendations.append({
-                "vmid": vmid_int,
-                "name": guest.get("name", "unknown"),
-                "type": guest.get("type", "unknown"),
-                "source_node": src_node_name,
-                "target_node": best_target,
-                "target_node_score": round(best_score, 2),  # Raw penalty score (internal use)
-                "suitability_rating": suitability_rating,  # 0-100, higher is better (user-facing)
-                "score_improvement": round(score_improvement, 2),  # How much better
-                "reason": reason,
-                "mem_gb": guest.get("mem_max_gb", 0),
-                "command": "{} migrate {} {} {}".format(cmd_type, vmid_int, best_target, cmd_flag),
-                "confidence_score": round(min(100, score_improvement * 2), 1)  # Convert improvement to confidence
-            })
-
-            # Note: pending_target_guests was already updated when the candidate was added (line 1563)
-
-        except Exception as e:
-            print(f"Error creating recommendation for {vmid_key}: {str(e)}", file=sys.stderr)
-            import traceback
-            traceback.print_exc()
-            continue
+                except Exception as e:
+                    print(f"Error creating recommendation for {vmid_key}: {str(e)}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc()
+                    continue
 
     return recommendations
 
@@ -1704,9 +1298,6 @@ def execute_migration():
         })
 
     except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        app.logger.error(f"Migration error for VM {vmid}: {str(e)}\n{error_trace}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -4940,11 +4531,11 @@ def get_automigrate_status():
         # Check timer status
         try:
             timer_result = subprocess.run(
-                ['/usr/bin/systemctl', 'is-active', 'proxmox-balance-automigrate.timer'],
+                ['systemctl', 'is-active', 'proxmox-balance-automigrate.timer'],
                 capture_output=True, text=True, timeout=5
             )
             timer_active = timer_result.stdout.strip() == 'active'
-        except Exception:
+        except:
             timer_active = False
 
         # Load history
@@ -4960,142 +4551,6 @@ def get_automigrate_status():
         # Get recent migrations (last 10)
         recent = history.get('migrations', [])[-10:]
 
-        # Check for in-progress migrations using cluster tasks endpoint
-        in_progress_migrations = []
-        try:
-            import requests
-            cache_data = read_cache()
-            token_id = config.get('proxmox_api_token_id', '')
-            token_secret = config.get('proxmox_api_token_secret', '')
-            proxmox_host = config.get('proxmox_host', 'localhost')
-            proxmox_port = config.get('proxmox_port', 8006)
-            verify_ssl = config.get('proxmox_verify_ssl', False)
-
-            if token_id and token_secret and cache_data:
-                try:
-                    # Query cluster tasks endpoint
-                    url = f"https://{proxmox_host}:{proxmox_port}/api2/json/cluster/tasks"
-                    headers = {
-                        'Authorization': f'PVEAPIToken={token_id}={token_secret}'
-                    }
-
-                    response = requests.get(url, headers=headers, verify=verify_ssl, timeout=10)
-
-                    if response.status_code == 200:
-                        tasks_data = response.json().get('data', [])
-
-                        # Find running migration tasks (they have a 'pid' key when running)
-                        for task in tasks_data:
-                            if (task.get('type') in ['qmigrate', 'vzmigrate'] and
-                                task.get('pid') is not None):  # Running tasks have pid
-
-                                vmid = task.get('id')
-                                guest = cache_data.get('guests', {}).get(str(vmid), {})
-
-                                # Try to find target node from recent migration history
-                                target_node = 'unknown'
-                                task_upid = task.get('upid')
-                                for migration in reversed(recent):  # Search most recent first
-                                    if (migration.get('vmid') == vmid and
-                                        migration.get('task_id') == task_upid):
-                                        target_node = migration.get('target_node', 'unknown')
-                                        break
-
-                                # If not found in history, try to parse from task log (for manual migrations)
-                                if target_node == 'unknown' and task_upid:
-                                    try:
-                                        source_node = task.get('node')
-                                        log_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/tasks/{task_upid}/log"
-                                        log_response = requests.get(
-                                            log_url,
-                                            headers={'Authorization': f'PVEAPIToken={token_id}={token_secret}'},
-                                            verify=verify_ssl,
-                                            timeout=5
-                                        )
-                                        if log_response.status_code == 200:
-                                            log_data = log_response.json().get('data', [])
-                                            # Look for "starting migration of CT/VM XXX to node 'target'"
-                                            import re
-                                            for log_entry in log_data:
-                                                log_text = log_entry.get('t', '')
-                                                match = re.search(r"to node ['\"]([^'\"]+)", log_text)
-                                                if match:
-                                                    target_node = match.group(1)
-                                                    break
-                                    except Exception as log_err:
-                                        pass  # Ignore log parsing errors, keep 'unknown'
-
-                                # Determine who initiated the migration
-                                task_user = task.get('user', '')
-                                initiated_by = 'automated' if 'proxbalance' in task_user else 'manual'
-
-                                # Parse progress from task log
-                                progress_info = None
-                                try:
-                                    task_upid = task.get('upid')
-                                    source_node = task.get('node')
-                                    if task_upid and source_node:
-                                        log_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/tasks/{task_upid}/log"
-                                        log_response = requests.get(
-                                            log_url,
-                                            headers={'Authorization': f'PVEAPIToken={token_id}={token_secret}'},
-                                            verify=verify_ssl,
-                                            timeout=10
-                                        )
-                                        if log_response.status_code == 200:
-                                            task_log = log_response.json().get('data', [])
-
-                                            latest_percentage = None
-                                            latest_transferred = None
-                                            total_size = None
-
-                                            for entry in task_log:
-                                                line = entry.get('t', '')
-                                                # Look for mirror progress: "mirror-scsi0: transferred X GiB of Y GiB (Z%)"
-                                                if 'mirror' in line and 'transferred' in line and 'GiB' in line:
-                                                    import re
-                                                    match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
-                                                    if match:
-                                                        latest_transferred = float(match.group(1))
-                                                        total_size = float(match.group(2))
-                                                        latest_percentage = int(float(match.group(3)))
-
-                                            if latest_percentage is not None and latest_transferred is not None:
-                                                progress_info = {
-                                                    "transferred_gib": latest_transferred,
-                                                    "total_gib": total_size,
-                                                    "percentage": latest_percentage,
-                                                    "human_readable": f"{latest_transferred:.1f} GiB of {total_size:.1f} GiB"
-                                                }
-                                except Exception as progress_err:
-                                    pass  # Ignore progress parsing errors
-
-                                migration_data = {
-                                    'vmid': vmid,
-                                    'name': guest.get('name', f'VM-{vmid}'),
-                                    'source_node': task.get('node', 'unknown'),
-                                    'target_node': target_node,
-                                    'status': 'running',
-                                    'task_id': task.get('upid'),
-                                    'starttime': task.get('starttime'),
-                                    'type': 'VM' if task.get('type') == 'qmigrate' else 'CT',
-                                    'initiated_by': initiated_by,
-                                    'user': task_user
-                                }
-
-                                if progress_info:
-                                    migration_data['progress'] = progress_info
-
-                                in_progress_migrations.append(migration_data)
-                    else:
-                        print(f"Failed to fetch cluster tasks: HTTP {response.status_code}", file=sys.stderr)
-
-                except Exception as e:
-                    print(f"Error querying Proxmox cluster tasks: {e}", file=sys.stderr)
-
-        except Exception as e:
-            print(f"Error checking in-progress migrations: {e}", file=sys.stderr)
-
         return jsonify({
             "success": True,
             "enabled": auto_config.get('enabled', False),
@@ -5103,7 +4558,6 @@ def get_automigrate_status():
             "timer_active": timer_active,
             "check_interval_minutes": auto_config.get('check_interval_minutes', 5),
             "recent_migrations": recent,
-            "in_progress_migrations": in_progress_migrations,
             "state": history.get('state', {})
         })
 
@@ -5196,49 +4650,6 @@ def test_automigrate():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/api/automigrate/run", methods=["POST"])
-def run_automigrate():
-    """Manually trigger automation check now"""
-    try:
-        # Run automigrate.py
-        script_path = os.path.join(BASE_PATH, 'automigrate.py')
-        venv_python = os.path.join(BASE_PATH, 'venv', 'bin', 'python3')
-
-        if not os.path.exists(script_path):
-            return jsonify({
-                "success": False,
-                "error": f"automigrate.py not found at {script_path}"
-            }), 404
-
-        # Run automation in background to avoid timeout
-        result = subprocess.run(
-            [venv_python, script_path],
-            capture_output=True,
-            text=True,
-            timeout=120,  # 2 minute timeout
-            cwd=BASE_PATH
-        )
-
-        return jsonify({
-            "success": result.returncode == 0,
-            "message": "Automation check completed successfully" if result.returncode == 0 else "Automation check completed with errors",
-            "return_code": result.returncode,
-            "output": result.stdout[-1000:] if result.stdout else "",  # Last 1000 chars
-            "error": result.stderr[-1000:] if result.stderr and result.returncode != 0 else None
-        })
-
-    except subprocess.TimeoutExpired:
-        return jsonify({
-            "success": False,
-            "error": "Automation run timed out after 120 seconds"
-        }), 500
-    except Exception as e:
-        print(f"Error running automigrate: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
 @app.route("/api/automigrate/config", methods=["GET", "POST"])
 def automigrate_config():
     """Get or update automated migration configuration"""
@@ -5281,33 +4692,6 @@ def automigrate_config():
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(config, f, indent=2)
 
-            # Update systemd timer if check_interval_minutes changed
-            if 'check_interval_minutes' in updates:
-                try:
-                    interval_minutes = updates['check_interval_minutes']
-
-                    # Create systemd drop-in override
-                    override_dir = Path("/etc/systemd/system/proxmox-balance-automigrate.timer.d")
-                    override_dir.mkdir(parents=True, exist_ok=True)
-
-                    override_file = override_dir / "interval.conf"
-                    override_content = f"""[Timer]
-OnUnitActiveSec=
-OnUnitActiveSec={interval_minutes}min
-"""
-
-                    with open(override_file, 'w') as f:
-                        f.write(override_content)
-
-                    # Reload systemd and restart timer to apply changes
-                    subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/systemctl', 'restart', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
-
-                    print(f"✓ Automigrate timer interval updated to {interval_minutes} minutes", file=sys.stderr)
-                except Exception as timer_err:
-                    print(f"Warning: Failed to update systemd timer interval: {timer_err}", file=sys.stderr)
-                    # Don't fail the request if timer update fails - config was still saved
-
             return jsonify({
                 "success": True,
                 "message": "Configuration updated successfully",
@@ -5319,99 +4703,6 @@ OnUnitActiveSec={interval_minutes}min
             import traceback
             traceback.print_exc()
             return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/automigrate/toggle-timer", methods=["POST"])
-def automigrate_toggle_timer():
-    """Toggle the automated migration timer on/off"""
-    try:
-        import subprocess
-
-        data = request.get_json()
-        active = data.get('active', False)
-
-        systemctl_cmd = "/usr/bin/systemctl"
-        timer_name = "proxmox-balance-automigrate.timer"
-
-        if active:
-            # Start the timer
-            result = subprocess.run(
-                [systemctl_cmd, 'start', timer_name],
-                capture_output=True, text=True, timeout=5
-            )
-        else:
-            # Stop the timer
-            result = subprocess.run(
-                [systemctl_cmd, 'stop', timer_name],
-                capture_output=True, text=True, timeout=5
-            )
-
-        if result.returncode == 0:
-            # Verify the status
-            verify_result = subprocess.run(
-                [systemctl_cmd, 'is-active', timer_name],
-                capture_output=True, text=True, timeout=5
-            )
-            timer_active = verify_result.stdout.strip() == 'active'
-
-            return jsonify({
-                "success": True,
-                "timer_active": timer_active,
-                "message": f"Timer {'started' if active else 'stopped'} successfully"
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": f"Failed to {'start' if active else 'stop'} timer: {result.stderr}"
-            }), 500
-
-    except subprocess.TimeoutExpired:
-        return jsonify({"success": False, "error": "Timeout toggling timer"}), 500
-    except Exception as e:
-        print(f"Error toggling automigrate timer: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/automigrate/logs", methods=["GET"])
-def automigrate_logs():
-    """Get logs from the automated migration service"""
-    try:
-        import subprocess
-
-        # Get number of lines to fetch (default 100, max 1000)
-        lines = request.args.get('lines', 100, type=int)
-        lines = min(lines, 1000)  # Cap at 1000 lines
-
-        # Fetch logs from journalctl for the automigrate service
-        result = subprocess.run(
-            ['/bin/journalctl', '-u', 'proxmox-balance-automigrate.service', '-n', str(lines), '--no-pager'],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-
-        if result.returncode == 0:
-            logs = result.stdout
-            return jsonify({
-                "success": True,
-                "logs": logs,
-                "lines": len(logs.split('\n'))
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": f"Failed to fetch logs: {result.stderr}"
-            }), 500
-
-    except subprocess.TimeoutExpired:
-        return jsonify({"success": False, "error": "Timeout fetching logs"}), 500
-    except Exception as e:
-        print(f"Error fetching automigrate logs: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":
