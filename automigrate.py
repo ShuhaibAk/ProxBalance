@@ -456,7 +456,7 @@ def execute_migration(
         logger.info(f"Migration started for VM {vmid}, task_id: {task_id}. Polling for completion...")
 
         # Poll task status until completion
-        max_wait = 600  # 10 minutes max
+        max_wait = 1800  # 30 minutes max (large VMs can take 10-20 minutes)
         poll_interval = 5  # Check every 5 seconds
         elapsed = 0
 
@@ -833,12 +833,48 @@ def main():
             return 0
 
         # 8. Limit and execute migrations
-        max_migrations = rules.get('max_migrations_per_run', 3)
-        to_migrate = filtered[:max_migrations]
+        max_migrations_per_run = rules.get('max_migrations_per_run', 3)
+        max_concurrent = rules.get('max_concurrent_migrations', 3)
+
+        # Count currently running migrations across the entire cluster
+        running_count = 0
+        try:
+            proxmox_host = config.get('proxmox_host', 'localhost')
+            proxmox_port = config.get('proxmox_port', 8006)
+            token_id = config.get('proxmox_api_token_id', '')
+            token_secret = config.get('proxmox_api_token_secret', '')
+            verify_ssl = config.get('proxmox_verify_ssl', False)
+
+            if token_id and token_secret:
+                url = f"https://{proxmox_host}:{proxmox_port}/api2/json/cluster/tasks"
+                headers = {'Authorization': f'PVEAPIToken={token_id}={token_secret}'}
+                response = requests.get(url, headers=headers, verify=verify_ssl, timeout=10)
+
+                if response.status_code == 200:
+                    tasks_data = response.json().get('data', [])
+                    # Count running migration tasks
+                    for task in tasks_data:
+                        if (task.get('type') in ['qmigrate', 'vzmigrate'] and
+                            task.get('pid') is not None):
+                            running_count += 1
+        except Exception as e:
+            logger.warning(f"Could not check running migrations: {e}")
+
+        logger.info(f"Currently {running_count} migrations running cluster-wide")
+
+        # Calculate how many new migrations we can start
+        available_slots = max(0, max_concurrent - running_count)
+        max_new_migrations = min(max_migrations_per_run, available_slots)
+
+        if available_slots == 0:
+            logger.info(f"Maximum concurrent migrations ({max_concurrent}) already running, skipping this run")
+            return 0
+
+        to_migrate = filtered[:max_new_migrations]
 
         dry_run = auto_config.get('dry_run', True)
 
-        logger.info(f"Planning to migrate {len(to_migrate)} VMs (dry_run={dry_run})")
+        logger.info(f"Planning to migrate {len(to_migrate)} VMs (dry_run={dry_run}, max_concurrent={max_concurrent}, available_slots={available_slots})")
 
         send_notification(config, 'start', {
             'migration_count': len(to_migrate),
