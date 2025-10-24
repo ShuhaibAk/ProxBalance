@@ -5386,6 +5386,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     <div className="flex items-center justify-between text-xs mb-1">
                                       <span className={isAutomated ? 'text-blue-600 dark:text-blue-400 font-semibold' : 'text-purple-600 dark:text-purple-400 font-semibold'}>
                                         Progress: {migration.progress.percentage}%
+                                        {migration.progress.speed_mib_s && (
+                                          <span className="ml-2 font-normal text-[10px]">
+                                            ({migration.progress.speed_mib_s.toFixed(1)} MiB/s)
+                                          </span>
+                                        )}
                                       </span>
                                       <span className="text-gray-500 dark:text-gray-400 text-[10px]">
                                         {migration.progress.human_readable}

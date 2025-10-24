@@ -5125,19 +5125,61 @@ def get_automigrate_status():
                                                     if disk_match:
                                                         disk_name = disk_match.group(1)
 
-                                                        # Try to match GiB/GiB pattern first
-                                                        match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
+                                                        # Try to match GiB/GiB pattern first (with optional time)
+                                                        match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)(?:\s+in\s+([\dhms ]+))?', line)
                                                         if match:
                                                             transferred = float(match.group(1))
                                                             total = float(match.group(2))
-                                                            disk_progress[disk_name] = {'transferred': transferred, 'total': total, 'line_number': idx, 'name': disk_name}
+                                                            time_str = match.group(4) if match.lastindex >= 4 else None
+
+                                                            # Parse elapsed time if present (e.g., "30m 41s" or "5s" or "1h 5m 23s")
+                                                            elapsed_seconds = None
+                                                            if time_str:
+                                                                elapsed_seconds = 0
+                                                                time_parts = re.findall(r'(\d+)([hms])', time_str)
+                                                                for value, unit in time_parts:
+                                                                    if unit == 'h':
+                                                                        elapsed_seconds += int(value) * 3600
+                                                                    elif unit == 'm':
+                                                                        elapsed_seconds += int(value) * 60
+                                                                    elif unit == 's':
+                                                                        elapsed_seconds += int(value)
+
+                                                            disk_progress[disk_name] = {
+                                                                'transferred': transferred,
+                                                                'total': total,
+                                                                'line_number': idx,
+                                                                'name': disk_name,
+                                                                'elapsed_seconds': elapsed_seconds
+                                                            }
                                                         else:
                                                             # Try MiB/GiB pattern
-                                                            match = re.search(r'transferred\s+([\d.]+)\s+MiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
+                                                            match = re.search(r'transferred\s+([\d.]+)\s+MiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)(?:\s+in\s+([\dhms ]+))?', line)
                                                             if match:
                                                                 transferred = float(match.group(1)) / 1024  # Convert MiB to GiB
                                                                 total = float(match.group(2))
-                                                                disk_progress[disk_name] = {'transferred': transferred, 'total': total, 'line_number': idx, 'name': disk_name}
+                                                                time_str = match.group(4) if match.lastindex >= 4 else None
+
+                                                                # Parse elapsed time
+                                                                elapsed_seconds = None
+                                                                if time_str:
+                                                                    elapsed_seconds = 0
+                                                                    time_parts = re.findall(r'(\d+)([hms])', time_str)
+                                                                    for value, unit in time_parts:
+                                                                        if unit == 'h':
+                                                                            elapsed_seconds += int(value) * 3600
+                                                                        elif unit == 'm':
+                                                                            elapsed_seconds += int(value) * 60
+                                                                        elif unit == 's':
+                                                                            elapsed_seconds += int(value)
+
+                                                                disk_progress[disk_name] = {
+                                                                    'transferred': transferred,
+                                                                    'total': total,
+                                                                    'line_number': idx,
+                                                                    'name': disk_name,
+                                                                    'elapsed_seconds': elapsed_seconds
+                                                                }
 
                                             # If we have multiple disks, calculate aggregate; otherwise just show the single disk
                                             if disk_progress:
@@ -5148,16 +5190,32 @@ def get_automigrate_status():
                                                     overall_percentage = int((total_transferred / total_size * 100)) if total_size > 0 else 0
                                                     disk_names = ', '.join(sorted(disk_progress.keys()))
 
+                                                    # Calculate average speed if we have elapsed time for any disk
+                                                    elapsed_times = [d['elapsed_seconds'] for d in disk_progress.values() if d.get('elapsed_seconds')]
+                                                    speed_mib_s = None
+                                                    if elapsed_times:
+                                                        # Use the maximum elapsed time (most recent disk still transferring)
+                                                        max_elapsed = max(elapsed_times)
+                                                        if max_elapsed > 0:
+                                                            speed_mib_s = (total_transferred * 1024) / max_elapsed  # Convert GiB to MiB and divide by seconds
+
                                                     progress_info = {
                                                         "transferred_gib": total_transferred,
                                                         "total_gib": total_size,
                                                         "percentage": overall_percentage,
                                                         "human_readable": f"{total_transferred:.1f} GiB of {total_size:.1f} GiB ({disk_names})"
                                                     }
+                                                    if speed_mib_s is not None:
+                                                        progress_info["speed_mib_s"] = round(speed_mib_s, 2)
                                                 else:
                                                     # Single disk - show its progress
                                                     disk = list(disk_progress.values())[0]
                                                     disk_percentage = int((disk['transferred'] / disk['total'] * 100)) if disk['total'] > 0 else 0
+
+                                                    # Calculate speed if we have elapsed time
+                                                    speed_mib_s = None
+                                                    if disk.get('elapsed_seconds') and disk['elapsed_seconds'] > 0:
+                                                        speed_mib_s = (disk['transferred'] * 1024) / disk['elapsed_seconds']
 
                                                     progress_info = {
                                                         "transferred_gib": disk['transferred'],
@@ -5165,6 +5223,8 @@ def get_automigrate_status():
                                                         "percentage": disk_percentage,
                                                         "human_readable": f"{disk['transferred']:.1f} GiB of {disk['total']:.1f} GiB ({disk['name']})"
                                                     }
+                                                    if speed_mib_s is not None:
+                                                        progress_info["speed_mib_s"] = round(speed_mib_s, 2)
                                 except Exception as progress_err:
                                     pass  # Ignore progress parsing errors
 
