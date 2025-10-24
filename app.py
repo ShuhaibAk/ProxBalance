@@ -5087,11 +5087,23 @@ def get_automigrate_status():
 
                                             for idx, entry in enumerate(task_log):
                                                 line = entry.get('t', '')
-                                                # Look for mirror progress: "mirror-scsi0: transferred X GiB of Y GiB (Z%)" or "mirror-sata0: transferred X MiB of Y GiB (Z%)"
-                                                if 'mirror' in line and 'transferred' in line:
+                                                # Look for disk/memory progress in multiple formats:
+                                                # Format 1: "mirror-scsi0: transferred X GiB of Y GiB (Z%)"
+                                                # Format 2: "i0: transferred X GiB of Y GiB (Z%)"
+                                                # Format 3: "migration active, transferred X GiB of Y GiB VM-state"
+                                                if 'transferred' in line:
                                                     import re
-                                                    # Extract disk name (e.g., mirror-sata0, mirror-scsi0)
-                                                    disk_match = re.search(r'(mirror-\w+):', line)
+
+                                                    # Try VM-state format first (no colon prefix)
+                                                    vm_state_match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+VM-state', line)
+                                                    if vm_state_match:
+                                                        transferred = float(vm_state_match.group(1))
+                                                        total = float(vm_state_match.group(2))
+                                                        disk_progress['VM-state'] = {'transferred': transferred, 'total': total, 'line_number': idx, 'name': 'VM-state'}
+                                                        continue
+
+                                                    # Try to extract disk name - handle "mirror-XXX:" and "iX:" formats
+                                                    disk_match = re.search(r'(mirror-\w+|i\d+):', line)
                                                     if disk_match:
                                                         disk_name = disk_match.group(1)
 
@@ -5293,6 +5305,8 @@ def test_automigrate():
 def run_automigrate():
     """Manually trigger automation check now"""
     try:
+        print("Manual 'Run Now' triggered via API", file=sys.stderr)
+
         # Run automigrate.py
         script_path = os.path.join(BASE_PATH, 'automigrate.py')
         venv_python = os.path.join(BASE_PATH, 'venv', 'bin', 'python3')
@@ -5303,28 +5317,21 @@ def run_automigrate():
                 "error": f"automigrate.py not found at {script_path}"
             }), 404
 
-        # Run automation in background to avoid timeout
-        result = subprocess.run(
+        # Run automation in background - return immediately without waiting
+        # This allows long-running migrations to complete without HTTP timeout
+        subprocess.Popen(
             [venv_python, script_path],
-            capture_output=True,
-            text=True,
-            timeout=120,  # 2 minute timeout
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             cwd=BASE_PATH
         )
 
         return jsonify({
-            "success": result.returncode == 0,
-            "message": "Automation check completed successfully" if result.returncode == 0 else "Automation check completed with errors",
-            "return_code": result.returncode,
-            "output": result.stdout[-1000:] if result.stdout else "",  # Last 1000 chars
-            "error": result.stderr[-1000:] if result.stderr and result.returncode != 0 else None
+            "success": True,
+            "message": "Automation check started in background. Check status for results.",
+            "output": "Automation process started successfully. Monitor the automation status to see migration progress."
         })
 
-    except subprocess.TimeoutExpired:
-        return jsonify({
-            "success": False,
-            "error": "Automation run timed out after 120 seconds"
-        }), 500
     except Exception as e:
         print(f"Error running automigrate: {str(e)}", file=sys.stderr)
         import traceback

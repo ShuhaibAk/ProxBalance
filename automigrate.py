@@ -482,14 +482,11 @@ def execute_migration(
 
         logger.info(f"Migration started for VM {vmid}, task_id: {task_id}. Polling for completion...")
 
-        # Poll task status until completion
-        max_wait = 3600  # 60 minutes max (very large VMs can take 30+ minutes)
+        # Poll task status until completion (no timeout - systemd service has TimeoutStartSec=infinity)
         poll_interval = 5  # Check every 5 seconds
-        elapsed = 0
 
-        while elapsed < max_wait:
+        while True:
             time.sleep(poll_interval)
-            elapsed += poll_interval
 
             try:
                 # Check task status
@@ -529,17 +526,6 @@ def execute_migration(
             except Exception as poll_err:
                 logger.warning(f"Error polling task status for VM {vmid}: {poll_err}")
                 continue
-
-        # Timeout reached
-        duration = int(time.time() - start_time)
-        logger.warning(f"Migration polling timeout for VM {vmid} after {duration}s")
-        return {
-            "success": True,  # Migration started, but we stopped polling
-            "task_id": task_id,
-            "duration": duration,
-            "status": "timeout",
-            "warning": "Migration status polling timed out"
-        }
 
     except requests.exceptions.HTTPError as e:
         error_msg = str(e)
