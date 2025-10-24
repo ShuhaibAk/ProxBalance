@@ -483,15 +483,68 @@ def get_recommendations():
                 print(f"Warning: AI enhancement failed (continuing with algorithm-only): {str(e)}", file=sys.stderr)
                 # Continue without AI enhancement - graceful degradation
 
-        return jsonify({
+        # Cache the recommendations result
+        recommendations_cache = {
             "success": True,
             "recommendations": recommendations,
             "count": len(recommendations),
             "threshold_suggestions": threshold_suggestions,
-            "ai_enhanced": ai_enhanced
-        })
+            "ai_enhanced": ai_enhanced,
+            "generated_at": datetime.utcnow().isoformat() + 'Z',
+            "parameters": {
+                "cpu_threshold": cpu_threshold,
+                "mem_threshold": mem_threshold,
+                "iowait_threshold": iowait_threshold,
+                "maintenance_nodes": list(maintenance_nodes)
+            }
+        }
+
+        # Save to cache file
+        recommendations_cache_file = os.path.join(BASE_PATH, 'recommendations_cache.json')
+        try:
+            with open(recommendations_cache_file, 'w') as f:
+                json.dump(recommendations_cache, f, indent=2)
+        except Exception as cache_err:
+            print(f"Warning: Failed to cache recommendations: {cache_err}", file=sys.stderr)
+
+        return jsonify(recommendations_cache)
     except Exception as e:
         print(f"Error in get_recommendations: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/recommendations", methods=["GET"])
+def get_cached_recommendations():
+    """Get cached recommendations without regenerating"""
+    try:
+        recommendations_cache_file = os.path.join(BASE_PATH, 'recommendations_cache.json')
+
+        # Check if cache file exists
+        if not os.path.exists(recommendations_cache_file):
+            return jsonify({
+                "success": False,
+                "error": "No cached recommendations available. Please generate recommendations first.",
+                "cache_missing": True
+            }), 404
+
+        # Read cached recommendations
+        try:
+            with open(recommendations_cache_file, 'r') as f:
+                cached_data = json.load(f)
+
+            return jsonify(cached_data)
+        except Exception as read_err:
+            print(f"Error reading recommendations cache: {read_err}", file=sys.stderr)
+            return jsonify({
+                "success": False,
+                "error": "Failed to read cached recommendations",
+                "cache_error": True
+            }), 500
+
+    except Exception as e:
+        print(f"Error in get_cached_recommendations: {str(e)}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1202,7 +1255,39 @@ def select_guests_to_migrate(node: Dict, guests: Dict, cpu_threshold: float, mem
     return selected
 
 
-def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: str, proxmox) -> bool:
+def build_storage_cache(nodes: Dict, proxmox) -> Dict[str, set]:
+    """
+    Build a cache of available storage for all nodes.
+
+    Args:
+        nodes: Dictionary of nodes
+        proxmox: ProxmoxAPI client
+
+    Returns:
+        Dictionary mapping node names to sets of available storage IDs
+    """
+    storage_cache = {}
+
+    if not proxmox:
+        return storage_cache
+
+    for node_name in nodes:
+        try:
+            storage_list = proxmox.nodes(node_name).storage.get()
+            available_storage = set()
+            for storage in storage_list:
+                if storage.get('enabled', 1) and storage.get('active', 0):
+                    available_storage.add(storage.get('storage'))
+            storage_cache[node_name] = available_storage
+            print(f"Cached {len(available_storage)} storage volumes for node {node_name}", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: Could not get storage for node {node_name}: {e}", file=sys.stderr)
+            storage_cache[node_name] = set()
+
+    return storage_cache
+
+
+def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: str, proxmox, storage_cache: Dict[str, set] = None) -> bool:
     """
     Check if target node has all storage volumes required by the guest.
 
@@ -1211,6 +1296,7 @@ def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: 
         src_node_name: Source node name
         tgt_node_name: Target node name
         proxmox: ProxmoxAPI client
+        storage_cache: Optional pre-built cache of node storage (for performance)
 
     Returns:
         True if target has all required storage, False otherwise
@@ -1246,16 +1332,21 @@ def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: 
         if not storage_volumes:
             return True  # No storage requirements, allow migration
 
-        # Get target node storage
-        try:
-            target_storage_list = proxmox.nodes(tgt_node_name).storage.get()
-            available_storage = set()
-            for storage in target_storage_list:
-                if storage.get('enabled', 1) and storage.get('active', 0):
-                    available_storage.add(storage.get('storage'))
-        except Exception as e:
-            print(f"Warning: Could not get storage for node {tgt_node_name}: {e}", file=sys.stderr)
-            return True  # Allow migration if we can't determine target storage
+        # Get target node storage (use cache if available, otherwise query API)
+        available_storage = set()
+        if storage_cache and tgt_node_name in storage_cache:
+            # Use cached storage data (much faster!)
+            available_storage = storage_cache[tgt_node_name]
+        else:
+            # Fallback to API query if cache not available
+            try:
+                target_storage_list = proxmox.nodes(tgt_node_name).storage.get()
+                for storage in target_storage_list:
+                    if storage.get('enabled', 1) and storage.get('active', 0):
+                        available_storage.add(storage.get('storage'))
+            except Exception as e:
+                print(f"Warning: Could not get storage for node {tgt_node_name}: {e}", file=sys.stderr)
+                return True  # Allow migration if we can't determine target storage
 
         # Check if all required storage is available on target
         missing_storage = storage_volumes - available_storage
@@ -1302,6 +1393,7 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
 
     # Get Proxmox client for storage compatibility checks
     proxmox = None
+    storage_cache = {}
     try:
         from proxmoxer import ProxmoxAPI
         config = load_config()
@@ -1322,6 +1414,11 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
                 port=proxmox_port,
                 verify_ssl=verify_ssl
             )
+
+            # Build storage cache once for all compatibility checks (major performance boost!)
+            print(f"Building storage cache for {len(nodes)} nodes...", file=sys.stderr)
+            storage_cache = build_storage_cache(nodes, proxmox)
+            print(f"✓ Storage cache built for {len(storage_cache)} nodes", file=sys.stderr)
     except Exception as e:
         print(f"Warning: Could not initialize Proxmox client for storage checks: {e}", file=sys.stderr)
 
@@ -1402,7 +1499,7 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
                         continue
 
                     # Check storage compatibility (skip target if storage is incompatible)
-                    if proxmox and not check_storage_compatibility(guest, src_node_name, tgt_name, proxmox):
+                    if proxmox and not check_storage_compatibility(guest, src_node_name, tgt_name, proxmox, storage_cache):
                         continue
 
                     # Calculate target suitability score

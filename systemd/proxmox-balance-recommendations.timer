@@ -1,0 +1,11 @@
+[Unit]
+Description=ProxBalance Recommendations Generator Timer
+Requires=proxmox-balance-recommendations.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

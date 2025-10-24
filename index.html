@@ -273,6 +273,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [darkMode, setDarkMode] = useState(true);
           const [config, setConfig] = useState(null);
           const [autoRefreshInterval, setAutoRefreshInterval] = useState(60 * 60 * 1000);
+          const RECOMMENDATIONS_REFRESH_INTERVAL = 2 * 60 * 1000; // Fixed 2-minute interval for UI refresh
           const [showSettings, setShowSettings] = useState(false);
           const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
           const [currentPage, setCurrentPage] = useState('dashboard'); // 'dashboard', 'settings', or 'automation'
@@ -853,7 +854,30 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
           };
 
-          const fetchRecommendations = async () => {
+          // Fetch cached recommendations (GET - fast, no regeneration)
+          const fetchCachedRecommendations = async () => {
+            if (!data) return;
+            try {
+              const response = await fetch(`${API_BASE}/recommendations`);
+              const result = await response.json();
+              if (result.success) {
+                setRecommendations(result.recommendations);
+                setRecommendationData(result);
+                if (result.threshold_suggestions) {
+                  setThresholdSuggestions(result.threshold_suggestions);
+                }
+              } else if (result.cache_missing) {
+                // No cache exists, generate initial recommendations
+                console.log('No cached recommendations, generating initial set');
+                generateRecommendations();
+              }
+            } catch (err) {
+              console.error('Error fetching cached recommendations:', err);
+            }
+          };
+
+          // Generate new recommendations (POST - slower, full computation)
+          const generateRecommendations = async () => {
             if (!data) return;
             setLoadingRecommendations(true);
             try {
@@ -870,17 +894,20 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               const result = await response.json();
               if (result.success) {
                 setRecommendations(result.recommendations);
-                setRecommendationData(result);  // Store full response including ai_enhanced flag
+                setRecommendationData(result);
                 if (result.threshold_suggestions) {
                   setThresholdSuggestions(result.threshold_suggestions);
                 }
               }
             } catch (err) {
-              console.error(err);
+              console.error('Error generating recommendations:', err);
             } finally {
               setLoadingRecommendations(false);
             }
           };
+
+          // Legacy alias for backwards compatibility
+          const fetchRecommendations = fetchCachedRecommendations;
 
           const fetchAiRecommendations = async () => {
             if (!data) return;
@@ -1760,6 +1787,17 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               fetchNodeScores();
             }
           }, [data, cpuThreshold, memThreshold, iowaitThreshold, maintenanceNodes]);
+
+          // Auto-refresh recommendations on fixed 2-minute interval
+          useEffect(() => {
+            if (!data) return;
+
+            const interval = setInterval(() => {
+              fetchRecommendations();
+            }, RECOMMENDATIONS_REFRESH_INTERVAL);
+
+            return () => clearInterval(interval);
+          }, [data]);
 
           // Render charts when data changes or chart period changes
           useEffect(() => {
@@ -7284,14 +7322,23 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 AI Enhanced
                               </span>
                             )}
+                            {recommendationData?.generated_at && (
+                              <span className="text-xs text-gray-500 dark:text-gray-500">
+                                • Generated: {(() => {
+                                  const genTime = new Date(recommendationData.generated_at);
+                                  return formatLocalTime(genTime);
+                                })()} (backend auto-generates every 10-60min based on cluster size)
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={fetchRecommendations}
+                          onClick={generateRecommendations}
                           disabled={loadingRecommendations || !data}
                           className="flex items-center gap-2 px-4 py-2 bg-orange-600 dark:bg-orange-500 text-white rounded-lg hover:bg-orange-700 dark:hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200"
+                          title="Manually generate new recommendations now"
                         >
                           {loadingRecommendations ? (
                             <>
@@ -7301,7 +7348,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           ) : (
                             <>
                               <RefreshCw size={18} />
-                              Generate Recommendations
+                              Generate Now
                             </>
                           )}
                         </button>

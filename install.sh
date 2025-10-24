@@ -932,6 +932,7 @@ fi
 systemctl daemon-reload
 systemctl enable proxmox-balance.service
 systemctl enable proxmox-collector.timer
+systemctl enable proxmox-balance-recommendations.timer
 EOF
   
   msg_ok "Services configured"

@@ -83,6 +83,29 @@ pct exec $CTID -- bash -c 'cd /opt/proxmox-balance-manager && source venv/bin/ac
 echo "Updating web interface..."
 pct exec $CTID -- cp /opt/proxmox-balance-manager/index.html /var/www/html/
 
+# Update systemd service files (for new services/timers)
+echo "Updating system services..."
+pct exec $CTID -- bash <<'SERVICES_EOF'
+# Make Python scripts executable
+chmod +x /opt/proxmox-balance-manager/*.py
+
+# Copy systemd files
+if [ -d /opt/proxmox-balance-manager/systemd ]; then
+  cp /opt/proxmox-balance-manager/systemd/*.service /etc/systemd/system/
+  cp /opt/proxmox-balance-manager/systemd/*.timer /etc/systemd/system/
+  systemctl daemon-reload
+
+  # Enable new services if they exist and aren't already enabled
+  if [ -f /etc/systemd/system/proxmox-balance-recommendations.timer ]; then
+    if ! systemctl is-enabled proxmox-balance-recommendations.timer >/dev/null 2>&1; then
+      echo "  ✓ Enabling recommendations timer..."
+      systemctl enable proxmox-balance-recommendations.timer
+      systemctl start proxmox-balance-recommendations.timer
+    fi
+  fi
+fi
+SERVICES_EOF
+
 # Restart services
 echo "Restarting services..."
 pct exec $CTID -- systemctl restart proxmox-balance
