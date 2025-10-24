@@ -839,24 +839,29 @@ def main():
 
             # Re-filter recommendations with current cooldown/confidence/tag rules
             filtered = []
+            filtered_reasons = []  # Track why VMs were filtered out
             for r in recommendations:
                 vmid = r.get('vmid')
                 source_node = r.get('source_node')
                 is_maintenance_evac = source_node in maintenance_nodes
 
+                # Get guest info
+                guest = cache_data.get('guests', {}).get(str(vmid))
+                if not guest:
+                    continue
+
+                vm_name = guest.get('name', f'VM-{vmid}')
+
                 # Check cooldown
                 if not is_maintenance_evac and is_vm_in_cooldown(vmid, cooldown_minutes):
+                    filtered_reasons.append(f"{vm_name} ({vmid}): in cooldown period")
                     continue
 
                 # Check confidence threshold
                 confidence = r.get('confidence_score', 0)
                 min_confidence = rules.get('min_confidence_score', 75)
                 if not is_maintenance_evac and confidence < min_confidence:
-                    continue
-
-                # Get guest info for tag checks
-                guest = cache_data.get('guests', {}).get(str(vmid))
-                if not guest:
+                    filtered_reasons.append(f"{vm_name} ({vmid}): confidence {confidence}% < {min_confidence}%")
                     continue
 
                 # For maintenance evacuations, bypass tag checks
@@ -864,6 +869,7 @@ def main():
                     # Check tags
                     can_migrate, tag_reason = can_auto_migrate(guest, rules)
                     if not can_migrate:
+                        filtered_reasons.append(f"{vm_name} ({vmid}): {tag_reason}")
                         continue
 
                     # Check exclude group affinity
@@ -871,18 +877,27 @@ def main():
                         guest, r['target_node'], cache_data, rules
                     )
                     if not ok:
+                        filtered_reasons.append(f"{vm_name} ({vmid}): {affinity_reason}")
                         continue
 
                     # Validate resource improvement for balance migrations
                     is_valid, balance_msg = validates_resource_improvement(r)
                     if not is_valid:
                         logger.info(f"Skipping VM {vmid}: {balance_msg}")
+                        filtered_reasons.append(f"{vm_name} ({vmid}): {balance_msg}")
                         continue
 
                 filtered.append(r)
 
             if not filtered:
                 logger.info("No recommendations passed filters")
+                # Save filter reasons to state for frontend display
+                try:
+                    history = load_history()
+                    history.setdefault('state', {})['last_filter_reasons'] = filtered_reasons
+                    save_history(history)
+                except Exception as e:
+                    logger.error(f"Failed to save filter reasons: {e}")
                 break
 
             # Pick the best recommendation

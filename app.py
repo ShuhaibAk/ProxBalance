@@ -15,7 +15,7 @@ import shutil
 import time
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List
 from pathlib import Path
 from ai_provider import AIProviderFactory
@@ -4995,7 +4995,6 @@ def get_automigrate_status():
                 pass
 
         # Get recent migrations (last 7 days)
-        from datetime import datetime, timedelta
         all_migrations = history.get('migrations', [])
         seven_days_ago = datetime.now() - timedelta(days=7)
 
@@ -5212,7 +5211,6 @@ def get_automigrate_status():
 
         if last_run and auto_config.get('enabled', False) and timer_active:
             try:
-                from datetime import datetime, timedelta
                 last_run_dt = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
                 next_check_dt = last_run_dt + timedelta(minutes=check_interval_minutes)
                 next_check = next_check_dt.isoformat().replace('+00:00', 'Z')
@@ -5228,7 +5226,8 @@ def get_automigrate_status():
             "next_check": next_check,
             "recent_migrations": recent,
             "in_progress_migrations": in_progress_migrations,
-            "state": history.get('state', {})
+            "state": history.get('state', {}),
+            "filter_reasons": history.get('state', {}).get('last_filter_reasons', [])
         })
 
     except Exception as e:
@@ -5342,7 +5341,7 @@ def run_automigrate():
         log_file = os.path.join(BASE_PATH, 'automigrate_manual.log')
         with open(log_file, 'a') as f:
             f.write(f"\n\n{'='*80}\n")
-            f.write(f"Manual run started at {datetime.datetime.now().isoformat()}\n")
+            f.write(f"Manual run started at {datetime.now().isoformat()}\n")
             f.write(f"{'='*80}\n\n")
             f.flush()
             subprocess.Popen(

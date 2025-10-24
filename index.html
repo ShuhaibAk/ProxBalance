@@ -293,6 +293,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [anthropicModelCustom, setAnthropicModelCustom] = useState('');
           const [countdownTick, setCountdownTick] = useState(0); // Force re-render for countdown timer
           const [runningAutomation, setRunningAutomation] = useState(false); // Track manual automation run
+          const [runNowMessage, setRunNowMessage] = useState(null); // Message after Run Now click
           const [refreshElapsed, setRefreshElapsed] = useState(0); // Track refresh elapsed time
           const [anthropicAvailableModels, setAnthropicAvailableModels] = useState([]);
           const [anthropicLoadingModels, setAnthropicLoadingModels] = useState(false);
@@ -1070,6 +1071,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
           const runAutomationNow = async () => {
             setRunningAutomation(true);
+            setRunNowMessage(null);
             try {
               const response = await fetch(`${API_BASE}/automigrate/run`, {
                 method: 'POST'
@@ -1077,15 +1079,70 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               const result = await response.json();
 
               if (result.success) {
-                // console.log('Automation run completed:', result.message);
-                // Refresh automation status to show updated last_run time
+                setRunNowMessage({ type: 'info', text: 'Automation check running... checking for recommendations and filtering rules.' });
+
+                // Capture start time before waiting
+                const runStartTime = new Date();
+
+                // Wait for automation to complete (typically 5-10 seconds)
+                await new Promise(resolve => setTimeout(resolve, 10000));
+
+                // Fetch latest migration data directly (not using state)
+                const statusResponse = await fetch(`${API_BASE}/automigrate/status`);
+                const statusData = await statusResponse.json();
+
+                // Also update the state for the UI
                 await fetchAutomationStatus();
-                // Wait a moment for state file to be written
-                setTimeout(() => fetchAutomationStatus(), 1000);
+
+                // Check if any new migrations were started (using fresh data, not state)
+                const newMigrations = statusData.recent_migrations?.[0];
+                const recentTimestamp = newMigrations ? new Date(newMigrations.timestamp) : null;
+
+                // Check if migration started AFTER we clicked Run Now (within last 30 seconds for safety)
+                const wasJustStarted = recentTimestamp && (recentTimestamp >= runStartTime) && (new Date() - recentTimestamp) < 30000;
+
+                if (wasJustStarted) {
+                  setRunNowMessage({
+                    type: 'success',
+                    text: `Migration started: ${newMigrations.name} (${newMigrations.vmid}) from ${newMigrations.source_node} to ${newMigrations.target_node}`
+                  });
+                } else {
+                  // Check if there are in-progress migrations (might have been started before we clicked)
+                  const hasInProgressMigrations = statusData.in_progress_migrations && statusData.in_progress_migrations.length > 0;
+
+                  if (hasInProgressMigrations) {
+                    const migration = statusData.in_progress_migrations[0];
+                    setRunNowMessage({
+                      type: 'info',
+                      text: `Migration already in progress: ${migration.name} (${migration.vmid})`
+                    });
+                  } else {
+                    // Check for filter reasons
+                    const filterReasons = statusData.filter_reasons || [];
+                    let messageText = 'Automation completed. No migrations were started';
+
+                    if (filterReasons.length > 0) {
+                      messageText += ':\n' + filterReasons.map(r => `  • ${r}`).join('\n');
+                    } else {
+                      messageText += ' (cluster is balanced or no recommendations available).';
+                    }
+
+                    setRunNowMessage({
+                      type: 'info',
+                      text: messageText
+                    });
+                  }
+                }
+
+                // Clear message after 30 seconds
+                setTimeout(() => setRunNowMessage(null), 30000);
               } else {
-                console.error('Automation run failed:', result.error);
+                setRunNowMessage({ type: 'error', text: `Failed to start automation: ${result.error}` });
+                setTimeout(() => setRunNowMessage(null), 30000);
               }
             } catch (err) {
+              setRunNowMessage({ type: 'error', text: `Error: ${err.message}` });
+              setTimeout(() => setRunNowMessage(null), 30000);
               console.error('Failed to run automation:', err);
             } finally {
               setRunningAutomation(false);
@@ -4988,6 +5045,35 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                     {!collapsedSections.automatedMigrations && (
                     <>
+                    {runNowMessage && (
+                      <div className={`mb-4 p-3 rounded-lg text-sm ${
+                        runNowMessage.type === 'success'
+                          ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 text-green-700 dark:text-green-300'
+                          : runNowMessage.type === 'info'
+                          ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                          : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300'
+                      }`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2 flex-1">
+                            {runNowMessage.type === 'success' ? (
+                              <CheckCircle size={16} className="mt-0.5 flex-shrink-0" />
+                            ) : runNowMessage.type === 'info' ? (
+                              <Info size={16} className="mt-0.5 flex-shrink-0" />
+                            ) : (
+                              <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+                            )}
+                            <span style={{whiteSpace: 'pre-line'}}>{runNowMessage.text}</span>
+                          </div>
+                          <button
+                            onClick={() => setRunNowMessage(null)}
+                            className="flex-shrink-0 hover:opacity-70 transition-opacity"
+                            aria-label="Close message"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {automationStatus.dry_run && automationStatus.enabled && (
                       <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-sm">
                         <div className="flex items-center gap-2">
