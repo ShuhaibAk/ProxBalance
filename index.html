@@ -5047,6 +5047,14 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               return <span className="text-gray-400 dark:text-gray-500">Not scheduled</span>;
                             }
 
+                            // Check if automated migrations are currently running
+                            const hasRunningMigrations = automationStatus.in_progress_migrations &&
+                              automationStatus.in_progress_migrations.some(m => m.initiated_by === 'automated');
+
+                            if (hasRunningMigrations) {
+                              return <span className="text-blue-600 dark:text-blue-400">Running...</span>;
+                            }
+
                             // Calculate next check time
                             const lastRunStr = automationStatus.state.last_run.endsWith('Z') ? automationStatus.state.last_run : automationStatus.state.last_run + 'Z';
                             const lastRun = new Date(lastRunStr);
@@ -5244,6 +5252,15 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     <span className="text-gray-500 dark:text-gray-400 text-xs">
                                       {migration.source_node} → {migration.target_node || '?'}
                                     </span>
+                                    {migration.type === 'VM' ? (
+                                      <span className="px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 text-[10px] font-semibold rounded border border-green-300 dark:border-green-600" title="Live migration (no downtime)">
+                                        LIVE
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-semibold rounded border border-orange-300 dark:border-orange-600" title="Migration with restart (brief downtime)">
+                                        RESTART
+                                      </span>
+                                    )}
                                     {!isAutomated && (
                                       <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold rounded border border-purple-300 dark:border-purple-600">
                                         MANUAL
