@@ -482,7 +482,7 @@ def execute_migration(
         logger.info(f"Migration started for VM {vmid}, task_id: {task_id}. Polling for completion...")
 
         # Poll task status until completion
-        max_wait = 1800  # 30 minutes max (large VMs can take 10-20 minutes)
+        max_wait = 3600  # 60 minutes max (very large VMs can take 30+ minutes)
         poll_interval = 5  # Check every 5 seconds
         elapsed = 0
 

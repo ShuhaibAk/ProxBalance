@@ -5262,6 +5262,28 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     }`}>Elapsed: {elapsedTime}</span>
                                   </div>
                                 )}
+                                {migration.progress && (
+                                  <div className="mt-2">
+                                    <div className="flex items-center justify-between text-xs mb-1">
+                                      <span className={isAutomated ? 'text-blue-600 dark:text-blue-400 font-semibold' : 'text-purple-600 dark:text-purple-400 font-semibold'}>
+                                        Progress: {migration.progress.percentage}%
+                                      </span>
+                                      <span className="text-gray-500 dark:text-gray-400 text-[10px]">
+                                        {migration.progress.human_readable}
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                      <div
+                                        className={`h-2 rounded-full transition-all duration-300 ${
+                                          isAutomated
+                                            ? 'bg-blue-600 dark:bg-blue-500'
+                                            : 'bg-purple-600 dark:bg-purple-500'
+                                        }`}
+                                        style={{ width: `${migration.progress.percentage}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

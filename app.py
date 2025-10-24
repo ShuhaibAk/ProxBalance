@@ -5012,7 +5012,48 @@ def get_automigrate_status():
                                 task_user = task.get('user', '')
                                 initiated_by = 'automated' if 'proxbalance' in task_user else 'manual'
 
-                                in_progress_migrations.append({
+                                # Parse progress from task log
+                                progress_info = None
+                                try:
+                                    task_upid = task.get('upid')
+                                    source_node = task.get('node')
+                                    if task_upid and source_node:
+                                        log_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/tasks/{task_upid}/log"
+                                        log_response = requests.get(
+                                            log_url,
+                                            headers={'Authorization': f'PVEAPIToken={token_id}={token_secret}'},
+                                            verify=verify_ssl,
+                                            timeout=10
+                                        )
+                                        if log_response.status_code == 200:
+                                            task_log = log_response.json().get('data', [])
+
+                                            latest_percentage = None
+                                            latest_transferred = None
+                                            total_size = None
+
+                                            for entry in task_log:
+                                                line = entry.get('t', '')
+                                                # Look for mirror progress: "mirror-scsi0: transferred X GiB of Y GiB (Z%)"
+                                                if 'mirror' in line and 'transferred' in line and 'GiB' in line:
+                                                    import re
+                                                    match = re.search(r'transferred\s+([\d.]+)\s+GiB\s+of\s+([\d.]+)\s+GiB\s+\(([\d.]+)%\)', line)
+                                                    if match:
+                                                        latest_transferred = float(match.group(1))
+                                                        total_size = float(match.group(2))
+                                                        latest_percentage = int(float(match.group(3)))
+
+                                            if latest_percentage is not None and latest_transferred is not None:
+                                                progress_info = {
+                                                    "transferred_gib": latest_transferred,
+                                                    "total_gib": total_size,
+                                                    "percentage": latest_percentage,
+                                                    "human_readable": f"{latest_transferred:.1f} GiB of {total_size:.1f} GiB"
+                                                }
+                                except Exception as progress_err:
+                                    pass  # Ignore progress parsing errors
+
+                                migration_data = {
                                     'vmid': vmid,
                                     'name': guest.get('name', f'VM-{vmid}'),
                                     'source_node': task.get('node', 'unknown'),
@@ -5023,7 +5064,12 @@ def get_automigrate_status():
                                     'type': 'VM' if task.get('type') == 'qmigrate' else 'CT',
                                     'initiated_by': initiated_by,
                                     'user': task_user
-                                })
+                                }
+
+                                if progress_info:
+                                    migration_data['progress'] = progress_info
+
+                                in_progress_migrations.append(migration_data)
                     else:
                         print(f"Failed to fetch cluster tasks: HTTP {response.status_code}", file=sys.stderr)
 
