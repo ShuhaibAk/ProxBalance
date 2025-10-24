@@ -326,7 +326,10 @@ def check_exclude_group_affinity(
 
 def perform_safety_checks(config: Dict[str, Any], cache_data: Dict[str, Any]) -> Tuple[bool, str]:
     """
-    Perform cluster health and safety checks.
+    Perform cluster health and safety checks (quorum only).
+
+    Node-level safety checks are now performed per-migration to allow
+    evacuating VMs from overloaded nodes.
 
     Args:
         config: Configuration dictionary
@@ -340,31 +343,54 @@ def perform_safety_checks(config: Dict[str, Any], cache_data: Dict[str, Any]) ->
     if not safety.get('check_cluster_health', True):
         return True, "Health checks disabled"
 
-    # Check quorum
+    # Check quorum only (cluster-wide safety)
     if safety.get('require_quorum', True):
         quorate = cache_data.get('cluster_health', {}).get('quorate', False)
         if not quorate:
             logger.warning("Cluster not quorate")
             return False, "Cluster not quorate"
 
-    # Check node health
+    return True, "Cluster safety checks passed"
+
+
+def check_target_node_safety(target_node: str, config: Dict[str, Any], cache_data: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    Check if a target node is safe to receive migrations.
+
+    This allows migrations FROM overloaded nodes (evacuation) while
+    preventing migrations TO overloaded nodes.
+
+    Args:
+        target_node: Node to check
+        config: Configuration dictionary
+        cache_data: Current cluster data
+
+    Returns:
+        Tuple of (safe, message)
+    """
+    safety = config.get('automated_migrations', {}).get('safety_checks', {})
+
+    if not safety.get('check_cluster_health', True):
+        return True, "Health checks disabled"
+
     nodes = cache_data.get('nodes', {})
-    for node_name, node_data in nodes.items():
-        cpu_pct = node_data.get('cpu_percent', 0)
-        mem_pct = node_data.get('memory_percent', 0)
+    if target_node not in nodes:
+        return False, f"Target node {target_node} not found"
 
-        max_cpu = safety.get('max_node_cpu_percent', 85)
-        max_mem = safety.get('max_node_memory_percent', 90)
+    node_data = nodes[target_node]
+    cpu_pct = node_data.get('cpu_percent', 0)
+    mem_pct = node_data.get('memory_percent', 0)
 
-        if cpu_pct > max_cpu:
-            logger.warning(f"Node {node_name} CPU too high: {cpu_pct:.1f}%")
-            return False, f"Node {node_name} CPU too high: {cpu_pct:.1f}%"
+    max_cpu = safety.get('max_node_cpu_percent', 85)
+    max_mem = safety.get('max_node_memory_percent', 90)
 
-        if mem_pct > max_mem:
-            logger.warning(f"Node {node_name} memory too high: {mem_pct:.1f}%")
-            return False, f"Node {node_name} memory too high: {mem_pct:.1f}%"
+    if cpu_pct > max_cpu:
+        return False, f"Target node {target_node} CPU too high: {cpu_pct:.1f}%"
 
-    return True, "All safety checks passed"
+    if mem_pct > max_mem:
+        return False, f"Target node {target_node} memory too high: {mem_pct:.1f}%"
+
+    return True, "Target node is safe"
 
 
 def get_recommendations(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -888,6 +914,20 @@ def main():
             target = rec['target_node']
             source = rec['source_node']
             guest_type = rec.get('type', 'VM')  # Default to VM if type not specified
+
+            # Check if target node is safe (allows evacuation from overloaded source nodes)
+            target_safe, target_msg = check_target_node_safety(target, config, cache_data)
+            if not target_safe:
+                logger.info(f"Skipping migration of VM {vmid} to {target}: {target_msg}")
+                guest = cache_data.get('guests', {}).get(str(vmid), {})
+                activity_log.append({
+                    'timestamp': datetime.utcnow().isoformat() + 'Z',
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'action': 'skipped',
+                    'reason': target_msg
+                })
+                continue
 
             # Check if this VM already has a migration in progress
             if is_migration_in_progress(vmid, source, config):
