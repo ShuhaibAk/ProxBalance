@@ -4871,21 +4871,19 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         {automationStatus.enabled && (
                           <button
                             onClick={async () => {
-                              if (confirm(`Are you sure you want to ${automationStatus.timer_active ? 'pause' : 'resume'} automated migrations?`)) {
-                                try {
-                                  const response = await fetch('/api/automation/toggle-timer', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ active: !automationStatus.timer_active })
-                                  });
-                                  if (response.ok) {
-                                    fetchAutomationStatus();
-                                  } else {
-                                    alert('Failed to toggle timer');
-                                  }
-                                } catch (error) {
-                                  alert('Error: ' + error.message);
+                              try {
+                                const response = await fetch('/api/automigrate/toggle-timer', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ active: !automationStatus.timer_active })
+                                });
+                                if (response.ok) {
+                                  fetchAutomationStatus();
+                                } else {
+                                  console.error('Failed to toggle timer');
                                 }
+                              } catch (error) {
+                                console.error('Error toggling timer:', error);
                               }
                             }}
                             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${

@@ -5077,6 +5077,59 @@ def automigrate_config():
             return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/automigrate/toggle-timer", methods=["POST"])
+def automigrate_toggle_timer():
+    """Toggle the automated migration timer on/off"""
+    try:
+        import subprocess
+
+        data = request.get_json()
+        active = data.get('active', False)
+
+        systemctl_cmd = "/usr/bin/systemctl"
+        timer_name = "proxmox-balance-automigrate.timer"
+
+        if active:
+            # Start the timer
+            result = subprocess.run(
+                [systemctl_cmd, 'start', timer_name],
+                capture_output=True, text=True, timeout=5
+            )
+        else:
+            # Stop the timer
+            result = subprocess.run(
+                [systemctl_cmd, 'stop', timer_name],
+                capture_output=True, text=True, timeout=5
+            )
+
+        if result.returncode == 0:
+            # Verify the status
+            verify_result = subprocess.run(
+                [systemctl_cmd, 'is-active', timer_name],
+                capture_output=True, text=True, timeout=5
+            )
+            timer_active = verify_result.stdout.strip() == 'active'
+
+            return jsonify({
+                "success": True,
+                "timer_active": timer_active,
+                "message": f"Timer {'started' if active else 'stopped'} successfully"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Failed to {'start' if active else 'stop'} timer: {result.stderr}"
+            }), 500
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "error": "Timeout toggling timer"}), 500
+    except Exception as e:
+        print(f"Error toggling automigrate timer: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/automigrate/logs", methods=["GET"])
 def automigrate_logs():
     """Get logs from the automated migration service"""
