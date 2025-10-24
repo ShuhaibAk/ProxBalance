@@ -600,6 +600,7 @@ def node_scores():
             if node.get('status') != 'online':
                 node_scores[node_name] = {
                     'score': 999999,
+                    'suitability_rating': 0,
                     'suitable': False,
                     'reason': 'Node offline'
                 }
@@ -608,6 +609,7 @@ def node_scores():
             if node_name in maintenance_nodes:
                 node_scores[node_name] = {
                     'score': 999999,
+                    'suitability_rating': 0,
                     'suitable': False,
                     'reason': 'In maintenance mode'
                 }
@@ -681,8 +683,12 @@ def node_scores():
             max_cpu_week = metrics.get("max_cpu_week", 0)
             max_mem_week = metrics.get("max_mem_week", 0)
 
+            # Convert to suitability rating (0-100, higher is better)
+            suitability_rating = round(max(0, 100 - min(score, 100)), 1)
+
             node_scores[node_name] = {
                 'score': round(score, 2),
+                'suitability_rating': suitability_rating,
                 'suitable': suitable,
                 'reason': reason,
                 'weighted_cpu': round(weighted_cpu, 1),
@@ -1577,13 +1583,19 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
                 else:
                     reason = f"Balance Memory load (src: {src_mem:.1f}%, target: {tgt_mem:.1f}%)"
 
+            # Convert raw score to suitability rating (0-100, higher is better)
+            # Raw scores are penalties (lower = better), so invert them
+            # Cap at 100 for the conversion formula
+            suitability_rating = round(max(0, 100 - min(best_score, 100)), 1)
+
             recommendations.append({
                 "vmid": vmid_int,
                 "name": guest.get("name", "unknown"),
                 "type": guest.get("type", "unknown"),
                 "source_node": src_node_name,
                 "target_node": best_target,
-                "target_node_score": round(best_score, 2),  # Lower score = better target
+                "target_node_score": round(best_score, 2),  # Raw penalty score (internal use)
+                "suitability_rating": suitability_rating,  # 0-100, higher is better (user-facing)
                 "score_improvement": round(score_improvement, 2),  # How much better
                 "reason": reason,
                 "mem_gb": guest.get("mem_max_gb", 0),
