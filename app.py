@@ -1065,6 +1065,21 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     elif long_mem > 70:
         penalties += 40   # High sustained memory
 
+    # IOWait penalty - penalize high disk wait times
+    if immediate_iowait > 30:
+        penalties += 80   # Extreme current IOWait
+    elif immediate_iowait > 20:
+        penalties += 40   # Very high current IOWait
+    elif immediate_iowait > 10:
+        penalties += 20   # High current IOWait
+
+    if long_iowait > 20:
+        penalties += 60   # Critically high sustained IOWait
+    elif long_iowait > 15:
+        penalties += 30   # High sustained IOWait
+    elif long_iowait > 10:
+        penalties += 15   # Elevated sustained IOWait
+
     # Trend penalty - penalize rising load trends
     if cpu_trend == "rising":
         penalties += 15  # Rising CPU trend
