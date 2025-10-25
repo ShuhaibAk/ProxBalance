@@ -132,6 +132,8 @@ All preset values are editable after loading:
 
 Control **when** migrations can occur using Migration Windows and Blackout Windows.
 
+**Timezone Support**: All time windows support configurable timezone selection (e.g., America/Chicago, UTC, Europe/London). The system displays the current time in your selected timezone and evaluates windows accordingly.
+
 #### Migration Windows
 
 Define specific times when migrations ARE allowed.
