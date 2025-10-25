@@ -6170,11 +6170,15 @@ OnUnitActiveSec={interval_minutes}min
                     with open(override_file, 'w') as f:
                         f.write(override_content)
 
-                    # Reload systemd and restart timer to apply changes
+                    # Reload systemd configuration
                     subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/systemctl', 'restart', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
 
-                    print(f"✓ Automigrate timer interval updated to {interval_minutes} minutes", file=sys.stderr)
+                    # Stop and start timer instead of restart to avoid immediate trigger
+                    # This preserves the existing schedule instead of resetting OnBootSec
+                    subprocess.run(['/usr/bin/systemctl', 'stop', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/systemctl', 'start', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
+
+                    print(f"✓ Automigrate timer interval updated to {interval_minutes} minutes (will apply on next scheduled run)", file=sys.stderr)
                 except Exception as timer_err:
                     print(f"Warning: Failed to update systemd timer interval: {timer_err}", file=sys.stderr)
                     # Don't fail the request if timer update fails - config was still saved
