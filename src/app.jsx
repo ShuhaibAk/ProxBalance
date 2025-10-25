@@ -9,6 +9,7 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
         const XCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>);
         const Tag = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>);
         const AlertTriangle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>);
+        const Info = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>);
         const Shield = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>);
         const Clock = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>);
         const Sun = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>);
@@ -29,7 +30,6 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
         const Plus = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>);
         const List = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>);
         const Terminal = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>);
-        const Info = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>);
         const ArrowRight = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>);
         const History = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><polyline points="12 7 12 12 15 15"></polyline></svg>);
         const Pause = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>);
@@ -3238,6 +3238,32 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         <div className="flex items-center gap-3">
                           <Clock size={28} className="text-blue-600 dark:text-blue-400" />
                           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Automated Migrations</h1>
+                          <span className="relative group inline-block">
+                            <Info size={18} className="text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 cursor-help" />
+                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-4 py-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-700" style={{minWidth: '280px'}}>
+                              <div className="font-semibold mb-2 text-blue-400 border-b border-gray-700 pb-2">Migration Scoring System</div>
+                              <div className="text-[11px] space-y-1">
+                                <div className="text-gray-300">Migrations are scored using a penalty-based system:</div>
+                                <div className="mt-2 space-y-0.5">
+                                  <div>• <span className="text-blue-300">CPU Load</span> × 30%</div>
+                                  <div>• <span className="text-blue-300">Memory Load</span> × 30%</div>
+                                  <div>• <span className="text-blue-300">IOWait</span> × 20%</div>
+                                  <div>• <span className="text-blue-300">Load Average</span> × 10%</div>
+                                  <div>• <span className="text-blue-300">Storage Pressure</span> × 10%</div>
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-gray-700">
+                                  <div className="text-gray-400">Lower penalty score = better target</div>
+                                  <div className="text-gray-400">Plus penalties for high usage & trends</div>
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-gray-700">
+                                  <div><span className="text-green-400 font-semibold">70%+</span> = Excellent</div>
+                                  <div><span className="text-yellow-400 font-semibold">50-69%</span> = Good</div>
+                                  <div><span className="text-orange-400 font-semibold">30-49%</span> = Fair</div>
+                                  <div><span className="text-red-400 font-semibold">&lt;30%</span> = Poor</div>
+                                </div>
+                              </div>
+                            </div>
+                          </span>
                         </div>
                       </div>
                       <button
@@ -4820,7 +4846,35 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   {/* Migration Logs & History */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                     <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Migration Logs & History</h2>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Migration Logs & History</h2>
+                        <span className="relative group inline-block">
+                          <Info size={16} className="text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 cursor-help" />
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-4 py-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-700" style={{minWidth: '280px'}}>
+                            <div className="font-semibold mb-2 text-blue-400 border-b border-gray-700 pb-2">Migration Scoring System</div>
+                            <div className="text-[11px] space-y-1">
+                              <div className="text-gray-300">Migrations are scored using a penalty-based system:</div>
+                              <div className="mt-2 space-y-0.5">
+                                <div>• <span className="text-blue-300">CPU Load</span> × 30%</div>
+                                <div>• <span className="text-blue-300">Memory Load</span> × 30%</div>
+                                <div>• <span className="text-blue-300">IOWait</span> × 20%</div>
+                                <div>• <span className="text-blue-300">Load Average</span> × 10%</div>
+                                <div>• <span className="text-blue-300">Storage Pressure</span> × 10%</div>
+                              </div>
+                              <div className="mt-2 pt-2 border-t border-gray-700">
+                                <div className="text-gray-400">Lower penalty score = better target</div>
+                                <div className="text-gray-400">Plus penalties for high usage & trends</div>
+                              </div>
+                              <div className="mt-2 pt-2 border-t border-gray-700">
+                                <div><span className="text-green-400 font-semibold">70%+</span> = Excellent</div>
+                                <div><span className="text-yellow-400 font-semibold">50-69%</span> = Good</div>
+                                <div><span className="text-orange-400 font-semibold">30-49%</span> = Fair</div>
+                                <div><span className="text-red-400 font-semibold">&lt;30%</span> = Poor</div>
+                              </div>
+                            </div>
+                          </div>
+                        </span>
+                      </div>
                     </div>
 
                     {/* Tabs */}
@@ -4889,6 +4943,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Time</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">VM</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Migration</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Score</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Reason</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Status</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Duration</th>
@@ -4939,6 +4994,56 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                           <span className="font-mono">{migration.target_node}</span>
                                         </div>
                                       </td>
+                                      <td className="px-4 py-3 text-xs">
+                                        {(migration.suitability_rating !== undefined || migration.target_node_score !== undefined) ? (
+                                          (() => {
+                                            // Convert raw penalty score to suitability percentage
+                                            const suitabilityPercent = migration.suitability_rating !== undefined
+                                              ? migration.suitability_rating
+                                              : Math.max(0, Math.round(100 - Math.min(migration.target_node_score || 0, 100)));
+
+                                            return (
+                                          <div className="flex items-center gap-1">
+                                            <span className={`font-semibold ${
+                                              suitabilityPercent >= 70 ? 'text-green-600 dark:text-green-400' :
+                                              suitabilityPercent >= 50 ? 'text-yellow-600 dark:text-yellow-400' :
+                                              suitabilityPercent >= 30 ? 'text-orange-600 dark:text-orange-400' :
+                                              'text-red-600 dark:text-red-400'
+                                            }`}>
+                                              {suitabilityPercent}%
+                                            </span>
+                                            <span className="relative group inline-block">
+                                              <Info size={12} className="text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 cursor-help" />
+                                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-700">
+                                                <div className="font-semibold mb-1 text-blue-400">Scoring Breakdown</div>
+                                                <div className="text-[10px] space-y-0.5">
+                                                  <div>Target: {migration.target_node}</div>
+                                                  <div>Penalty Score: {migration.target_node_score?.toFixed(1) || 'N/A'}</div>
+                                                  <div>Suitability: {suitabilityPercent}%</div>
+                                                  <div className="border-t border-gray-700 pt-1 mt-1">
+                                                    <div className="text-gray-400">Lower penalty = better target</div>
+                                                    <div>• CPU Load × 30%</div>
+                                                    <div>• Memory Load × 30%</div>
+                                                    <div>• IOWait × 20%</div>
+                                                    <div>• Load Avg × 10%</div>
+                                                    <div>• Storage Pressure × 10%</div>
+                                                    <div className="mt-1 text-gray-400">+ Penalties for high usage/trends</div>
+                                                  </div>
+                                                  {migration.target_node_score > 100 && (
+                                                    <div className="border-t border-gray-700 pt-1 mt-1 text-red-400">
+                                                      ⚠ Penalty score &gt;100 indicates heavy load/trends
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </span>
+                                          </div>
+                                            );
+                                          })()
+                                        ) : (
+                                          <span className="text-gray-400">N/A</span>
+                                        )}
+                                      </td>
                                       <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400 max-w-xs">
                                         <div className="truncate" title={migration.reason}>
                                           {migration.reason}
@@ -4976,7 +5081,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 })()
                               ) : (
                                 <tr>
-                                  <td colSpan="6" className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                                  <td colSpan="7" className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                                     No migration history available
                                   </td>
                                 </tr>
@@ -6004,19 +6109,51 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   <span className="text-gray-900 dark:text-white font-medium">{migration.name} ({migration.vmid})</span>
                                   <span className="text-gray-500 dark:text-gray-400 text-xs">
                                     {migration.source_node} → {migration.target_node}
-                                    {migration.suitability_rating !== undefined && (
-                                      <span className="ml-1 text-[10px]">
-                                        <span className="text-gray-600 dark:text-gray-400">Suitability:</span>{' '}
+                                    {(migration.suitability_rating !== undefined || migration.target_node_score !== undefined) && (() => {
+                                      // Convert raw penalty score to suitability percentage
+                                      const suitabilityPercent = migration.suitability_rating !== undefined
+                                        ? migration.suitability_rating
+                                        : Math.max(0, Math.round(100 - Math.min(migration.target_node_score || 0, 100)));
+
+                                      return (
+                                      <span className="ml-1 text-[10px] inline-flex items-center gap-1">
+                                        <span className="text-gray-600 dark:text-gray-400">Score:</span>{' '}
                                         <span className={`font-semibold ${
-                                          migration.suitability_rating >= 70 ? 'text-green-600 dark:text-green-400' :
-                                          migration.suitability_rating >= 50 ? 'text-yellow-600 dark:text-yellow-400' :
-                                          migration.suitability_rating >= 30 ? 'text-orange-600 dark:text-orange-400' :
+                                          suitabilityPercent >= 70 ? 'text-green-600 dark:text-green-400' :
+                                          suitabilityPercent >= 50 ? 'text-yellow-600 dark:text-yellow-400' :
+                                          suitabilityPercent >= 30 ? 'text-orange-600 dark:text-orange-400' :
                                           'text-red-600 dark:text-red-400'
                                         }`}>
-                                          {migration.suitability_rating}%
+                                          {suitabilityPercent}%
+                                        </span>
+                                        <span className="relative group inline-block">
+                                          <Info size={10} className="text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 cursor-help" />
+                                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-700">
+                                            <div className="font-semibold mb-1 text-blue-400">Scoring Breakdown</div>
+                                            <div className="text-[10px] space-y-0.5">
+                                              <div>Target: {migration.target_node}</div>
+                                              <div>Penalty Score: {migration.target_node_score?.toFixed(1) || 'N/A'}</div>
+                                              <div>Suitability: {suitabilityPercent}%</div>
+                                              <div className="border-t border-gray-700 pt-1 mt-1">
+                                                <div className="text-gray-400">Lower penalty = better target</div>
+                                                <div>• CPU Load × 30%</div>
+                                                <div>• Memory Load × 30%</div>
+                                                <div>• IOWait × 20%</div>
+                                                <div>• Load Avg × 10%</div>
+                                                <div>• Storage Pressure × 10%</div>
+                                                <div className="mt-1 text-gray-400">+ Penalties for high usage/trends</div>
+                                              </div>
+                                              {migration.target_node_score > 100 && (
+                                                <div className="border-t border-gray-700 pt-1 mt-1 text-red-400">
+                                                  ⚠ Penalty score &gt;100 indicates heavy load/trends
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
                                         </span>
                                       </span>
-                                    )}
+                                      );
+                                    })()}
                                   </span>
                                   {migration.dry_run && (
                                     <span className="px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded">
