@@ -5965,6 +5965,9 @@ def get_automigrate_status():
         current_window = None
         windows = config.get('automated_migrations', {}).get('schedule', {}).get('migration_windows', [])
 
+        # Get schedule-level timezone (fallback to UTC if not set)
+        schedule_tz = config.get('automated_migrations', {}).get('schedule', {}).get('timezone', 'UTC')
+
         if windows:
             for window in windows:
                 # Windows are enabled by default unless explicitly disabled
@@ -5972,7 +5975,8 @@ def get_automigrate_status():
                     continue
 
                 try:
-                    tz = pytz.timezone(window.get('timezone', 'UTC'))
+                    # Use window-level timezone if specified, otherwise use schedule-level timezone
+                    tz = pytz.timezone(window.get('timezone', schedule_tz))
                     now = datetime.now(tz)
 
                     # Check day of week
