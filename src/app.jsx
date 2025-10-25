@@ -4036,6 +4036,51 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   {/* Time Windows (Unified) */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Time Windows</h2>
+
+                    {/* Timezone Selector */}
+                    <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <div className="flex items-start gap-3">
+                        <Info size={20} className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                            Timezone for Time Windows
+                          </label>
+                          <select
+                            value={automationConfig.schedule?.timezone || 'UTC'}
+                            onChange={(e) => saveAutomationConfig({
+                              schedule: {
+                                ...automationConfig.schedule,
+                                timezone: e.target.value
+                              }
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                          >
+                            <option value="UTC">UTC (Server Time)</option>
+                            <option value="America/New_York">Eastern Time (ET)</option>
+                            <option value="America/Chicago">Central Time (CT)</option>
+                            <option value="America/Denver">Mountain Time (MT)</option>
+                            <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                            <option value="America/Anchorage">Alaska Time (AK)</option>
+                            <option value="Pacific/Honolulu">Hawaii Time (HT)</option>
+                            <option value="Europe/London">London (GMT/BST)</option>
+                            <option value="Europe/Paris">Paris (CET/CEST)</option>
+                            <option value="Europe/Berlin">Berlin (CET/CEST)</option>
+                            <option value="Europe/Moscow">Moscow (MSK)</option>
+                            <option value="Asia/Dubai">Dubai (GST)</option>
+                            <option value="Asia/Kolkata">India (IST)</option>
+                            <option value="Asia/Shanghai">China (CST)</option>
+                            <option value="Asia/Tokyo">Tokyo (JST)</option>
+                            <option value="Asia/Singapore">Singapore (SGT)</option>
+                            <option value="Australia/Sydney">Sydney (AEDT/AEST)</option>
+                            <option value="Pacific/Auckland">Auckland (NZDT/NZST)</option>
+                          </select>
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                            All time windows below use this timezone. Current server time (UTC): {new Date().toUTCString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                       Configure when migrations are allowed (Migration Windows) or blocked (Blackout Windows).
                       If no windows are configured, migrations are allowed at any time.
