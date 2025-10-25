@@ -2022,11 +2022,11 @@ def cancel_migration(task_id):
     """Cancel a running migration by stopping the Proxmox task"""
     try:
         config = load_config()
-        proxmox_host = config['proxmox']['host']
-        proxmox_port = config['proxmox'].get('port', 8006)
-        token_id = config['proxmox']['token_id']
-        token_secret = config['proxmox']['token_secret']
-        verify_ssl = config['proxmox'].get('verify_ssl', False)
+        proxmox_host = config.get('proxmox_host', 'localhost')
+        proxmox_port = config.get('proxmox_port', 8006)
+        token_id = config.get('proxmox_api_token_id', '')
+        token_secret = config.get('proxmox_api_token_secret', '')
+        verify_ssl = config.get('proxmox_verify_ssl', False)
 
         # Parse UPID to extract node: UPID:node:pid:pstart:starttime:type:vmid:user
         parts = task_id.split(':')
@@ -5862,6 +5862,55 @@ def get_automigrate_status():
                                 except Exception as progress_err:
                                     pass  # Ignore progress parsing errors
 
+                                # For CT migrations (vzmigrate), parse progress from different format
+                                # Format: "32992526336 bytes (33 GB, 31 GiB) copied, 300 s, 110 MB/s"
+                                if not progress_info and task.get('type') == 'vzmigrate' and task_log:
+                                    try:
+                                        for line in reversed(task_log):
+                                            # Match CT migration progress line
+                                            match = re.search(r'([\d]+)\s+bytes\s+\([\d.]+\s+GB,\s+([\d.]+)\s+GiB\)\s+copied,\s+([\d]+)\s+s,\s+([\d.]+)\s+MB/s', line.get('t', ''))
+                                            if match:
+                                                bytes_copied = int(match.group(1))
+                                                gib_copied = float(match.group(2))
+                                                elapsed_seconds = int(match.group(3))
+                                                speed_mb_s = float(match.group(4))
+
+                                                # Try to get CT disk size to estimate percentage
+                                                total_gib = None
+                                                percentage = None
+                                                try:
+                                                    # Get CT config to find rootfs size
+                                                    source_node = task.get('node', 'unknown')
+                                                    if source_node != 'unknown' and vmid:
+                                                        config_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/lxc/{vmid}/config"
+                                                        config_response = requests.get(config_url, headers=headers, verify=verify_ssl, timeout=5)
+                                                        if config_response.status_code == 200:
+                                                            ct_config = config_response.json().get('data', {})
+                                                            rootfs = ct_config.get('rootfs', '')
+                                                            # Parse rootfs string like "local-lvm:vm-109-disk-0,size=128G"
+                                                            size_match = re.search(r'size=(\d+)G', rootfs)
+                                                            if size_match:
+                                                                total_gib = float(size_match.group(1))
+                                                                percentage = int((gib_copied / total_gib * 100)) if total_gib > 0 else None
+                                                except Exception:
+                                                    pass  # If we can't get size, just show transferred amount
+
+                                                # Build progress info
+                                                progress_info = {
+                                                    "transferred_gib": gib_copied,
+                                                    "speed_mib_s": speed_mb_s,  # MB/s is close enough to MiB/s for display
+                                                }
+
+                                                if total_gib and percentage is not None:
+                                                    progress_info["total_gib"] = total_gib
+                                                    progress_info["percentage"] = percentage
+                                                    progress_info["human_readable"] = f"{gib_copied:.1f} GiB of {total_gib:.1f} GiB ({percentage}%) at {speed_mb_s:.0f} MB/s"
+                                                else:
+                                                    progress_info["human_readable"] = f"{gib_copied:.1f} GiB transferred at {speed_mb_s:.0f} MB/s"
+                                                break
+                                    except Exception as ct_progress_err:
+                                        pass  # Ignore CT progress parsing errors
+
                                 # Extract starttime from UPID (format: UPID:node:pid:pstart:starttime:type:vmid:user)
                                 starttime = task.get('starttime')  # Try direct field first
                                 if not starttime and task_upid:
@@ -6071,6 +6120,20 @@ def run_automigrate():
     try:
         print("Manual 'Run Now' triggered via API", file=sys.stderr)
 
+        # Check if any migrations are currently running cluster-wide
+        try:
+            status_data = get_automation_status_data()
+            if status_data.get('in_progress_migrations') and len(status_data['in_progress_migrations']) > 0:
+                running_migrations = status_data['in_progress_migrations']
+                migration_info = running_migrations[0]
+                return jsonify({
+                    "success": False,
+                    "error": f"Cannot start new migration: {migration_info['name']} ({migration_info['vmid']}) is currently migrating from {migration_info['source_node']} to {migration_info.get('target_node', 'unknown')}"
+                }), 409  # 409 Conflict
+        except Exception as check_err:
+            print(f"Warning: Could not check for running migrations: {check_err}", file=sys.stderr)
+            # Continue anyway - don't block on check failure
+
         # Run automigrate.py
         script_path = os.path.join(BASE_PATH, 'automigrate.py')
         venv_python = os.path.join(BASE_PATH, 'venv', 'bin', 'python3')
@@ -6081,26 +6144,58 @@ def run_automigrate():
                 "error": f"automigrate.py not found at {script_path}"
             }), 404
 
-        # Run automation in background - return immediately without waiting
-        # This allows long-running migrations to complete without HTTP timeout
-        # Log output to file for debugging
+        # Run automation and capture initial output to return migration details
+        # Run in background for long-running migrations, but capture first few seconds of output
+        import time
+        import re
+
         log_file = os.path.join(BASE_PATH, 'automigrate_manual.log')
-        with open(log_file, 'a') as f:
-            f.write(f"\n\n{'='*80}\n")
+
+        # Clear/create log file
+        with open(log_file, 'w') as f:
+            f.write(f"{'='*80}\n")
             f.write(f"Manual run started at {datetime.now().isoformat()}\n")
             f.write(f"{'='*80}\n\n")
-            f.flush()
-            subprocess.Popen(
-                [venv_python, script_path],
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                cwd=BASE_PATH
-            )
+
+        # Start process in background
+        process = subprocess.Popen(
+            [venv_python, script_path],
+            stdout=open(log_file, 'a'),
+            stderr=subprocess.STDOUT,
+            cwd=BASE_PATH
+        )
+
+        # Wait for script to start and log initial output (recommendations can take 10-15 seconds)
+        time.sleep(12)
+
+        # Read log file to extract migration info
+        migration_info = None
+        try:
+            with open(log_file, 'r') as f:
+                log_content = f.read()
+
+                # Parse log for migration start message
+                # Format: "2025-10-25 22:38:14,176 - __main__ - INFO - Migrating CT 109 (influxdb) from pve3 to pve6 (score: 58.91) - Balance CPU load (src: 53.4%, target: 38.6%)"
+                # Pattern matches: Migrating (VM|CT) {vmid} ({name}) from {source} to {target}
+                match = re.search(r'INFO - Migrating (VM|CT) (\d+) \(([^)]+)\) from (\S+) to (\S+)', log_content)
+                if match:
+                    guest_type, vmid, name, source_node, target_node = match.groups()
+
+                    migration_info = {
+                        "vmid": vmid,
+                        "name": name,
+                        "type": guest_type,
+                        "source_node": source_node,
+                        "target_node": target_node
+                    }
+        except Exception as parse_err:
+            print(f"Warning: Could not parse migration info from log: {parse_err}", file=sys.stderr)
 
         return jsonify({
             "success": True,
             "message": "Automation check started in background. Check status for results.",
-            "output": "Automation process started successfully. Monitor the automation status to see migration progress."
+            "output": "Automation process started successfully. Monitor the automation status to see migration progress.",
+            "migration_info": migration_info  # Include parsed migration details
         })
 
     except Exception as e:

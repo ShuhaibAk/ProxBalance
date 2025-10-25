@@ -954,7 +954,7 @@ def main():
                 continue
 
             target_score = rec.get('target_node_score', 'N/A')
-            logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) to {target} (score: {target_score}) - {rec['reason']}")
+            logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) from {source} to {target} (score: {target_score}) - {rec['reason']}")
 
             result = execute_migration(vmid, target, source, guest_type, config, dry_run=dry_run)
 

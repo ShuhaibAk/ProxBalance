@@ -296,6 +296,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [testResult, setTestResult] = useState(null);
           const [testingAutomation, setTestingAutomation] = useState(false);
           const [cancelMigrationModal, setCancelMigrationModal] = useState(null); // { migration: object } or null
+          const [cancellingMigration, setCancellingMigration] = useState(false);
 
           // Penalty Configuration state
           const [penaltyConfig, setPenaltyConfig] = useState(null);
@@ -995,58 +996,71 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               const result = await response.json();
 
               if (result.success) {
-                setRunNowMessage({ type: 'info', text: 'Automation check running... checking for recommendations and filtering rules.' });
-
-                // Capture start time before waiting
-                const runStartTime = new Date();
-
-                // Wait for automation to complete (typically 5-10 seconds)
-                await new Promise(resolve => setTimeout(resolve, 10000));
-
-                // Fetch latest migration data directly (not using state)
-                const statusResponse = await fetch(`${API_BASE}/automigrate/status`);
-                const statusData = await statusResponse.json();
-
-                // Also update the state for the UI
-                await fetchAutomationStatus();
-
-                // Check if any new migrations were started (using fresh data, not state)
-                const newMigrations = statusData.recent_migrations?.[0];
-                const recentTimestamp = newMigrations ? new Date(newMigrations.timestamp) : null;
-
-                // Check if migration started AFTER we clicked Run Now (within last 30 seconds for safety)
-                const wasJustStarted = recentTimestamp && (recentTimestamp >= runStartTime) && (new Date() - recentTimestamp) < 30000;
-
-                if (wasJustStarted) {
+                // Check if backend returned migration info directly (new approach - more reliable)
+                if (result.migration_info) {
+                  const migration = result.migration_info;
                   setRunNowMessage({
                     type: 'success',
-                    text: `Migration started: ${newMigrations.name} (${newMigrations.vmid}) from ${newMigrations.source_node} to ${newMigrations.target_node}`
+                    text: `Migration started: ${migration.name} (${migration.vmid}) from ${migration.source_node} to ${migration.target_node}`
                   });
-                } else {
-                  // Check if there are in-progress migrations (might have been started before we clicked)
-                  const hasInProgressMigrations = statusData.in_progress_migrations && statusData.in_progress_migrations.length > 0;
 
-                  if (hasInProgressMigrations) {
-                    const migration = statusData.in_progress_migrations[0];
+                  // Update automation status in background
+                  setTimeout(() => fetchAutomationStatus(), 2000);
+                } else {
+                  // Fallback: Wait and check status for migrations (old approach for compatibility)
+                  setRunNowMessage({ type: 'info', text: 'Automation check running... checking for recommendations and filtering rules.' });
+
+                  // Capture start time before waiting
+                  const runStartTime = new Date();
+
+                  // Wait for automation to complete (typically 5-10 seconds)
+                  await new Promise(resolve => setTimeout(resolve, 10000));
+
+                  // Fetch latest migration data directly (not using state)
+                  const statusResponse = await fetch(`${API_BASE}/automigrate/status`);
+                  const statusData = await statusResponse.json();
+
+                  // Also update the state for the UI
+                  await fetchAutomationStatus();
+
+                  // Check if any new migrations were started (using fresh data, not state)
+                  const newMigrations = statusData.recent_migrations?.[0];
+                  const recentTimestamp = newMigrations ? new Date(newMigrations.timestamp) : null;
+
+                  // Check if migration started AFTER we clicked Run Now (within last 30 seconds for safety)
+                  const wasJustStarted = recentTimestamp && (recentTimestamp >= runStartTime) && (new Date() - recentTimestamp) < 30000;
+
+                  if (wasJustStarted) {
                     setRunNowMessage({
-                      type: 'info',
-                      text: `Migration already in progress: ${migration.name} (${migration.vmid})`
+                      type: 'success',
+                      text: `Migration started: ${newMigrations.name} (${newMigrations.vmid}) from ${newMigrations.source_node} to ${newMigrations.target_node}`
                     });
                   } else {
-                    // Check for filter reasons
-                    const filterReasons = statusData.filter_reasons || [];
-                    let messageText = 'Automation completed. No migrations were started';
+                    // Check if there are in-progress migrations (might have been started before we clicked)
+                    const hasInProgressMigrations = statusData.in_progress_migrations && statusData.in_progress_migrations.length > 0;
 
-                    if (filterReasons.length > 0) {
-                      messageText += ':\n' + filterReasons.map(r => `  • ${r}`).join('\n');
+                    if (hasInProgressMigrations) {
+                      const migration = statusData.in_progress_migrations[0];
+                      setRunNowMessage({
+                        type: 'info',
+                        text: `Migration already in progress: ${migration.name} (${migration.vmid})`
+                      });
                     } else {
-                      messageText += ' (cluster is balanced or no recommendations available).';
-                    }
+                      // Check for filter reasons
+                      const filterReasons = statusData.filter_reasons || [];
+                      let messageText = 'Automation completed. No migrations were started';
 
-                    setRunNowMessage({
-                      type: 'info',
-                      text: messageText
-                    });
+                      if (filterReasons.length > 0) {
+                        messageText += ':\n' + filterReasons.map(r => `  • ${r}`).join('\n');
+                      } else {
+                        messageText += ' (cluster is balanced or no recommendations available).';
+                      }
+
+                      setRunNowMessage({
+                        type: 'info',
+                        text: messageText
+                      });
+                    }
                   }
                 }
 
@@ -9942,11 +9956,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     </button>
                     <button
                       onClick={async () => {
-                        // Use custom onConfirm handler if provided (for manual migrations), otherwise use default API
-                        if (cancelMigrationModal.onConfirm) {
-                          await cancelMigrationModal.onConfirm();
-                        } else {
-                          try {
+                        setCancellingMigration(true);
+                        try {
+                          // Use custom onConfirm handler if provided (for manual migrations), otherwise use default API
+                          if (cancelMigrationModal.onConfirm) {
+                            await cancelMigrationModal.onConfirm();
+                          } else {
                             const response = await fetch(`/api/migrations/${cancelMigrationModal.task_id}/cancel`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' }
@@ -9957,16 +9972,31 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             } else {
                               setError('Failed to cancel migration');
                             }
-                          } catch (error) {
-                            console.error('Error cancelling migration:', error);
-                            setError('Error cancelling migration');
                           }
+                        } catch (error) {
+                          console.error('Error cancelling migration:', error);
+                          setError('Error cancelling migration');
+                        } finally {
+                          setCancellingMigration(false);
                         }
                       }}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+                      disabled={cancellingMigration}
+                      className={`px-4 py-2 ${cancellingMigration ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'} dark:bg-red-700 dark:hover:bg-red-800 text-white rounded-lg font-semibold transition-colors flex items-center gap-2`}
                     >
-                      <X size={16} />
-                      Cancel Migration
+                      {cancellingMigration ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Cancelling...
+                        </>
+                      ) : (
+                        <>
+                          <X size={16} />
+                          Cancel Migration
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
