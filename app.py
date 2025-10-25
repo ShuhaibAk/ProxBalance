@@ -3362,53 +3362,52 @@ def update_system():
 
             if commits_to_pull == 0:
                 update_log.append(f"Already up to date on branch {current_branch}")
-                return jsonify({
-                    "success": True,
-                    "message": "Already up to date",
-                    "log": update_log,
-                    "updated": False
-                })
+                # Don't return early - still need to run build steps below
+                # in case frontend hasn't been built yet
+                already_up_to_date = True
+            else:
+                already_up_to_date = False
 
-            update_log.append(f"Pulling {commits_to_pull} new commit(s) from branch: {current_branch}")
+                update_log.append(f"Pulling {commits_to_pull} new commit(s) from branch: {current_branch}")
 
-            # Stash any local changes before pulling
-            result = subprocess.run(
-                [GIT_CMD, "stash"],
-                cwd=GIT_REPO_PATH,
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0 and "No local changes to save" not in result.stdout:
-                update_log.append("Stashed local changes")
+                # Stash any local changes before pulling
+                result = subprocess.run(
+                    [GIT_CMD, "stash"],
+                    cwd=GIT_REPO_PATH,
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0 and "No local changes to save" not in result.stdout:
+                    update_log.append("Stashed local changes")
 
-            # Pull changes with fast-forward only first
-            result = subprocess.run(
-                [GIT_CMD, "pull", "--ff-only", "origin", current_branch],
-                cwd=GIT_REPO_PATH,
-                capture_output=True,
-                text=True
-            )
+                # Pull changes with fast-forward only first
+                result = subprocess.run(
+                    [GIT_CMD, "pull", "--ff-only", "origin", current_branch],
+                    cwd=GIT_REPO_PATH,
+                    capture_output=True,
+                    text=True
+                )
 
-            # If fast-forward fails (divergent branches), reset to remote
-            if result.returncode != 0:
-                if "divergent branches" in result.stderr or "Need to specify how to reconcile" in result.stderr or "Not possible to fast-forward" in result.stderr:
-                    update_log.append("Detected divergent branches - resetting to remote...")
+                # If fast-forward fails (divergent branches), reset to remote
+                if result.returncode != 0:
+                    if "divergent branches" in result.stderr or "Need to specify how to reconcile" in result.stderr or "Not possible to fast-forward" in result.stderr:
+                        update_log.append("Detected divergent branches - resetting to remote...")
 
-                    # Hard reset to match remote branch
-                    result = subprocess.run(
-                        [GIT_CMD, "reset", "--hard", f"origin/{current_branch}"],
-                        cwd=GIT_REPO_PATH,
-                        capture_output=True,
-                        text=True
-                    )
-                    if result.returncode != 0:
-                        raise Exception(f"Git reset failed: {result.stderr}")
+                        # Hard reset to match remote branch
+                        result = subprocess.run(
+                            [GIT_CMD, "reset", "--hard", f"origin/{current_branch}"],
+                            cwd=GIT_REPO_PATH,
+                            capture_output=True,
+                            text=True
+                        )
+                        if result.returncode != 0:
+                            raise Exception(f"Git reset failed: {result.stderr}")
 
-                    update_log.append("✓ Reset to match remote branch")
-                else:
-                    raise Exception(f"Git pull failed: {result.stderr}")
+                        update_log.append("✓ Reset to match remote branch")
+                    else:
+                        raise Exception(f"Git pull failed: {result.stderr}")
 
-            update_log.append(f"✓ Updated to latest commit on {current_branch}")
+                update_log.append(f"✓ Updated to latest commit on {current_branch}")
 
         # Common update steps for both releases and branches
         update_log.append("Code updated successfully")
