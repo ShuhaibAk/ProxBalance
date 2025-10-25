@@ -159,17 +159,9 @@ BABEL_CONFIG
       -o /var/www/html/assets/js/react-dom.production.min.js
   fi
 
-  # Create optimized index.html
-  echo "  → Creating optimized index.html..."
-  sed -n '1,/<script type="text\/babel">/p' index.html | head -n -1 > /tmp/index_new.html
-  sed -i '/<script.*babel.*\.js/d' /tmp/index_new.html
-  cat >> /tmp/index_new.html <<'INDEX_FOOTER'
-    <div id="root"></div>
-    <script src="/assets/js/app.js"></script>
-</body>
-</html>
-INDEX_FOOTER
-  cp /tmp/index_new.html /var/www/html/index.html
+  # Copy index.html (already pre-compiled with correct structure)
+  echo "  → Copying index.html..."
+  cp index.html /var/www/html/index.html
 
   echo "  ✓ Web interface built and optimized"
 else

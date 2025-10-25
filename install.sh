@@ -1053,26 +1053,10 @@ BABEL_CONFIG
 
   cd /opt/proxmox-balance-manager
 
-  # Create optimized index.html
+  # Copy index.html (already pre-compiled with correct structure)
   echo ""
-  echo "Creating optimized index.html..."
-
-  # Get the head section (everything before the script tag)
-  sed -n '1,/<script type="text\/babel">/p' index.html | head -n -1 > /tmp/index_new.html
-
-  # Remove Babel library reference if present
-  sed -i '/<script.*babel.*\.js/d' /tmp/index_new.html
-
-  # Add the pre-compiled script tag and close tags
-  cat >> /tmp/index_new.html <<'INDEX_FOOTER'
-    <div id="root"></div>
-    <script src="/assets/js/app.js"></script>
-</body>
-</html>
-INDEX_FOOTER
-
-  cp /tmp/index_new.html /var/www/html/index.html
-  rm /tmp/index_new.html
+  echo "Copying index.html..."
+  cp index.html /var/www/html/index.html
 
   INDEX_SIZE=$(stat -c%s /var/www/html/index.html 2>/dev/null)
   echo "  ✓ Optimized index.html created (${INDEX_SIZE} bytes)"
