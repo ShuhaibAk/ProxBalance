@@ -3424,7 +3424,7 @@ def update_system():
             post_update_script = os.path.join(GIT_REPO_PATH, "post_update.sh")
             if os.path.exists(post_update_script):
                 result = subprocess.run(
-                    ["bash", post_update_script],
+                    ["/bin/bash", post_update_script],
                     cwd=GIT_REPO_PATH,
                     capture_output=True,
                     text=True,
