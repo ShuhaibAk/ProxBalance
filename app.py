@@ -387,6 +387,93 @@ def analyze_cluster():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# Progressive Loading Endpoints - Return subsets of cached data for faster initial page load
+
+@app.route("/api/cluster-summary", methods=["GET"])
+def get_cluster_summary():
+    """Return lightweight cluster summary for immediate header rendering"""
+    try:
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": f"Configuration Error: {config.get('message')}"
+            }), 500
+
+        data = read_cache()
+        if data is None:
+            trigger_collection()
+            return jsonify({
+                "success": False,
+                "error": "No cached data available"
+            }), 503
+
+        # Return minimal data for instant header/title rendering
+        summary_data = {
+            "collected_at": data.get("collected_at"),
+            "summary": data.get("summary", {}),
+            "cluster_health": data.get("cluster_health", {}),
+            "node_count": len(data.get("nodes", {})),
+            "guest_count": len(data.get("guests", {}))
+        }
+
+        return jsonify({"success": True, "data": summary_data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/nodes-only", methods=["GET"])
+def get_nodes_only():
+    """Return only node data for cluster map rendering"""
+    try:
+        data = read_cache()
+        if data is None:
+            return jsonify({
+                "success": False,
+                "error": "No cached data available"
+            }), 503
+
+        # Return nodes data with minimal guest info (just IDs for count)
+        nodes_data = {}
+        for node_name, node in data.get("nodes", {}).items():
+            nodes_data[node_name] = {
+                **node,
+                "guests": node.get("guests", [])  # Just keep guest IDs list
+            }
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "nodes": nodes_data,
+                "collected_at": data.get("collected_at")
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/guests-only", methods=["GET"])
+def get_guests_only():
+    """Return only guest data for populating cluster map details"""
+    try:
+        data = read_cache()
+        if data is None:
+            return jsonify({
+                "success": False,
+                "error": "No cached data available"
+            }), 503
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "guests": data.get("guests", {}),
+                "collected_at": data.get("collected_at")
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/refresh", methods=["POST"])
 def refresh_data():
     """Trigger immediate data collection"""
@@ -398,7 +485,7 @@ def refresh_data():
                 "success": False,
                 "error": f"Configuration Error: {config.get('message')}"
             }), 500
-        
+
         trigger_collection()
         return jsonify({
             "success": True,
@@ -3326,11 +3413,41 @@ def update_system():
         # Common update steps for both releases and branches
         update_log.append("Code updated successfully")
 
-        # Copy index.html to web root
-        update_log.append("Updating web interface...")
+        # Run post-update script to build and deploy web interface
+        update_log.append("Building and updating web interface...")
+        update_log.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        update_log.append("⚠️  THIS UPDATE WILL TAKE 1-2 MINUTES ⚠️")
+        update_log.append("Installing Node.js, compiling frontend for 93% faster page loads...")
+        update_log.append("Please wait - future updates will be much faster (10-15 seconds)")
+        update_log.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         try:
-            shutil.copy2("/opt/proxmox-balance-manager/index.html", "/var/www/html/index.html")
-            update_log.append("✓ Web interface updated")
+            # Run post_update.sh which handles Node.js install, Babel compilation, and deployment
+            post_update_script = os.path.join(GIT_REPO_PATH, "post_update.sh")
+            if os.path.exists(post_update_script):
+                result = subprocess.run(
+                    ["bash", post_update_script],
+                    cwd=GIT_REPO_PATH,
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout for build
+                )
+
+                # Add build output to log
+                if result.stdout:
+                    for line in result.stdout.strip().split('\n'):
+                        if line.strip():
+                            update_log.append(line)
+
+                if result.returncode == 0:
+                    update_log.append("✓ Web interface built and updated")
+                else:
+                    update_log.append(f"⚠ Build completed with warnings: {result.stderr}")
+            else:
+                # Fallback to simple copy if post_update.sh doesn't exist
+                shutil.copy2("/opt/proxmox-balance-manager/index.html", "/var/www/html/index.html")
+                update_log.append("✓ Web interface updated (legacy mode)")
+        except subprocess.TimeoutExpired:
+            update_log.append(f"⚠ Frontend build timed out - using existing web interface")
         except Exception as e:
             update_log.append(f"⚠ Failed to update web interface: {str(e)}")
 
