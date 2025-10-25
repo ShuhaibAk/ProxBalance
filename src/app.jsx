@@ -6702,7 +6702,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       <div className="relative" style={{minHeight: '400px'}}>
                         <div className="flex flex-wrap gap-8 justify-center items-start py-8">
                           {Object.values(data.nodes).map(node => {
-                            const nodeGuests = Object.values(data.guests || {}).filter(g => g.node === node.name && g.status === 'running');
+                            const nodeGuests = Object.values(data.guests || {}).filter(g => g.node === node.name);
                             const maxResources = Math.max(...Object.values(data.guests || {}).map(g => {
                               if (clusterMapViewMode === 'cpu') {
                                 // Use CPU usage %
@@ -6795,15 +6795,29 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   </div>
 
                                   {/* Host tooltip */}
-                                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                                    <div><strong>{node.name}</strong></div>
+                                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 px-4 py-3 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 text-white text-xs rounded-lg shadow-2xl border border-gray-700 dark:border-gray-600 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none whitespace-nowrap z-10">
+                                    <div className="font-bold text-sm mb-2 text-blue-400 border-b border-gray-700 pb-2">{node.name}</div>
                                     {maintenanceNodes.has(node.name) && (
-                                      <div className="text-yellow-400 font-bold">🔧 MAINTENANCE MODE</div>
+                                      <div className="text-yellow-400 font-bold bg-yellow-900/30 px-2 py-1 rounded mb-2">🔧 MAINTENANCE MODE</div>
                                     )}
-                                    <div>CPU: {(node.cpu_percent || 0).toFixed(1)}%</div>
-                                    <div>Memory: {(node.mem_percent || 0).toFixed(1)}%</div>
-                                    <div>IOWait: {(node.metrics?.current_iowait || 0).toFixed(1)}%</div>
-                                    <div>Cores: {node.cpu_cores || 0}</div>
+                                    <div className="space-y-1.5">
+                                      <div className="flex justify-between gap-4">
+                                        <span className="text-gray-300">CPU:</span>
+                                        <span className="font-semibold text-green-400">{(node.cpu_percent || 0).toFixed(1)}%</span>
+                                      </div>
+                                      <div className="flex justify-between gap-4">
+                                        <span className="text-gray-300">Memory:</span>
+                                        <span className="font-semibold text-blue-400">{(node.mem_percent || 0).toFixed(1)}%</span>
+                                      </div>
+                                      <div className="flex justify-between gap-4">
+                                        <span className="text-gray-300">IOWait:</span>
+                                        <span className="font-semibold text-purple-400">{(node.metrics?.current_iowait || 0).toFixed(1)}%</span>
+                                      </div>
+                                      <div className="flex justify-between gap-4 border-t border-gray-700 pt-1.5 mt-1.5">
+                                        <span className="text-gray-300">Cores:</span>
+                                        <span className="font-semibold text-orange-400">{node.cpu_cores || 0}</span>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
 
@@ -6859,11 +6873,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     const isMigrating = guestsMigrating[guest.vmid] === true;
                                     const progress = migrationProgress[guest.vmid];
                                     const isCompleted = completedMigrations[guest.vmid] !== undefined;
+                                    const isStopped = guest.status !== 'running';
 
                                     return (
                                       <div key={guest.vmid} className="relative group">
                                         <div
-                                          className={`rounded-full ${getGuestColor()} flex items-center justify-center text-white font-bold shadow-lg hover:shadow-xl transition-all cursor-pointer hover:ring-2 hover:ring-blue-400 ${isMigrating ? 'animate-pulse ring-2 ring-yellow-400' : ''} ${isCompleted ? 'ring-2 ring-green-400' : ''}`}
+                                          className={`rounded-full ${getGuestColor()} flex items-center justify-center text-white font-bold shadow-lg hover:shadow-xl transition-all cursor-pointer hover:ring-2 hover:ring-blue-400 ${isMigrating ? 'animate-pulse ring-2 ring-yellow-400' : ''} ${isCompleted ? 'ring-2 ring-green-400' : ''} ${isStopped ? 'opacity-40' : ''}`}
                                           style={{width: `${size}px`, height: `${size}px`, fontSize: `${Math.max(10, size/4)}px`}}
                                           onClick={() => {
                                             if (!isMigrating) {
@@ -6888,36 +6903,78 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                         )}
 
                                         {/* Guest tooltip */}
-                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                                          <div><strong>{guest.name || `Guest ${guest.vmid}`}</strong></div>
-                                          <div>Type: {((guest.type || '').toUpperCase() === 'VM' || (guest.type || '').toUpperCase() === 'QEMU') ? 'VM' : 'Container'}</div>
+                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 px-4 py-3 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 text-white text-xs rounded-lg shadow-2xl border border-gray-700 dark:border-gray-600 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none whitespace-nowrap z-10">
+                                          <div className="font-bold text-sm mb-2 text-blue-400 border-b border-gray-700 pb-2">
+                                            {guest.name || `Guest ${guest.vmid}`}
+                                            <span className="ml-2 text-gray-400 font-normal text-xs">
+                                              ({((guest.type || '').toUpperCase() === 'VM' || (guest.type || '').toUpperCase() === 'QEMU') ? 'VM' : 'CT'})
+                                            </span>
+                                          </div>
+
                                           {isMigrating && (
-                                            <div className="text-yellow-400 font-bold border-t border-gray-600 dark:border-gray-500 mt-1 pt-1">
+                                            <div className="text-yellow-400 font-bold bg-yellow-900/30 px-2 py-1 rounded mb-2">
                                               🔄 Migrating... {progress?.percentage ? `${progress.percentage}%` : ''}
                                             </div>
                                           )}
                                           {isCompleted && !isMigrating && (
-                                            <div className="text-green-400 font-bold border-t border-gray-600 dark:border-gray-500 mt-1 pt-1">
+                                            <div className="text-green-400 font-bold bg-green-900/30 px-2 py-1 rounded mb-2">
                                               ✓ Migration Complete
                                             </div>
                                           )}
-                                          {clusterMapViewMode === 'allocated' ? (
-                                            <>
-                                              <div>CPU Cores: {guest.cpu_cores || 0}</div>
-                                              <div>Memory Allocated: {(guest.mem_max_gb || 0).toFixed(1)} GB</div>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <div>CPU Usage: {cpuUsage.toFixed(1)}%</div>
-                                              <div>Memory Usage: {memPercent.toFixed(1)}% ({(guest.mem_used_gb || 0).toFixed(1)} / {(guest.mem_max_gb || 0).toFixed(1)} GB)</div>
-                                            </>
-                                          )}
-                                          <div>Status: {guest.status}</div>
-                                          <div className="border-t border-gray-600 dark:border-gray-500 mt-1 pt-1">
-                                            <div>Disk Read: {((guest.disk_read_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</div>
-                                            <div>Disk Write: {((guest.disk_write_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</div>
-                                            <div>Net In: {((guest.net_in_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</div>
-                                            <div>Net Out: {((guest.net_out_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</div>
+
+                                          <div className="space-y-1.5">
+                                            {clusterMapViewMode === 'allocated' ? (
+                                              <>
+                                                <div className="flex justify-between gap-4">
+                                                  <span className="text-gray-300">CPU Cores:</span>
+                                                  <span className="font-semibold text-orange-400">{guest.cpu_cores || 0}</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                  <span className="text-gray-300">Memory Allocated:</span>
+                                                  <span className="font-semibold text-blue-400">{(guest.mem_max_gb || 0).toFixed(1)} GB</span>
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <div className="flex justify-between gap-4">
+                                                  <span className="text-gray-300">CPU Usage:</span>
+                                                  <span className="font-semibold text-green-400">{cpuUsage.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                  <span className="text-gray-300">Memory Usage:</span>
+                                                  <span className="font-semibold text-blue-400">{memPercent.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="text-gray-400 text-xs ml-auto">
+                                                  ({(guest.mem_used_gb || 0).toFixed(1)} / {(guest.mem_max_gb || 0).toFixed(1)} GB)
+                                                </div>
+                                              </>
+                                            )}
+
+                                            <div className="flex justify-between gap-4">
+                                              <span className="text-gray-300">Status:</span>
+                                              <span className={`font-semibold ${guest.status === 'running' ? 'text-green-400' : 'text-gray-400'}`}>
+                                                {guest.status}
+                                              </span>
+                                            </div>
+
+                                            <div className="border-t border-gray-700 pt-1.5 mt-1.5 space-y-1">
+                                              <div className="flex justify-between gap-4">
+                                                <span className="text-gray-300">Disk Read:</span>
+                                                <span className="font-semibold text-cyan-400">{((guest.disk_read_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</span>
+                                              </div>
+                                              <div className="flex justify-between gap-4">
+                                                <span className="text-gray-300">Disk Write:</span>
+                                                <span className="font-semibold text-cyan-400">{((guest.disk_write_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</span>
+                                              </div>
+                                              <div className="flex justify-between gap-4">
+                                                <span className="text-gray-300">Net In:</span>
+                                                <span className="font-semibold text-purple-400">{((guest.net_in_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</span>
+                                              </div>
+                                              <div className="flex justify-between gap-4">
+                                                <span className="text-gray-300">Net Out:</span>
+                                                <span className="font-semibold text-purple-400">{((guest.net_out_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</span>
+                                              </div>
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
