@@ -433,24 +433,21 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             if (currentPage === 'settings' && openPenaltyConfigOnSettings) {
               // Use requestAnimationFrame to ensure DOM is ready
               requestAnimationFrame(() => {
-                setShowAdvancedSettings(true);
-                // Wait for Advanced Settings to expand before expanding nested section
-                requestAnimationFrame(() => {
-                  setShowPenaltyConfig(true);
-                  // Scroll to the penalty config section after expansion
-                  setTimeout(() => {
-                    const penaltySection = Array.from(document.querySelectorAll('button, h3, span')).find(el =>
-                      el.textContent && el.textContent.includes('Penalty Scoring Configuration')
-                    );
-                    if (penaltySection) {
-                      penaltySection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                  }, 400);
-                  // Reset flag after all state updates
-                  setTimeout(() => {
-                    setOpenPenaltyConfigOnSettings(false);
-                  }, 500);
-                });
+                // Penalty config is now a standalone section, no need to expand Advanced Settings
+                setShowPenaltyConfig(true);
+                // Scroll to the penalty config section after expansion
+                setTimeout(() => {
+                  const penaltySection = Array.from(document.querySelectorAll('button, h3, span')).find(el =>
+                    el.textContent && el.textContent.includes('Penalty Scoring Configuration')
+                  );
+                  if (penaltySection) {
+                    penaltySection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                }, 200);
+                // Reset flag after all state updates
+                setTimeout(() => {
+                  setOpenPenaltyConfigOnSettings(false);
+                }, 300);
               });
             }
           }, [currentPage, openPenaltyConfigOnSettings]);
@@ -2671,6 +2668,38 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    <hr className="border-gray-300 dark:border-gray-600" />
+
+                    {/* Penalty Scoring Configuration - Standalone Section */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                      <button
+                        onClick={() => setShowPenaltyConfig(!showPenaltyConfig)}
+                        className="w-full flex items-center justify-between text-left group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Settings size={24} className="text-blue-600 dark:text-blue-400" />
+                          <div>
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Penalty Scoring Configuration</h2>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Configure penalty weights used by the scoring algorithm</p>
+                          </div>
+                        </div>
+                        <ChevronDown
+                          className={`text-gray-600 dark:text-gray-400 transition-transform ${showPenaltyConfig ? 'rotate-180' : ''}`}
+                          size={20}
+                        />
+                      </button>
+
+                      {showPenaltyConfig && penaltyConfig && penaltyDefaults && (
+                        <div className="mt-4">
+                          {/* Content moved from Advanced Settings - will be populated below */}
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                            The penalty configuration interface will appear here when you expand this section.
+                            For now, you can still access it in the Advanced Settings section below.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <hr className="border-gray-300 dark:border-gray-600" />
