@@ -647,6 +647,11 @@ create_container() {
   sleep 10 &
   spinner $! "Waiting for container to start"
   msg_ok "Container started"
+
+  # Add 'ignore' tag to prevent ProxBalance from migrating itself
+  msg_info "Adding 'ignore' tag to ProxBalance container"
+  pct set "$CTID" --tags "ignore" >/dev/null 2>&1
+  msg_ok "Container tagged with 'ignore'"
 }
 
 get_container_ip() {
