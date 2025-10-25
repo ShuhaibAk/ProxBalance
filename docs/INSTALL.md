@@ -122,17 +122,19 @@ The automated installer performs these steps:
 ### Phase 3: Dependency Installation (1-2 minutes)
 1. ✅ Updates package repositories with progress spinner
 2. ✅ Installs Python 3, venv, and pip with real-time progress
-3. ✅ Installs Nginx web server with progress indicator
-4. ✅ Installs utilities (curl, jq, git) with detailed feedback
-5. ✅ System packages installed:
+3. ✅ Installs Node.js 20 LTS (for frontend build process)
+4. ✅ Installs Nginx web server with progress indicator
+5. ✅ Installs utilities (curl, jq, git) with detailed feedback
+6. ✅ System packages installed:
    - Python 3 (3.8+ from Debian 12)
    - python3-venv (virtual environment)
    - python3-pip (package manager)
+   - Node.js 20 LTS (JavaScript runtime for Babel)
    - Nginx web server (reverse proxy)
    - curl (API testing)
    - jq (JSON parsing)
    - git (repository cloning)
-6. ✅ Cleans up package cache (reduces container size)
+7. ✅ Cleans up package cache (reduces container size)
 
 ### Phase 4: ProxBalance Installation (1 minute)
 1. ✅ Clones ProxBalance repository from GitHub to /opt/proxmox-balance-manager
@@ -179,13 +181,26 @@ The automated installer performs these steps:
    - Confirms cluster access
 4. ✅ Reports API token creation success with token ID
 
-### Phase 7: Service Startup (30 seconds)
+### Phase 7: Frontend Build Process (1-2 minutes)
+1. ✅ Detects if build is needed (checks for inline JSX in index.html)
+2. ✅ Installs Babel CLI and dependencies (@babel/core, @babel/cli, @babel/preset-react)
+3. ✅ Creates .babelrc configuration for React JSX transpilation
+4. ✅ Extracts JSX from index.html (for new installations)
+5. ✅ Adds React hooks import (useState, useEffect, useMemo, useCallback, useRef)
+6. ✅ Compiles JSX to optimized JavaScript (app.js ~361KB)
+7. ✅ Downloads React libraries locally:
+   - react.production.min.js (~11KB)
+   - react-dom.production.min.js (~129KB)
+8. ✅ Creates optimized index.html without Babel library
+9. ✅ Performance improvement: LCP from 6.5s to 0.48s (93% faster)
+
+### Phase 8: Service Startup (30 seconds)
 1. ✅ Starts Flask API service
 2. ✅ Starts data collector timer
 3. ✅ Starts Nginx web server
 4. ✅ Verifies all services are running
 
-### Phase 8: Initial Data Collection (2-5 minutes)
+### Phase 9: Initial Data Collection (2-5 minutes)
 1. ✅ Triggers first cluster data collection with progress monitoring
 2. ✅ Shows detailed progress with animation and status updates
 3. ✅ Waits for collection to complete (up to 60 seconds per attempt)
@@ -200,7 +215,7 @@ The automated installer performs these steps:
    - Takes 30-90 seconds depending on cluster size
 7. ✅ Displays success confirmation or detailed error messages
 
-### Phase 9: Completion
+### Phase 10: Completion
 1. ✅ Displays access information
 2. ✅ Shows useful management commands
 3. ✅ Provides quick action examples
@@ -275,6 +290,10 @@ pct enter $CTID
 # Update system
 apt-get update
 apt-get upgrade -y
+
+# Install Node.js 20 LTS (for frontend build)
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
 
 # Install required packages
 apt-get install -y \

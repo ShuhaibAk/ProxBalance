@@ -79,9 +79,100 @@ pct exec $CTID -- bash -c 'cd /opt/proxmox-balance-manager && git pull origin ma
 echo "Installing dependencies..."
 pct exec $CTID -- bash -c 'cd /opt/proxmox-balance-manager && source venv/bin/activate && pip install -q -r requirements.txt'
 
-# Copy index.html to web root
-echo "Updating web interface..."
-pct exec $CTID -- cp /opt/proxmox-balance-manager/index.html /var/www/html/
+# Build and update web interface
+echo "Building web interface..."
+pct exec $CTID -- bash <<'BUILD_EOF'
+cd /opt/proxmox-balance-manager
+
+# Check if Node.js is installed
+if ! command -v node >/dev/null 2>&1; then
+  echo "  ⚠  Node.js not found - installing Node.js 20 LTS..."
+  export DEBIAN_FRONTEND=noninteractive
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+  apt-get install -y nodejs >/dev/null 2>&1
+  echo "  ✓ Node.js installed"
+fi
+
+# Check if we need to build (detect if index.html has inline JSX)
+if [ -f index.html ] && grep -q 'type="text/babel"' index.html; then
+  echo "  ⚠  Legacy inline JSX detected - upgrading to pre-compiled architecture"
+  NEEDS_BUILD=true
+elif [ -f src/app.jsx ] || [ -f src/app_fixed.jsx ]; then
+  echo "  ✓ Pre-compiled architecture detected - rebuilding"
+  NEEDS_BUILD=true
+else
+  echo "  ℹ  No JSX source found - assuming pre-built"
+  NEEDS_BUILD=false
+fi
+
+if [ "$NEEDS_BUILD" = "true" ]; then
+  # Install Babel dependencies if not present
+  if [ ! -d node_modules/@babel ]; then
+    echo "  → Installing Babel dependencies..."
+    npm install --save-dev @babel/core @babel/cli @babel/preset-react >/dev/null 2>&1
+  fi
+
+  # Create Babel configuration
+  cat > .babelrc <<'BABEL_CONFIG'
+{
+  "presets": ["@babel/preset-react"]
+}
+BABEL_CONFIG
+
+  # Extract JSX from index.html if needed (for upgrades from old versions)
+  if [ ! -f src/app.jsx ] && [ ! -f src/app_fixed.jsx ]; then
+    echo "  → Extracting JSX from index.html..."
+    mkdir -p src
+    sed -n '/<script type="text\/babel">/,/<\/script>/p' index.html | \
+      sed '1d;$d' | sed '1,2d' > src/app.jsx
+  fi
+
+  # Add React hooks import if not already present
+  if [ -f src/app.jsx ] && ! grep -q "const { useState" src/app.jsx; then
+    echo "  → Adding React hooks import..."
+    echo 'const { useState, useEffect, useMemo, useCallback, useRef } = React;' | \
+      cat - src/app.jsx > src/app_fixed.jsx
+  elif [ -f src/app.jsx ]; then
+    cp src/app.jsx src/app_fixed.jsx
+  fi
+
+  # Compile JSX to JavaScript
+  echo "  → Compiling JSX to JavaScript..."
+  mkdir -p /var/www/html/assets/js
+  npx babel src/app_fixed.jsx --out-file /var/www/html/assets/js/app.js 2>/dev/null
+
+  # Download React libraries if not present
+  if [ ! -f /var/www/html/assets/js/react.production.min.js ]; then
+    echo "  → Downloading React libraries..."
+    curl -sL https://unpkg.com/react@18/umd/react.production.min.js \
+      -o /var/www/html/assets/js/react.production.min.js
+    curl -sL https://unpkg.com/react-dom@18/umd/react-dom.production.min.js \
+      -o /var/www/html/assets/js/react-dom.production.min.js
+  fi
+
+  # Create optimized index.html
+  echo "  → Creating optimized index.html..."
+  sed -n '1,/<script type="text\/babel">/p' index.html | head -n -1 > /tmp/index_new.html
+  sed -i '/<script.*babel.*\.js/d' /tmp/index_new.html
+  cat >> /tmp/index_new.html <<'INDEX_FOOTER'
+    <div id="root"></div>
+    <script src="/assets/js/app.js"></script>
+</body>
+</html>
+INDEX_FOOTER
+  cp /tmp/index_new.html /var/www/html/index.html
+
+  echo "  ✓ Web interface built and optimized"
+else
+  # Just copy pre-built files
+  echo "  → Copying web interface files..."
+  cp index.html /var/www/html/
+  if [ -d assets ]; then
+    cp -r assets/* /var/www/html/assets/ 2>/dev/null || true
+  fi
+  echo "  ✓ Web interface updated"
+fi
+BUILD_EOF
 
 # Update systemd service files (for new services/timers)
 echo "Updating system services..."

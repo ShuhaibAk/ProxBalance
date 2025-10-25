@@ -709,6 +709,18 @@ install_dependencies() {
   spinner $! "Installing Python 3, venv, and pip"
   echo ""
 
+  # Install Node.js (for Babel compilation)
+  (
+    pct exec "$CTID" -- bash -c "
+      export DEBIAN_FRONTEND=noninteractive
+      # Install Node.js from NodeSource (LTS version)
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+      apt-get install -y nodejs >/dev/null 2>&1
+    "
+  ) &
+  spinner $! "Installing Node.js 20 LTS (for frontend build)"
+  echo ""
+
   # Install web server
   (
     pct exec "$CTID" -- bash -c "
@@ -939,45 +951,154 @@ EOF
   msg_ok "Services configured"
 }
 
+build_frontend() {
+  msg_info "Building Frontend (Pre-compiling JSX)"
+  echo ""
+
+  pct exec "$CTID" -- bash <<'BUILD_EOF'
+cd /opt/proxmox-balance-manager
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Frontend Build Process"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Check if we need to build (detect if index.html has inline JSX)
+if [ -f index.html ] && grep -q 'type="text/babel"' index.html; then
+  echo "⚠  Legacy inline JSX detected - build required"
+  NEEDS_BUILD=true
+elif [ -f src/app.jsx ] || [ -f src/app_fixed.jsx ]; then
+  echo "✓ Pre-compiled architecture detected"
+  NEEDS_BUILD=true
+else
+  echo "ℹ  No JSX source found - assuming pre-built"
+  NEEDS_BUILD=false
+fi
+
+if [ "$NEEDS_BUILD" = "true" ]; then
+  # Create directory structure
+  echo "Creating build directories..."
+  mkdir -p /var/www/html/assets/js
+  mkdir -p src
+
+  # Step 1: Install Babel dependencies
+  echo ""
+  echo "Step 1/5: Installing Babel dependencies..."
+  if [ ! -f package.json ]; then
+    npm init -y >/dev/null 2>&1
+  fi
+  npm install --save-dev @babel/core @babel/cli @babel/preset-react >/dev/null 2>&1
+  echo "  ✓ Babel installed"
+
+  # Step 2: Create Babel config
+  echo ""
+  echo "Step 2/5: Creating Babel configuration..."
+  cat > .babelrc <<'BABEL_CONFIG'
+{
+  "presets": ["@babel/preset-react"]
+}
+BABEL_CONFIG
+  echo "  ✓ .babelrc created"
+
+  # Step 3: Extract JSX from index.html if needed
+  echo ""
+  echo "Step 3/5: Preparing JSX source..."
+  if [ ! -f src/app.jsx ] && [ ! -f src/app_fixed.jsx ]; then
+    # Extract JSX from index.html
+    if grep -q 'type="text/babel"' index.html; then
+      echo "  ⚙  Extracting JSX from index.html..."
+      sed -n '/<script type="text\/babel">/,/<\/script>/p' index.html | \
+        sed '1d;$d' | \
+        sed '1,2d' > src/app.jsx
+
+      # Add React hooks import at the top
+      echo 'const { useState, useEffect, useMemo, useCallback, useRef } = React;' | \
+        cat - src/app.jsx > src/app_fixed.jsx
+      echo "  ✓ JSX extracted and hooks import added"
+    fi
+  else
+    echo "  ✓ JSX source already exists"
+  fi
+
+  # Step 4: Compile JSX to JavaScript
+  echo ""
+  echo "Step 4/5: Compiling JSX to JavaScript..."
+  if [ -f src/app_fixed.jsx ]; then
+    npx babel src/app_fixed.jsx --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
+    COMPILED_SIZE=$(stat -c%s /var/www/html/assets/js/app.js 2>/dev/null)
+    echo "  ✓ Compiled to app.js (${COMPILED_SIZE} bytes)"
+  elif [ -f src/app.jsx ]; then
+    # Add hooks import on the fly
+    echo 'const { useState, useEffect, useMemo, useCallback, useRef } = React;' | \
+      cat - src/app.jsx | \
+      npx babel --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
+    COMPILED_SIZE=$(stat -c%s /var/www/html/assets/js/app.js 2>/dev/null)
+    echo "  ✓ Compiled to app.js (${COMPILED_SIZE} bytes)"
+  fi
+
+  # Step 5: Download React libraries locally
+  echo ""
+  echo "Step 5/5: Downloading React libraries..."
+  cd /var/www/html/assets/js
+
+  curl -sL https://unpkg.com/react@18/umd/react.production.min.js -o react.production.min.js
+  REACT_SIZE=$(stat -c%s react.production.min.js 2>/dev/null)
+  echo "  ✓ React downloaded (${REACT_SIZE} bytes)"
+
+  curl -sL https://unpkg.com/react-dom@18/umd/react-dom.production.min.js -o react-dom.production.min.js
+  REACT_DOM_SIZE=$(stat -c%s react-dom.production.min.js 2>/dev/null)
+  echo "  ✓ React-DOM downloaded (${REACT_DOM_SIZE} bytes)"
+
+  cd /opt/proxmox-balance-manager
+
+  # Create optimized index.html
+  echo ""
+  echo "Creating optimized index.html..."
+
+  # Get the head section (everything before the script tag)
+  sed -n '1,/<script type="text\/babel">/p' index.html | head -n -1 > /tmp/index_new.html
+
+  # Remove Babel library reference if present
+  sed -i '/<script.*babel.*\.js/d' /tmp/index_new.html
+
+  # Add the pre-compiled script tag and close tags
+  cat >> /tmp/index_new.html <<'INDEX_FOOTER'
+    <div id="root"></div>
+    <script src="/assets/js/app.js"></script>
+</body>
+</html>
+INDEX_FOOTER
+
+  cp /tmp/index_new.html /var/www/html/index.html
+  rm /tmp/index_new.html
+
+  INDEX_SIZE=$(stat -c%s /var/www/html/index.html 2>/dev/null)
+  echo "  ✓ Optimized index.html created (${INDEX_SIZE} bytes)"
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "✓ Frontend build complete!"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+else
+  echo "ℹ  Skipping build - copying pre-built files..."
+  cp -f index.html /var/www/html/
+fi
+BUILD_EOF
+
+  msg_ok "Frontend built and optimized"
+}
+
 setup_nginx() {
   msg_info "Configuring Web Server"
 
   pct exec "$CTID" -- bash <<'EOF'
-# Copy index.html from repository to web root
-if [ -f /opt/proxmox-balance-manager/index.html ]; then
-  echo "Copying index.html to /var/www/html/"
-  cp -f /opt/proxmox-balance-manager/index.html /var/www/html/
-
-  # Verify the copy
-  SRC_SIZE=$(stat -f%z /opt/proxmox-balance-manager/index.html 2>/dev/null || stat -c%s /opt/proxmox-balance-manager/index.html 2>/dev/null)
-  DST_SIZE=$(stat -f%z /var/www/html/index.html 2>/dev/null || stat -c%s /var/www/html/index.html 2>/dev/null)
-
-  echo "Source index.html: ${SRC_SIZE} bytes"
-  echo "Destination index.html: ${DST_SIZE} bytes"
-
-  if [ "$SRC_SIZE" = "$DST_SIZE" ]; then
-    echo "✓ index.html copied successfully"
-  else
-    echo "⚠ Warning: File sizes don't match"
-  fi
-
-  # Check for AI features in the copied file
-  if grep -q "AI-Enhanced Recommendations" /var/www/html/index.html; then
-    echo "✓ AI features detected in web UI"
-  else
-    echo "ℹ Standard UI (no AI features)"
-  fi
-else
-  echo "⚠ Warning: index.html not found in repository"
-fi
-
 # Copy assets folder (logos, images, etc.)
 if [ -d /opt/proxmox-balance-manager/assets ]; then
   echo "Copying assets folder to /var/www/html/"
   cp -rf /opt/proxmox-balance-manager/assets /var/www/html/
 
-  # Count files copied
-  ASSET_COUNT=$(find /var/www/html/assets -type f 2>/dev/null | wc -l)
+  # Count files copied (excluding js files which are handled by build)
+  ASSET_COUNT=$(find /var/www/html/assets -type f ! -path "*/js/*" 2>/dev/null | wc -l)
   echo "✓ Copied ${ASSET_COUNT} asset files"
 
   # Verify logo files exist
@@ -1703,6 +1824,7 @@ main() {
   setup_api_tokens
   configure_application
   setup_services
+  build_frontend
   setup_nginx
   setup_motd
   set_container_notes
