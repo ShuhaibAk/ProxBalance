@@ -3140,6 +3140,228 @@ def update_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/config/export", methods=["GET"])
+def export_config():
+    """Export complete configuration as downloadable JSON file"""
+    try:
+        from datetime import datetime
+        import io
+
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": config.get('message')
+            }), 500
+
+        # Add export metadata
+        export_data = {
+            "export_metadata": {
+                "export_date": datetime.now().isoformat(),
+                "proxbalance_version": "2.0",
+                "config_version": 1
+            },
+            "configuration": config
+        }
+
+        # Create JSON string
+        json_str = json.dumps(export_data, indent=2)
+
+        # Create file-like object
+        file_obj = io.BytesIO(json_str.encode('utf-8'))
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"proxbalance_config_{timestamp}.json"
+
+        return send_file(
+            file_obj,
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/config/backup", methods=["POST"])
+def backup_config():
+    """Create a backup of current configuration (keeps last 5)"""
+    try:
+        from datetime import datetime
+        import glob
+
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": config.get('message')
+            }), 500
+
+        # Create backups directory if it doesn't exist
+        backup_dir = os.path.join(BASE_PATH, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Generate backup filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_file = os.path.join(backup_dir, f"config_backup_{timestamp}.json")
+
+        # Save backup
+        with open(backup_file, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        # Rotate backups - keep only last 5
+        backup_files = sorted(glob.glob(os.path.join(backup_dir, 'config_backup_*.json')))
+        if len(backup_files) > 5:
+            # Remove oldest backups
+            for old_backup in backup_files[:-5]:
+                try:
+                    os.remove(old_backup)
+                except Exception as e:
+                    print(f"Warning: Could not remove old backup {old_backup}: {e}")
+
+        return jsonify({
+            "success": True,
+            "message": "Configuration backup created successfully",
+            "backup_file": os.path.basename(backup_file)
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def validate_config_structure(config_data):
+    """Validate imported configuration structure"""
+    errors = []
+    warnings = []
+
+    # Required fields
+    required_fields = ['proxmox_host']
+    for field in required_fields:
+        if field not in config_data:
+            errors.append(f"Missing required field: {field}")
+
+    # Check proxmox_host is not placeholder
+    if config_data.get('proxmox_host') == 'CHANGE_ME':
+        errors.append("proxmox_host is set to placeholder value 'CHANGE_ME'")
+
+    # Validate data types
+    if 'collection_interval_minutes' in config_data:
+        if not isinstance(config_data['collection_interval_minutes'], (int, float)):
+            errors.append("collection_interval_minutes must be a number")
+
+    if 'ui_refresh_interval_minutes' in config_data:
+        if not isinstance(config_data['ui_refresh_interval_minutes'], (int, float)):
+            errors.append("ui_refresh_interval_minutes must be a number")
+
+    # Check authentication method
+    if 'proxmox_auth_method' in config_data:
+        valid_auth_methods = ['api_token', 'password']
+        if config_data['proxmox_auth_method'] not in valid_auth_methods:
+            errors.append(f"Invalid proxmox_auth_method. Must be one of: {', '.join(valid_auth_methods)}")
+
+    # Warn about missing optional but recommended fields
+    recommended_fields = ['collection_interval_minutes', 'ui_refresh_interval_minutes', 'proxmox_port']
+    for field in recommended_fields:
+        if field not in config_data:
+            warnings.append(f"Optional field missing: {field} (will use default)")
+
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings
+    }
+
+
+@app.route("/api/config/import", methods=["POST"])
+def import_config():
+    """Import configuration from uploaded JSON file"""
+    try:
+        from datetime import datetime
+        import subprocess as sp
+
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({
+                "success": False,
+                "error": "No file uploaded"
+            }), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({
+                "success": False,
+                "error": "No file selected"
+            }), 400
+
+        # Read and parse JSON
+        try:
+            import_data = json.load(file)
+        except json.JSONDecodeError as e:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid JSON file: {str(e)}"
+            }), 400
+
+        # Extract configuration (handle both direct config and exported format with metadata)
+        if 'configuration' in import_data and 'export_metadata' in import_data:
+            # This is an exported config file
+            config_data = import_data['configuration']
+            metadata = import_data['export_metadata']
+        else:
+            # This is a direct config.json file
+            config_data = import_data
+            metadata = None
+
+        # Validate configuration
+        validation_result = validate_config_structure(config_data)
+        if not validation_result['valid']:
+            return jsonify({
+                "success": False,
+                "error": "Configuration validation failed",
+                "validation_errors": validation_result['errors'],
+                "validation_warnings": validation_result['warnings']
+            }), 400
+
+        # Create automatic backup before importing
+        current_config = load_config()
+        if not current_config.get('error'):
+            backup_dir = os.path.join(BASE_PATH, 'backups')
+            os.makedirs(backup_dir, exist_ok=True)
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_file = os.path.join(backup_dir, f"config_backup_pre_import_{timestamp}.json")
+
+            with open(backup_file, 'w') as f:
+                json.dump(current_config, f, indent=2)
+
+        # Save imported configuration
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config_data, f, indent=2)
+
+        # Restart services if credentials changed
+        systemctl_cmd = "/usr/bin/systemctl"
+        if os.path.exists(systemctl_cmd) and os.path.exists("/etc/systemd/system/proxmox-collector.service"):
+            try:
+                sp.run([systemctl_cmd, "restart", "proxmox-collector.timer"],
+                      capture_output=True, text=True, timeout=5)
+                sp.run([systemctl_cmd, "restart", "proxmox-balance"],
+                      capture_output=True, text=True, timeout=5)
+            except Exception as e:
+                print(f"Warning: Could not restart services: {e}")
+
+        return jsonify({
+            "success": True,
+            "message": "Configuration imported successfully",
+            "validation_warnings": validation_result['warnings'],
+            "metadata": metadata
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/penalty-config", methods=["GET"])
 def get_penalty_config():
     """Get penalty scoring configuration with defaults"""

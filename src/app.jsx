@@ -17,6 +17,7 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
         const Settings = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>);
         const X = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>);
         const Save = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>);
+        const Upload = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>);
         const ChevronDown = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="6 9 12 15 18 9"></polyline></svg>);
         const ChevronUp = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="18 15 12 9 6 15"></polyline></svg>);
         const ChevronRight = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="9 18 15 12 9 6"></polyline></svg>);
@@ -3141,6 +3142,139 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </div>
                     </div>
 
+                    <hr className="border-gray-300 dark:border-gray-600" />
+
+                    {/* Configuration Export/Import */}
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Configuration Backup & Restore</h3>
+                      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Export your configuration for backup or import it on a fresh installation. Automatic backups are created before each import.
+                        </p>
+
+                        {/* Export Configuration */}
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+                          <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Export Configuration</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                            Download all settings as a JSON file for backup or migration to another instance.
+                          </p>
+                          <button
+                            onClick={() => {
+                              window.location.href = `${API_BASE}/config/export`;
+                            }}
+                            className="w-full px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 font-medium flex items-center justify-center gap-2"
+                          >
+                            <Download size={16} />
+                            Export Configuration
+                          </button>
+                        </div>
+
+                        {/* Import Configuration */}
+                        <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
+                          <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Import Configuration</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                            Upload a configuration file to restore settings. Your current configuration will be automatically backed up before import.
+                          </p>
+
+                          <input
+                            type="file"
+                            ref={(el) => {
+                              if (!window.configFileInput) window.configFileInput = el;
+                            }}
+                            accept=".json"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+
+                              if (!confirm('Import configuration?\n\nThis will replace all current settings. Your current configuration will be backed up automatically.\n\nAre you sure?')) {
+                                e.target.value = '';
+                                return;
+                              }
+
+                              const formData = new FormData();
+                              formData.append('file', file);
+
+                              fetch(`${API_BASE}/config/import`, {
+                                method: 'POST',
+                                body: formData
+                              })
+                              .then(response => response.json())
+                              .then(result => {
+                                if (result.success) {
+                                  alert('Configuration imported successfully!\n\n' +
+                                        (result.validation_warnings?.length > 0
+                                          ? 'Warnings:\n' + result.validation_warnings.join('\n')
+                                          : 'Services will restart automatically.'));
+                                  // Reload page to reflect new configuration
+                                  setTimeout(() => window.location.reload(), 2000);
+                                } else {
+                                  let errorMsg = 'Failed to import configuration:\n' + result.error;
+                                  if (result.validation_errors?.length > 0) {
+                                    errorMsg += '\n\nValidation Errors:\n' + result.validation_errors.join('\n');
+                                  }
+                                  if (result.validation_warnings?.length > 0) {
+                                    errorMsg += '\n\nWarnings:\n' + result.validation_warnings.join('\n');
+                                  }
+                                  alert(errorMsg);
+                                }
+                              })
+                              .catch(error => {
+                                alert('Error importing configuration: ' + error.message);
+                              })
+                              .finally(() => {
+                                e.target.value = '';
+                              });
+                            }}
+                          />
+
+                          <button
+                            onClick={() => window.configFileInput?.click()}
+                            className="w-full px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 font-medium flex items-center justify-center gap-2"
+                          >
+                            <Upload size={16} />
+                            Import Configuration
+                          </button>
+                        </div>
+
+                        {/* Manual Backup */}
+                        <div className="p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded">
+                          <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Create Backup</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                            Create a manual backup of your current configuration. Last 5 backups are kept automatically.
+                          </p>
+                          <button
+                            onClick={() => {
+                              fetch(`${API_BASE}/config/backup`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                              })
+                              .then(response => response.json())
+                              .then(result => {
+                                if (result.success) {
+                                  alert('Backup created successfully!\n\nFile: ' + result.backup_file);
+                                } else {
+                                  alert('Failed to create backup: ' + result.error);
+                                }
+                              })
+                              .catch(error => {
+                                alert('Error creating backup: ' + error.message);
+                              });
+                            }}
+                            className="w-full px-4 py-2 bg-purple-600 dark:bg-purple-500 text-white rounded hover:bg-purple-700 dark:hover:bg-purple-600 font-medium flex items-center justify-center gap-2"
+                          >
+                            <Save size={16} />
+                            Create Backup Now
+                          </button>
+                        </div>
+
+                        <div className="text-xs text-gray-500 dark:text-gray-400 italic p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+                          <strong>Note:</strong> Backups are stored in /opt/proxmox-balance-manager/backups/ and rotated automatically (last 5 kept).
+                        </div>
+                      </div>
+                    </div>
+
+                    <hr className="border-gray-300 dark:border-gray-600" />
 
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Service Management</h3>
