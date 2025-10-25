@@ -2229,35 +2229,37 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     <hr className="border-gray-300 dark:border-gray-600" />
 
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Data Collection</h3>
-                      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
-                        {backendCollected && (
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Server size={16} className="text-green-600 dark:text-green-400" />
-                              <span className="text-sm text-gray-700 dark:text-gray-300">
-                                Last collected: <span className="font-semibold text-green-600 dark:text-green-400">{formatLocalTime(backendCollected)} {getTimezoneAbbr()}</span>
-                              </span>
-                            </div>
-                            <button
-                              onClick={handleRefresh}
-                              disabled={loading}
-                              className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Refresh data collection now"
-                            >
-                              <RefreshCw size={14} className={`${loading ? 'animate-spin' : ''} text-gray-600 dark:text-gray-400`} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Data Collection & Performance</h3>
 
-                    <hr className="border-gray-300 dark:border-gray-600" />
+                      {/* Last Collection Status */}
+                      <div className="mb-6">
+                        <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Status</h4>
+                        <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                          {backendCollected && (
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Server size={16} className="text-green-600 dark:text-green-400" />
+                                <span className="text-sm text-gray-700 dark:text-gray-300">
+                                  Last collected: <span className="font-semibold text-green-600 dark:text-green-400">{formatLocalTime(backendCollected)} {getTimezoneAbbr()}</span>
+                                </span>
+                              </div>
+                              <button
+                                onClick={handleRefresh}
+                                disabled={loading}
+                                className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Refresh data collection now"
+                              >
+                                <RefreshCw size={14} className={`${loading ? 'animate-spin' : ''} text-gray-600 dark:text-gray-400`} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
 
                     {/* Collection Performance Stats */}
                     {data?.performance && (
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Collection Performance</h3>
+                      <div className="mb-6">
+                        <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Performance Metrics</h4>
                         <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div className="bg-white/50 dark:bg-gray-800/50 rounded p-3">
@@ -2283,16 +2285,15 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </div>
                     )}
 
-                    {data?.performance && <hr className="border-gray-300 dark:border-gray-600" />}
-
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Collection Optimization</h3>
-                      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
-                        <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 mb-4">
-                          <p className="text-sm text-blue-900 dark:text-blue-200">
-                            <strong>Collection Performance:</strong> Optimize data collection speed based on cluster size. Parallel collection can reduce collection time by 3-5x.
-                          </p>
-                        </div>
+                      {/* Collection Optimization Settings */}
+                      <div>
+                        <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3">Optimization Settings</h4>
+                        <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                          <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 mb-4">
+                            <p className="text-sm text-blue-900 dark:text-blue-200">
+                              <strong>Collection Performance:</strong> Optimize data collection speed based on cluster size. Parallel collection can reduce collection time by 3-5x.
+                            </p>
+                          </div>
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -2491,6 +2492,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           </button>
                         </div>
                       </div>
+                    </div>
                     </div>
 
                     <hr className="border-gray-300 dark:border-gray-600" />
