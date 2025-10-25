@@ -18,6 +18,7 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
         const Save = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>);
         const ChevronDown = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="6 9 12 15 18 9"></polyline></svg>);
         const ChevronUp = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="18 15 12 9 6 15"></polyline></svg>);
+        const ChevronRight = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><polyline points="9 18 15 12 9 6"></polyline></svg>);
         const GitHub = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>);
         const GitBranch = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>);
         const ArrowLeft = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
@@ -121,6 +122,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [tempBackendInterval, setTempBackendInterval] = useState(60);
           const [tempUiInterval, setTempUiInterval] = useState(60);
           const [savingSettings, setSavingSettings] = useState(false);
+          const [savingCollectionSettings, setSavingCollectionSettings] = useState(false);
+          const [collectionSettingsSaved, setCollectionSettingsSaved] = useState(false);
           const [canMigrate, setCanMigrate] = useState(true); // Permission check
           const [permissionReason, setPermissionReason] = useState('');
           const [aiProvider, setAiProvider] = useState('none');
@@ -203,6 +206,14 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [guestSearchFilter, setGuestSearchFilter] = useState('');
           const [newTag, setNewTag] = useState('');
           const [tagOperation, setTagOperation] = useState(''); // 'add' or 'remove'
+          const [confirmRemoveTag, setConfirmRemoveTag] = useState(null); // { guest, tag }
+          const [confirmHostChange, setConfirmHostChange] = useState(null); // newHost string
+          const [confirmMigration, setConfirmMigration] = useState(null); // recommendation object
+          const [confirmRemoveWindow, setConfirmRemoveWindow] = useState(null); // { index, type: 'migration' | 'blackout' }
+          const [confirmEnableAutomation, setConfirmEnableAutomation] = useState(false); // boolean
+          const [confirmDisableDryRun, setConfirmDisableDryRun] = useState(false); // boolean
+          const [confirmApplyPreset, setConfirmApplyPreset] = useState(null); // preset key string
+          const [confirmAllowContainerRestarts, setConfirmAllowContainerRestarts] = useState(false); // boolean
 
           // Dashboard header collapse
           const [dashboardHeaderCollapsed, setDashboardHeaderCollapsed] = useState(() => {
@@ -282,6 +293,13 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [testingAutomation, setTestingAutomation] = useState(false);
           const [cancelMigrationModal, setCancelMigrationModal] = useState(null); // { migration: object } or null
 
+          // Penalty Configuration state
+          const [penaltyConfig, setPenaltyConfig] = useState(null);
+          const [penaltyDefaults, setPenaltyDefaults] = useState(null);
+          const [showPenaltyConfig, setShowPenaltyConfig] = useState(false);
+          const [savingPenaltyConfig, setSavingPenaltyConfig] = useState(false);
+          const [penaltyConfigSaved, setPenaltyConfigSaved] = useState(false);
+
           // Unified Time Windows form state
           const [showTimeWindowForm, setShowTimeWindowForm] = useState(false);
           const [editingWindowIndex, setEditingWindowIndex] = useState(null); // Track which window is being edited (index in combined array)
@@ -329,6 +347,15 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
           }, [maintenanceNodes]);
 
+          // Clear confirmation modals when settings are closed
+          useEffect(() => {
+            if (!showSettings) {
+              setConfirmHostChange(null);
+              // Note: confirmRemoveTag and confirmMigration are not triggered from settings,
+              // but we clear them here for consistency
+            }
+          }, [showSettings]);
+
           // Save CPU threshold to localStorage
           useEffect(() => {
             localStorage.setItem('proxbalance_cpu_threshold', cpuThreshold.toString());
@@ -372,6 +399,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             fetchAutomationStatus();
             fetchAutomationConfig();
             checkPermissions();
+            fetchPenaltyConfig();
           }, []);
 
           // Hide splash screen when data loads
@@ -457,6 +485,19 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
           };
 
+          const fetchPenaltyConfig = async () => {
+            try {
+              const response = await fetch(`${API_BASE}/penalty-config`);
+              const result = await response.json();
+              if (result.success) {
+                setPenaltyConfig(result.config);
+                setPenaltyDefaults(result.defaults);
+              }
+            } catch (err) {
+              console.error('Failed to load penalty config:', err);
+            }
+          };
+
           const saveSettings = async () => {
             setSavingSettings(true);
             try {
@@ -494,15 +535,15 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 const intervalMs = tempUiInterval * 60 * 1000;
                 setAutoRefreshInterval(intervalMs);
                 setShowSettings(false);
-                
+
                 const now = new Date();
                 setLastUpdate(now);
                 setNextUpdate(new Date(now.getTime() + intervalMs));
               } else {
-                alert('Failed to save settings: ' + result.error);
+                setError('Failed to save settings: ' + result.error);
               }
             } catch (err) {
-              alert('Failed to save settings: ' + err.message);
+              setError('Failed to save settings: ' + err.message);
             }
             setSavingSettings(false);
           };
@@ -828,10 +869,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               if (result.success) {
                 setModels(result.models);
               } else {
-                alert(`Failed to fetch models: ${result.error}`);
+                setError(`Failed to fetch models: ${result.error}`);
               }
             } catch (err) {
-              alert(`Failed to fetch models: ${err.message}`);
+              setError(`Failed to fetch models: ${err.message}`);
             }
             setLoading(false);
           };
@@ -889,11 +930,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 fetchAutomationStatus(); // Refresh status
                 // Silent save - no alert popup
               } else {
-                alert(`Failed to save settings: ${result.error}`);
+                setError(`Failed to save settings: ${result.error}`);
               }
             } catch (err) {
               console.error('Failed to save automation config:', err);
-              alert(`Error saving settings: ${err.message}`);
+              setError(`Error saving settings: ${err.message}`);
             } finally {
               setSavingAutomationConfig(false);
             }
@@ -995,6 +1036,52 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
           };
 
+          const savePenaltyConfig = async () => {
+            setSavingPenaltyConfig(true);
+            setPenaltyConfigSaved(false);
+            try {
+              const response = await fetch(`${API_BASE}/penalty-config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({config: penaltyConfig})
+              });
+              const result = await response.json();
+              if (result.success) {
+                setPenaltyConfig(result.config);
+                setPenaltyConfigSaved(true);
+                // Clear success message after 3 seconds
+                setTimeout(() => setPenaltyConfigSaved(false), 3000);
+              } else {
+                setError(`Failed to save penalty config: ${result.error}`);
+              }
+            } catch (err) {
+              console.error('Failed to save penalty config:', err);
+              setError(`Error saving penalty config: ${err.message}`);
+            } finally {
+              setSavingPenaltyConfig(false);
+            }
+          };
+
+          const resetPenaltyConfig = async () => {
+            setSavingPenaltyConfig(true);
+            try {
+              const response = await fetch(`${API_BASE}/penalty-config/reset`, {
+                method: 'POST'
+              });
+              const result = await response.json();
+              if (result.success) {
+                setPenaltyConfig(result.config);
+              } else {
+                setError(`Failed to reset penalty config: ${result.error}`);
+              }
+            } catch (err) {
+              console.error('Failed to reset penalty config:', err);
+              setError(`Error resetting penalty config: ${err.message}`);
+            } finally {
+              setSavingPenaltyConfig(false);
+            }
+          };
+
           const handleUpdate = async () => {
             setUpdating(true);
             setUpdateLog([]);
@@ -1056,13 +1143,13 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               if (result.success) {
                 setShowBranchModal(false);
                 await fetchSystemInfo();
-                alert(`Successfully switched to branch: ${branchName}\n\nThe page will reload to apply changes.`);
+                // Page will reload automatically to apply branch changes
                 setTimeout(() => window.location.reload(), 1000);
               } else {
-                alert(`Failed to switch branch: ${result.error}`);
+                setError(`Failed to switch branch: ${result.error}`);
               }
             } catch (err) {
-              alert(`Error switching branch: ${err.message}`);
+              setError(`Error switching branch: ${err.message}`);
             }
             setSwitchingBranch(false);
           };
@@ -1072,7 +1159,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             const migration = activeMigrations[key];
 
             if (!migration) {
-              alert('Migration info not found');
+              setError('Migration info not found');
               return;
             }
 
@@ -1134,10 +1221,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     // Close modal
                     setCancelMigrationModal(null);
                   } else {
-                    alert(`Failed to cancel migration: ${result.error}`);
+                    setError(`Failed to cancel migration: ${result.error}`);
                   }
                 } catch (error) {
-                  alert(`Error cancelling migration: ${error.message}`);
+                  setError(`Error cancelling migration: ${error.message}`);
                 }
               }
             });
@@ -1438,12 +1525,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
           const handleAddTag = async () => {
             if (!newTag.trim()) {
-              alert('Please enter a tag name');
+              setError('Please enter a tag name');
               return;
             }
 
             if (newTag.includes(';') || newTag.includes(' ')) {
-              alert('Tag cannot contain spaces or semicolons');
+              setError('Tag cannot contain spaces or semicolons');
               return;
             }
 
@@ -1483,17 +1570,22 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   });
                 }
               } else {
-                alert(`Error: ${result.error}`);
+                setError(`Error: ${result.error}`);
               }
             } catch (error) {
-              alert(`Error adding tag: ${error.message}`);
+              setError(`Error adding tag: ${error.message}`);
             }
           };
 
           const handleRemoveTag = async (guest, tag) => {
-            if (!confirm(`Remove tag "${tag}" from ${guest.type} ${guest.vmid} (${guest.name})?`)) {
-              return;
-            }
+            setConfirmRemoveTag({ guest, tag });
+          };
+
+          const confirmAndRemoveTag = async () => {
+            if (!confirmRemoveTag) return;
+
+            const { guest, tag } = confirmRemoveTag;
+            setConfirmRemoveTag(null);
 
             try {
               const vmid = guest.vmid;
@@ -1525,11 +1617,47 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   });
                 }
               } else {
-                alert(`Error: ${result.error}`);
+                setError(`Error: ${result.error}`);
               }
             } catch (error) {
-              alert(`Error removing tag: ${error.message}`);
+              setError(`Error removing tag: ${error.message}`);
             }
+          };
+
+          const confirmAndChangeHost = async () => {
+            if (!confirmHostChange) return;
+
+            const newHost = confirmHostChange;
+            setConfirmHostChange(null);
+
+            try {
+              const response = await fetch(`${API_BASE}/system/change-host`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host: newHost })
+              });
+
+              const result = await response.json();
+
+              if (result.success) {
+                fetchConfig();
+                document.getElementById('proxmoxHostInput').value = newHost;
+              } else {
+                setError('Failed to update host: ' + (result.error || 'Unknown error'));
+              }
+            } catch (error) {
+              setError('Error: ' + error.message);
+            }
+          };
+
+          const confirmAndMigrate = async () => {
+            if (!confirmMigration) return;
+
+            const rec = confirmMigration;
+            setConfirmMigration(null);
+
+            // Call the existing executeMigration function
+            await executeMigration(rec);
           };
 
           useEffect(() => { fetchAnalysis(); }, []);
@@ -2021,10 +2149,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                       if (data.success) {
                                         setLocalAvailableModels(data.models || []);
                                       } else {
-                                        alert('Failed to fetch models: ' + (data.error || 'Unknown error'));
+                                        setError('Failed to fetch models: ' + (data.error || 'Unknown error'));
                                       }
                                     } catch (error) {
-                                      alert('Error fetching models: ' + error.message);
+                                      setError('Error fetching models: ' + error.message);
                                     } finally {
                                       setLocalLoadingModels(false);
                                     }
@@ -2268,6 +2396,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-700/50 -mx-4 -mb-4 px-4 py-4 mt-4 border-t border-gray-200 dark:border-gray-600">
                           <button
                             onClick={() => {
+                              setSavingCollectionSettings(true);
+                              setCollectionSettingsSaved(false);
+
                               const collectionConfig = {
                                 collection_interval_minutes: parseInt(document.getElementById('collectionInterval').value),
                                 collection_optimization: {
@@ -2287,19 +2418,45 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               })
                               .then(response => response.json())
                               .then(result => {
+                                setSavingCollectionSettings(false);
                                 if (result.success) {
-                                  alert('Collection settings updated!\n\nThe collector timer has been updated. Changes will take effect on the next collection cycle.');
+                                  setCollectionSettingsSaved(true);
+                                  setTimeout(() => setCollectionSettingsSaved(false), 3000);
                                   fetchConfig();
                                 } else {
-                                  alert('Failed to update settings: ' + (result.error || 'Unknown error'));
+                                  setError('Failed to update settings: ' + (result.error || 'Unknown error'));
                                 }
                               })
-                              .catch(error => alert('Error: ' + error.message));
+                              .catch(error => {
+                                setSavingCollectionSettings(false);
+                                setError('Error: ' + error.message);
+                              });
                             }}
-                            className="w-full px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 font-medium flex items-center justify-center gap-2 shadow-lg"
+                            disabled={savingCollectionSettings}
+                            className={`w-full px-4 py-2 text-white rounded font-medium flex items-center justify-center gap-2 shadow-lg transition-colors ${
+                              collectionSettingsSaved
+                                ? 'bg-emerald-500 dark:bg-emerald-600'
+                                : savingCollectionSettings
+                                  ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+                                  : 'bg-green-600 dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600'
+                            }`}
                           >
-                            <Save size={16} />
-                            Apply Collection Settings
+                            {savingCollectionSettings ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                                Saving...
+                              </>
+                            ) : collectionSettingsSaved ? (
+                              <>
+                                <CheckCircle size={16} />
+                                Settings Saved!
+                              </>
+                            ) : (
+                              <>
+                                <Save size={16} />
+                                Apply Collection Settings
+                              </>
+                            )}
                           </button>
                         </div>
                       </div>
@@ -2683,33 +2840,266 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           onClick={() => {
                             const newHost = document.getElementById('proxmoxHostInput').value.trim();
                             if (!newHost) {
-                              alert('Please enter a valid Proxmox host');
+                              setError('Please enter a valid Proxmox host');
                               return;
                             }
-                            if (confirm(`Change Proxmox host to ${newHost}?\n\nThis will update the configuration and restart the collector service.`)) {
-                              fetch(`${API_BASE}/system/change-host`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ host: newHost })
-                              })
-                              .then(response => response.json())
-                              .then(result => {
-                                if (result.success) {
-                                  alert('Proxmox host updated successfully!\n\nThe collector service has been restarted.');
-                                  fetchConfig();
-                                  document.getElementById('proxmoxHostInput').value = newHost;
-                                } else {
-                                  alert('Failed to update host: ' + (result.error || 'Unknown error'));
-                                }
-                              })
-                              .catch(error => alert('Error: ' + error.message));
+
+                            // Two-click pattern: first click sets confirm state, second click executes
+                            if (confirmHostChange === newHost) {
+                              // Second click - execute the change
+                              confirmAndChangeHost();
+                            } else {
+                              // First click - set confirm state
+                              setConfirmHostChange(newHost);
                             }
                           }}
-                          className="w-full px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 font-medium"
+                          className={`w-full px-4 py-2 text-white rounded font-medium ${
+                            confirmHostChange
+                              ? 'bg-orange-600 dark:bg-orange-500 hover:bg-orange-700 dark:hover:bg-orange-600'
+                              : 'bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600'
+                          }`}
                         >
-                          Update Proxmox Host
+                          {confirmHostChange ? 'Click again to confirm' : 'Update Proxmox Host'}
                         </button>
                       </div>
+                    </div>
+
+                    <hr className="border-gray-300 dark:border-gray-600" />
+
+                    {/* Penalty Configuration Section */}
+                    <div>
+                      <button
+                        onClick={() => setShowPenaltyConfig(!showPenaltyConfig)}
+                        className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 hover:text-blue-600 dark:hover:text-blue-400"
+                      >
+                        <span>Penalty Scoring Configuration</span>
+                        {showPenaltyConfig ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                      </button>
+
+                      {showPenaltyConfig && penaltyConfig && penaltyDefaults && (
+                        <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                            Configure penalty weights used by the scoring algorithm when evaluating migration targets. Lower penalties favor that condition.
+                          </p>
+
+                          {/* Time Period Weights */}
+                          <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+                            <h4 className="font-medium text-gray-900 dark:text-white">Time Period Weights</h4>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              Control how much weight to give to recent vs. historical metrics. Values must sum to 1.0.
+                              <br/>Example for 6-hour window: Current=0.6, 24h=0.4, 7d=0.0
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Current Weight (default: {penaltyDefaults.weight_current})
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="1"
+                                  value={penaltyConfig.weight_current}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_current: parseFloat(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  24h Weight (default: {penaltyDefaults.weight_24h})
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="1"
+                                  value={penaltyConfig.weight_24h}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_24h: parseFloat(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  7d Weight (default: {penaltyDefaults.weight_7d})
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="1"
+                                  value={penaltyConfig.weight_7d}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_7d: parseFloat(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                            {(() => {
+                              const sum = (penaltyConfig.weight_current || 0) + (penaltyConfig.weight_24h || 0) + (penaltyConfig.weight_7d || 0);
+                              const isValid = Math.abs(sum - 1.0) < 0.01;
+                              return (
+                                <div className={`text-sm font-medium ${isValid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                  Sum: {sum.toFixed(2)} {isValid ? '✓ Valid' : '✗ Must equal 1.0'}
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* CPU Penalties */}
+                          <div className="space-y-3">
+                            <h4 className="font-medium text-gray-900 dark:text-white">CPU Penalties</h4>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              Applied when target node CPU usage is high. Higher values = avoid nodes with high CPU. Set to 0 to disable penalty.
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  High (default: {penaltyDefaults.cpu_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={penaltyConfig.cpu_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_high_penalty: parseInt(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Very High (default: {penaltyDefaults.cpu_very_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={penaltyConfig.cpu_very_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_very_high_penalty: parseInt(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Extreme (default: {penaltyDefaults.cpu_extreme_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={penaltyConfig.cpu_extreme_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_extreme_penalty: parseInt(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Memory Penalties */}
+                          <div className="space-y-3">
+                            <h4 className="font-medium text-gray-900 dark:text-white">Memory Penalties</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  High (default: {penaltyDefaults.mem_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.mem_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_high_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Very High (default: {penaltyDefaults.mem_very_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.mem_very_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_very_high_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Extreme (default: {penaltyDefaults.mem_extreme_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.mem_extreme_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_extreme_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* IOWait Penalties */}
+                          <div className="space-y-3">
+                            <h4 className="font-medium text-gray-900 dark:text-white">IOWait Penalties</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Moderate (default: {penaltyDefaults.iowait_moderate_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.iowait_moderate_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_moderate_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  High (default: {penaltyDefaults.iowait_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.iowait_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_high_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Severe (default: {penaltyDefaults.iowait_severe_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.iowait_severe_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_severe_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Success Message */}
+                          {penaltyConfigSaved && (
+                            <div className="p-3 bg-green-100 dark:bg-green-900/30 border border-green-500 rounded text-green-800 dark:text-green-300">
+                              Penalty configuration saved successfully!
+                            </div>
+                          )}
+
+                          {/* Action Buttons */}
+                          <div className="flex gap-2 pt-4">
+                            <button
+                              onClick={savePenaltyConfig}
+                              disabled={savingPenaltyConfig}
+                              className={`flex-1 px-4 py-2 text-white rounded font-medium disabled:opacity-50 transition-colors ${
+                                penaltyConfigSaved
+                                  ? 'bg-green-600 dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600'
+                                  : 'bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600'
+                              }`}
+                            >
+                              {savingPenaltyConfig ? 'Saving...' : penaltyConfigSaved ? 'Saved!' : 'Save Penalty Config'}
+                            </button>
+                            <button
+                              onClick={resetPenaltyConfig}
+                              disabled={savingPenaltyConfig}
+                              className="flex-1 px-4 py-2 bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 font-medium disabled:opacity-50"
+                            >
+                              Reset to Defaults
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <hr className="border-gray-300 dark:border-gray-600" />
@@ -2728,12 +3118,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               .then(response => response.json())
                               .then(result => {
                                 if (result.success) {
-                                  alert('API service restarted successfully!');
+                                  // Service restarted successfully - no popup needed
                                 } else {
-                                  alert('Failed to restart service: ' + (result.error || 'Unknown error'));
+                                  setError('Failed to restart service: ' + (result.error || 'Unknown error'));
                                 }
                               })
-                              .catch(error => alert('Error: ' + error.message));
+                              .catch(error => setError('Error: ' + error.message));
                             }
                           }}
                           className="w-full px-4 py-2 bg-orange-600 dark:bg-orange-500 text-white rounded hover:bg-orange-700 dark:hover:bg-orange-600 font-medium flex items-center justify-center gap-2"
@@ -2752,12 +3142,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               .then(response => response.json())
                               .then(result => {
                                 if (result.success) {
-                                  alert('Collector service restarted successfully!');
+                                  // Service restarted successfully - no popup needed
                                 } else {
-                                  alert('Failed to restart service: ' + (result.error || 'Unknown error'));
+                                  setError('Failed to restart service: ' + (result.error || 'Unknown error'));
                                 }
                               })
-                              .catch(error => alert('Error: ' + error.message));
+                              .catch(error => setError('Error: ' + error.message));
                             }
                           }}
                           className="w-full px-4 py-2 bg-orange-600 dark:bg-orange-500 text-white rounded hover:bg-orange-700 dark:hover:bg-orange-600 font-medium flex items-center justify-center gap-2"
@@ -2892,47 +3282,123 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                     {!collapsedSections.mainSettings && (<div className="space-y-4">
                       {/* Enable/Disable */}
-                      <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                        <div>
-                          <div className="font-semibold text-gray-900 dark:text-white">Enable Automated Migrations</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">Turn automation on or off</div>
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Enable Automated Migrations</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Turn automation on or off</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.enabled || false}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  // Show confirmation for enabling
+                                  setConfirmEnableAutomation(true);
+                                } else {
+                                  // Disabling doesn't need confirmation
+                                  saveAutomationConfig({ enabled: false });
+                                }
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                          </label>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={automationConfig.enabled || false}
-                            onChange={(e) => {
-                              if (e.target.checked && !confirm('Enable automated migrations? The system will automatically migrate VMs based on your configured rules.')) {
-                                return;
-                              }
-                              saveAutomationConfig({ enabled: e.target.checked });
-                            }}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
-                        </label>
+                        {confirmEnableAutomation && (
+                          <div className="px-4 pb-4">
+                            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-4">
+                              <div className="flex items-start gap-3">
+                                <AlertTriangle size={20} className="text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                                <div className="flex-1">
+                                  <div className="font-semibold text-orange-900 dark:text-orange-200 mb-2">Enable Automated Migrations?</div>
+                                  <p className="text-sm text-orange-800 dark:text-orange-300 mb-3">
+                                    The system will automatically migrate VMs based on your configured rules.
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => {
+                                        saveAutomationConfig({ enabled: true });
+                                        setConfirmEnableAutomation(false);
+                                      }}
+                                      className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm font-medium"
+                                    >
+                                      Enable Automation
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmEnableAutomation(false)}
+                                      className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Dry Run */}
-                      <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                        <div>
-                          <div className="font-semibold text-gray-900 dark:text-white">Dry Run Mode</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">Test without actual migrations (recommended)</div>
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Dry Run Mode</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Test without actual migrations (recommended)</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.dry_run !== false}
+                              onChange={(e) => {
+                                if (!e.target.checked) {
+                                  // Show CRITICAL warning for disabling dry run
+                                  setConfirmDisableDryRun(true);
+                                } else {
+                                  // Enabling dry run is safe, no confirmation needed
+                                  saveAutomationConfig({ dry_run: true });
+                                }
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-yellow-600"></div>
+                          </label>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={automationConfig.dry_run !== false}
-                            onChange={(e) => {
-                              if (!e.target.checked && !confirm('⚠️ DISABLE DRY RUN MODE?\n\nThis will enable REAL automated migrations!\nVMs will actually be migrated automatically.\n\nAre you absolutely sure?')) {
-                                return;
-                              }
-                              saveAutomationConfig({ dry_run: e.target.checked });
-                            }}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-yellow-600"></div>
-                        </label>
+                        {confirmDisableDryRun && (
+                          <div className="px-4 pb-4">
+                            <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-500 dark:border-red-600 rounded-lg p-4">
+                              <div className="flex items-start gap-3">
+                                <AlertTriangle size={24} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                                <div className="flex-1">
+                                  <div className="font-bold text-red-900 dark:text-red-200 mb-2 text-lg">DISABLE DRY RUN MODE?</div>
+                                  <div className="text-sm text-red-800 dark:text-red-300 space-y-2 mb-4">
+                                    <p className="font-semibold">This will enable REAL automated migrations!</p>
+                                    <p>VMs will actually be migrated automatically based on your configured rules.</p>
+                                    <p className="font-semibold">Are you absolutely sure?</p>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => {
+                                        saveAutomationConfig({ dry_run: false });
+                                        setConfirmDisableDryRun(false);
+                                      }}
+                                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-bold"
+                                    >
+                                      Yes, Disable Dry Run
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmDisableDryRun(false)}
+                                      className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 font-medium"
+                                    >
+                                      Cancel (Keep Dry Run On)
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Check Interval */}
@@ -3074,7 +3540,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                         onClick={() => {
                                           if (editingPreset) {
                                             setEditingPreset(key);
-                                          } else if (confirm(`Apply ${info.label} preset?\n\n• Min Confidence: ${preset.min_confidence_score}%\n• Max Migrations/Run: ${preset.max_migrations_per_run}\n• Cooldown: ${preset.cooldown_minutes} min\n• Check Interval: ${preset.check_interval_minutes} min\n\n${key === 'conservative' ? 'This is the safest option.' : key === 'balanced' ? 'Good for most environments.' : '⚠️ Use with caution! More frequent migrations.'}`)) {
+                                          } else if (confirmApplyPreset === key) {
+                                            // Second click - execute the preset application
                                             saveAutomationConfig({
                                               check_interval_minutes: preset.check_interval_minutes,
                                               rules: {
@@ -3084,9 +3551,17 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                                 cooldown_minutes: preset.cooldown_minutes
                                               }
                                             });
+                                            setConfirmApplyPreset(null);
+                                          } else {
+                                            // First click - set confirm state
+                                            setConfirmApplyPreset(key);
                                           }
                                         }}
-                                        className="w-full text-left"
+                                        className={`w-full text-left ${
+                                          confirmApplyPreset === key
+                                            ? 'ring-2 ring-orange-500 dark:ring-orange-400 bg-orange-50 dark:bg-orange-900/20'
+                                            : ''
+                                        }`}
                                       >
                                         <div className="flex items-center gap-2 mb-1">
                                           <Icon size={18} className={`text-${info.color}-600 dark:text-${info.color}-400`} />
@@ -3101,6 +3576,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                         {editingPreset && (
                                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                             Click to edit
+                                          </div>
+                                        )}
+                                        {confirmApplyPreset === key && (
+                                          <div className="text-xs text-orange-700 dark:text-orange-300 mt-1 font-semibold">
+                                            Click again to apply preset
                                           </div>
                                         )}
                                       </button>
@@ -3312,21 +3792,60 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           Example: Two VMs with 'exclude_database' will spread across different nodes for fault tolerance.
                         </p>
                       </div>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.rules?.allow_container_restarts === true}
-                          onChange={(e) => {
-                            if (e.target.checked && !confirm('⚠️ ALLOW CONTAINER RESTARTS?\n\nThis will allow automated migrations to restart containers that cannot be live-migrated.\nContainers will experience brief downtime during migration.\n\nAre you sure?')) {
-                              return;
-                            }
-                            saveAutomationConfig({ rules: { ...automationConfig.rules, allow_container_restarts: e.target.checked } });
-                          }}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Allow container restarts for migration (may cause brief downtime)
-                        </label>
+                      <div>
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={automationConfig.rules?.allow_container_restarts === true}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                // Show warning for enabling container restarts
+                                setConfirmAllowContainerRestarts(true);
+                              } else {
+                                // Disabling is safe, no confirmation needed
+                                saveAutomationConfig({ rules: { ...automationConfig.rules, allow_container_restarts: false } });
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Allow container restarts for migration (may cause brief downtime)
+                          </label>
+                        </div>
+                        {confirmAllowContainerRestarts && (
+                          <div className="mt-2 ml-6">
+                            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3">
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle size={18} className="text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                                <div className="flex-1">
+                                  <div className="font-semibold text-orange-900 dark:text-orange-200 text-sm mb-1">ALLOW CONTAINER RESTARTS?</div>
+                                  <div className="text-xs text-orange-800 dark:text-orange-300 space-y-1 mb-2">
+                                    <p>This will allow automated migrations to restart containers that cannot be live-migrated.</p>
+                                    <p className="font-semibold">Containers will experience brief downtime during migration.</p>
+                                    <p>Are you sure?</p>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => {
+                                        saveAutomationConfig({ rules: { ...automationConfig.rules, allow_container_restarts: true } });
+                                        setConfirmAllowContainerRestarts(false);
+                                      }}
+                                      className="px-2 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded text-xs font-medium"
+                                    >
+                                      Yes, Allow Restarts
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmAllowContainerRestarts(false)}
+                                      className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs hover:bg-gray-300 dark:hover:bg-gray-600"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col">
                         <div className="flex items-center">
@@ -3966,7 +4485,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     </button>
                                     <button
                                       onClick={() => {
-                                        if (confirm(`Remove this ${isMigration ? 'migration' : 'blackout'} window?`)) {
+                                        const windowId = `${isMigration ? 'migration' : 'blackout'}-${window.originalIndex}`;
+
+                                        // Two-click pattern: first click sets confirm state, second click executes
+                                        if (confirmRemoveWindow?.id === windowId) {
+                                          // Second click - execute the removal
                                           const targetArray = isMigration ? migrationWindows : blackoutWindows;
                                           const newWindows = [...targetArray];
                                           newWindows.splice(window.originalIndex, 1);
@@ -3977,11 +4500,19 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                               [isMigration ? 'migration_windows' : 'blackout_windows']: newWindows
                                             }
                                           });
+                                          setConfirmRemoveWindow(null);
+                                        } else {
+                                          // First click - set confirm state
+                                          setConfirmRemoveWindow({ id: windowId, type: isMigration ? 'migration' : 'blackout' });
                                         }
                                       }}
-                                      className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                                      className={`px-2 py-1 text-white rounded text-sm ${
+                                        confirmRemoveWindow?.id === `${isMigration ? 'migration' : 'blackout'}-${window.originalIndex}`
+                                          ? 'bg-orange-600 hover:bg-orange-700'
+                                          : 'bg-red-600 hover:bg-red-700'
+                                      }`}
                                     >
-                                      Remove
+                                      {confirmRemoveWindow?.id === `${isMigration ? 'migration' : 'blackout'}-${window.originalIndex}` ? 'Click to confirm' : 'Remove'}
                                     </button>
                                   </div>
                                 )}
@@ -4221,7 +4752,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   setNewWindowData({ name: '', type: 'migration', days: [], start_time: '', end_time: '' });
                                   setShowTimeWindowForm(false);
                                 } else {
-                                  alert('Please fill in all fields');
+                                  setError('Please fill in all fields');
                                 }
                               }}
                               className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${
@@ -6631,13 +7162,13 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           <button
                             onClick={async () => {
                               if (!canMigrate) {
-                                alert('Read-only API token (PVEAuditor) - Cannot perform migrations');
+                                setError('Read-only API token (PVEAuditor) - Cannot perform migrations');
                                 return;
                               }
 
                               const guestCount = selectedNode.guests ? Object.keys(selectedNode.guests).length : 0;
                               if (guestCount === 0) {
-                                alert(`Node ${selectedNode.name} has no VMs/CTs to evacuate`);
+                                setError(`Node ${selectedNode.name} has no VMs/CTs to evacuate`);
                                 return;
                               }
 
@@ -6672,11 +7203,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   setSelectedNode(null); // Close the node details modal
                                 } else {
                                   console.error('Plan generation failed:', planResult);
-                                  alert(`Failed to generate evacuation plan: ${planResult.error}`);
+                                  setError(`Failed to generate evacuation plan: ${planResult.error}`);
                                 }
                               } catch (error) {
                                 console.error('Plan fetch error:', error);
-                                alert(`Error generating plan: ${error.message}`);
+                                setError(`Error generating plan: ${error.message}`);
                               } finally {
                                 // Clear planning state
                                 // console.log('Clearing planning state for:', selectedNode.name);
@@ -7195,14 +7726,14 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 setEvacuationPlan(null);
                                 setPlanNode(null);
                                 setGuestActions({});
-                                alert('Evacuation started successfully!');
+                                // Success - evacuation tracking provides visual feedback
                                 fetchGuestLocations(); // Refresh data
                               } else {
                                 throw new Error(result.error || 'Failed to start evacuation');
                               }
                             } catch (error) {
                               console.error('Evacuation error:', error);
-                              alert(`Error: ${error.message}`);
+                              setError(`Error: ${error.message}`);
                             } finally {
                               setEvacuatingNodes(prev => {
                                 const newSet = new Set(prev);
@@ -7685,7 +8216,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                                   return (
                                     <button
-                                      onClick={() => executeMigration(rec)}
+                                      onClick={() => setConfirmMigration(rec)}
                                       disabled={!canMigrate || status === 'running' || isMigrating}
                                       className="px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
                                       title={!canMigrate ? 'Read-only API token (PVEAuditor) - Cannot perform migrations' : isMigrating ? 'Migration in progress' : ''}
@@ -7975,8 +8506,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                                   // console.log(`[AI Migration] Migration started successfully, calling trackMigration with taskId: ${result.task_id}`);
                                                   // Start tracking (button logic will prioritize activeMigrations over migrationStatus)
                                                   trackMigration(rec.vmid, result.source_node, result.target_node, result.task_id, rec.type);
-
-                                                  alert(`Migration started for ${rec.type} ${rec.vmid} (${rec.name || 'unnamed'}).\n\nCheck Proxmox cluster task logs for migration status and progress.`);
+                                                  // Migration tracking provides visual feedback - no alert needed
                                                 } else {
                                                   console.error(`[AI Migration] Migration failed for VMID ${rec.vmid}:`, result.error);
                                                   setMigrationStatus(prev => ({ ...prev, [aiKey]: 'failed' }));
@@ -8433,10 +8963,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     });
                                   }
                                 } else {
-                                  alert(`Error: ${result.error}`);
+                                  setError(`Error: ${result.error}`);
                                 }
                               } catch (error) {
-                                alert(`Error adding tag: ${error.message}`);
+                                setError(`Error adding tag: ${error.message}`);
                               }
                             }}
                             className="px-3 py-1.5 text-sm bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 border border-yellow-300 dark:border-yellow-700 rounded hover:bg-yellow-200 dark:hover:bg-yellow-900/50"
@@ -8483,10 +9013,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     });
                                   }
                                 } else {
-                                  alert(`Error: ${result.error}`);
+                                  setError(`Error: ${result.error}`);
                                 }
                               } catch (error) {
-                                alert(`Error adding tag: ${error.message}`);
+                                setError(`Error adding tag: ${error.message}`);
                               }
                             }}
                             className="px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700 rounded hover:bg-green-200 dark:hover:bg-green-900/50"
@@ -8555,6 +9085,104 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
                       Add Tag
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Remove Tag Confirmation Modal */}
+            {confirmRemoveTag && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmRemoveTag(null)}>
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Confirm Tag Removal</h3>
+                    <button onClick={() => setConfirmRemoveTag(null)}>
+                      <XCircle size={24} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
+                    </button>
+                  </div>
+
+                  <div className="p-6">
+                    <p className="text-gray-700 dark:text-gray-300">
+                      Remove tag <span className="font-mono font-semibold text-red-600 dark:text-red-400">"{confirmRemoveTag.tag}"</span> from {confirmRemoveTag.guest.type} <span className="font-semibold">{confirmRemoveTag.guest.vmid}</span> ({confirmRemoveTag.guest.name})?
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                      onClick={() => setConfirmRemoveTag(null)}
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmAndRemoveTag}
+                      className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                    >
+                      Remove Tag
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Migration Confirmation Modal */}
+            {confirmMigration && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmMigration(null)}>
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Confirm Migration</h3>
+                    <button onClick={() => setConfirmMigration(null)}>
+                      <XCircle size={24} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
+                    </button>
+                  </div>
+
+                  <div className="p-6">
+                    <p className="text-gray-700 dark:text-gray-300 mb-4">
+                      Start migration for <span className="font-semibold text-blue-600 dark:text-blue-400">{confirmMigration.type} {confirmMigration.vmid}</span> ({confirmMigration.name})?
+                    </p>
+
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">From:</span>
+                        <span className="font-semibold text-red-600 dark:text-red-400">{confirmMigration.source_node}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">To:</span>
+                        <span className="font-semibold text-green-600 dark:text-green-400">{confirmMigration.target_node}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">Memory:</span>
+                        <span className="font-mono text-gray-900 dark:text-gray-100">{(confirmMigration.mem_gb || 0).toFixed(1)} GB</span>
+                      </div>
+                      {confirmMigration.score_improvement !== undefined && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">Improvement:</span>
+                          <span className="font-semibold text-green-600 dark:text-green-400">+{confirmMigration.score_improvement.toFixed(1)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {confirmMigration.reason && (
+                      <div className="mt-4 text-xs text-gray-600 dark:text-gray-400">
+                        <span className="font-medium">Reason:</span> {confirmMigration.reason}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                      onClick={() => setConfirmMigration(null)}
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmAndMigrate}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+                    >
+                      <Play size={16} />
+                      Start Migration
                     </button>
                   </div>
                 </div>
@@ -8852,11 +9480,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               setCancelMigrationModal(null);
                               fetchAutomationStatus();
                             } else {
-                              alert('Failed to cancel migration');
+                              setError('Failed to cancel migration');
                             }
                           } catch (error) {
                             console.error('Error cancelling migration:', error);
-                            alert('Error cancelling migration');
+                            setError('Error cancelling migration');
                           }
                         }
                       }}
