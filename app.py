@@ -2235,6 +2235,8 @@ def evacuate_node():
         maintenance_nodes = set(data.get("maintenance_nodes", []))
         confirm = data.get("confirm", False)
         guest_actions = data.get("guest_actions", {})  # Actions per guest (migrate/ignore/poweroff)
+        target_node = data.get("target_node", None)  # Optional: Force all migrations to specific node
+        guest_targets = data.get("guest_targets", {})  # Optional: Per-guest target overrides
 
         if not source_node:
             return jsonify({"success": False, "error": "Missing node parameter"}), 400
@@ -2275,7 +2277,16 @@ def evacuate_node():
         if not available_nodes:
             return jsonify({"success": False, "error": "No available target nodes for evacuation"}), 400
 
-        print(f"Available target nodes: {[n['node'] for n in available_nodes]}", file=sys.stderr)
+        # If target_node is specified, validate it's in available_nodes
+        if target_node:
+            if target_node not in [n['node'] for n in available_nodes]:
+                return jsonify({
+                    "success": False,
+                    "error": f"Target node '{target_node}' is not available (offline, in maintenance, or is source node)"
+                }), 400
+            print(f"Using forced target node: {target_node}", file=sys.stderr)
+        else:
+            print(f"Available target nodes: {[n['node'] for n in available_nodes]}", file=sys.stderr)
 
         # Setup Proxmox API
         config = load_config()
@@ -2429,9 +2440,50 @@ def evacuate_node():
                     })
                     continue
 
-                # Find best target node from compatible nodes only
-                target_node = min(compatible_nodes, key=lambda n: n['cpu'] + n['mem'] + (pending_counts[n['node']] * 10))['node']
-                pending_counts[target_node] += 1
+                # Find best target node - priority: guest_targets > target_node > auto-select
+                vmid_str = str(vmid)
+                if vmid_str in guest_targets:
+                    # Use per-guest target override
+                    requested_target = guest_targets[vmid_str]
+                    if requested_target not in [n['node'] for n in compatible_nodes]:
+                        # Requested target not compatible - skip this guest
+                        missing_storage = storage_volumes - target_storage_map.get(requested_target, set())
+                        migration_plan.append({
+                            "vmid": vmid,
+                            "name": guest_name,
+                            "type": guest_type,
+                            "status": current_status,
+                            "target": None,
+                            "will_restart": False,
+                            "skipped": True,
+                            "skip_reason": f"Selected target '{requested_target}' missing required storage: {', '.join(sorted(missing_storage))}",
+                            "storage_volumes": list(storage_volumes),
+                            "storage_compatible": False
+                        })
+                        continue
+                    selected_target = requested_target
+                elif target_node:
+                    # Check if forced target_node is compatible with this guest's storage
+                    if target_node not in [n['node'] for n in compatible_nodes]:
+                        # Forced target not compatible - skip this guest
+                        migration_plan.append({
+                            "vmid": vmid,
+                            "name": guest_name,
+                            "type": guest_type,
+                            "status": current_status,
+                            "target": None,
+                            "will_restart": False,
+                            "skipped": True,
+                            "skip_reason": f"Target node '{target_node}' missing required storage: {', '.join(sorted(storage_volumes - target_storage_map.get(target_node, set())))}",
+                            "storage_volumes": list(storage_volumes),
+                            "storage_compatible": False
+                        })
+                        continue
+                    selected_target = target_node
+                else:
+                    # Auto-select best target based on load
+                    selected_target = min(compatible_nodes, key=lambda n: n['cpu'] + n['mem'] + (pending_counts[n['node']] * 10))['node']
+                pending_counts[selected_target] += 1
 
                 # Determine if will restart
                 will_restart = False
@@ -2447,7 +2499,7 @@ def evacuate_node():
                     "name": guest_name,
                     "type": guest_type,
                     "status": current_status,
-                    "target": target_node,
+                    "target": selected_target,
                     "will_restart": will_restart,
                     "skipped": False,
                     "skip_reason": None,

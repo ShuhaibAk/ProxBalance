@@ -32,7 +32,7 @@ fi
 if [ -f index.html ] && grep -q 'type="text/babel"' index.html; then
   echo "  ⚠  Legacy inline JSX detected - upgrading to pre-compiled architecture"
   NEEDS_BUILD=true
-elif [ -f src/app.jsx ] || [ -f src/app_fixed.jsx ]; then
+elif [ -f src/app.jsx ]; then
   echo "  ✓ Pre-compiled architecture detected - rebuilding"
   NEEDS_BUILD=true
 else
@@ -55,26 +55,23 @@ if [ "$NEEDS_BUILD" = "true" ]; then
 BABEL_CONFIG
 
   # Extract JSX from index.html if needed (for upgrades from old versions)
-  if [ ! -f src/app.jsx ] && [ ! -f src/app_fixed.jsx ]; then
+  if [ ! -f src/app.jsx ]; then
     echo "  → Extracting JSX from index.html..."
     mkdir -p src
     sed -n '/<script type="text\/babel">/,/<\/script>/p' index.html | \
       sed '1d;$d' | sed '1,2d' > src/app.jsx
   fi
 
-  # Add React hooks import if not already present
-  if [ -f src/app.jsx ] && ! grep -q "const { useState" src/app.jsx; then
-    echo "  → Adding React hooks import..."
-    echo 'const { useState, useEffect, useMemo, useCallback, useRef } = React;' | \
-      cat - src/app.jsx > src/app_fixed.jsx
-  elif [ -f src/app.jsx ]; then
-    cp src/app.jsx src/app_fixed.jsx
-  fi
-
   # Compile JSX to JavaScript
   echo "  → Compiling JSX to JavaScript..."
   mkdir -p /var/www/html/assets/js
-  npx babel src/app_fixed.jsx --out-file /var/www/html/assets/js/app.js 2>/dev/null
+
+  # Use node_modules/.bin/babel directly with preset flag if npx is not available
+  if command -v npx >/dev/null 2>&1; then
+    npx babel src/app.jsx --out-file /var/www/html/assets/js/app.js 2>/dev/null
+  else
+    node_modules/.bin/babel src/app.jsx --presets=@babel/preset-react --out-file /var/www/html/assets/js/app.js 2>/dev/null
+  fi
 
   # Download React libraries if not present
   if [ ! -f /var/www/html/assets/js/react.production.min.js ]; then

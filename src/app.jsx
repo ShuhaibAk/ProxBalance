@@ -191,6 +191,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [planningNodes, setPlanningNodes] = useState(new Set()); // Track nodes currently planning evacuation
           const [guestActions, setGuestActions] = useState({}); // Track action per guest (migrate/ignore/poweroff)
           const [showConfirmModal, setShowConfirmModal] = useState(false); // Show final confirmation before execution
+          const [guestTargets, setGuestTargets] = useState({}); // Track custom target per guest (overrides default)
           const [selectedNode, setSelectedNode] = useState(null); // Selected node from Cluster Map for details/maintenance modal
           const [selectedGuestDetails, setSelectedGuestDetails] = useState(null); // Selected guest from Cluster Map for details modal
 
@@ -7251,7 +7252,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   body: JSON.stringify({
                                     node: selectedNode.name,
                                     maintenance_nodes: Array.from(maintenanceNodes),
-                                    confirm: false  // Request plan only
+                                    confirm: false,  // Request plan only
+                                    target_node: null,  // Auto-select target
+                                    guest_targets: {}  // No per-guest overrides initially
                                   })
                                 });
 
@@ -7556,6 +7559,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => {
                     setEvacuationPlan(null);
                     setPlanNode(null);
+                    setGuestTargets({});
                   }}>
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -7566,6 +7570,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           onClick={() => {
                             setEvacuationPlan(null);
                             setPlanNode(null);
+                            setGuestTargets({});
                           }}
                           className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                         >
@@ -7632,7 +7637,15 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     {item.skipped ? (
                                       <span className="text-yellow-600 dark:text-yellow-400 text-xs italic">{item.skip_reason}</span>
                                     ) : (
-                                      <span className="font-medium text-gray-900 dark:text-white">{item.target}</span>
+                                      <select
+                                        value={guestTargets[item.vmid] || item.target}
+                                        onChange={(e) => setGuestTargets({...guestTargets, [item.vmid]: e.target.value})}
+                                        className="text-sm px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-medium"
+                                      >
+                                        {evacuationPlan.available_targets.map(target => (
+                                          <option key={target} value={target}>{target}</option>
+                                        ))}
+                                      </select>
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
@@ -7683,6 +7696,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             setEvacuationPlan(null);
                             setPlanNode(null);
                             setGuestActions({});
+                            setGuestTargets({});
                           }}
                           className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded font-medium"
                         >
@@ -7780,7 +7794,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   node: planNode,
                                   maintenance_nodes: Array.from(maintenanceNodes),
                                   confirm: true,
-                                  guest_actions: guestActions
+                                  guest_actions: guestActions,
+                                  guest_targets: guestTargets  // Include per-guest target overrides
                                 })
                               });
 
@@ -7789,6 +7804,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 setEvacuationPlan(null);
                                 setPlanNode(null);
                                 setGuestActions({});
+                                setGuestTargets({});  // Reset per-guest target overrides
                                 // Success - evacuation tracking provides visual feedback
                                 fetchGuestLocations(); // Refresh data
                               } else {
