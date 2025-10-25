@@ -40,6 +40,8 @@ ProxBalance features a sophisticated **penalty-based scoring algorithm** with **
 - 100% = Perfect target, 0% = Poor target (easy to understand)
 - IOWait penalties prioritize I/O performance for better VM responsiveness
 - Flexible scoring allows evacuating overloaded nodes without restrictions
+- **NEW: Fully configurable via Web UI** - Customize penalty weights and time periods
+- **NEW: Configuration export/import** - Backup and restore scoring configurations
 - Seamlessly integrates with automated migrations
 
 ➡️ **[Read the complete Scoring Algorithm Guide](docs/SCORING_ALGORITHM.md)** for detailed explanation, examples, and configuration options.
@@ -47,12 +49,15 @@ ProxBalance features a sophisticated **penalty-based scoring algorithm** with **
 ### Migration & Monitoring Enhancements
 - **Real-Time Transfer Speed** - Live MB/s transfer rates during migrations
 - **Multi-Disk Progress Tracking** - Accurate progress for VMs with multiple disks
+- **NEW: CT Migration Progress** - Container migrations now show percentage, transfer rate, and progress bar
 - **Migration History Pagination** - Configurable page size (5-100 entries) with 7-day accurate timeline
+- **Per-Guest Target Selection** - Choose specific target nodes during node evacuation
 
 ### Automation Improvements
 - **Automated Recommendations** - Dynamic cluster-aware recommendation generation via systemd timer
 - **Infinite Polling with Resource Validation** - Enhanced monitoring prevents conflicts and validates resources
 - **Enhanced Concurrency** - Improved tracking of concurrent automated migrations
+- **NEW: Timezone Support** - Configure migration windows with timezone-aware scheduling
 
 ### UI/UX & Performance
 - **Lightning-Fast Page Load** - Pre-compiled JSX architecture reduces LCP from 6.5s to 0.48s (93% faster)
@@ -62,6 +67,9 @@ ProxBalance features a sophisticated **penalty-based scoring algorithm** with **
 - **Optimized Section Layout** - Improved workflow with better UI organization
 - **VM Clumping Prevention** - Enhanced load distribution logic
 - **Migration Conflict Prevention** - Better detection and prevention of concurrent operations
+- **NEW: Modern Modal Dialogs** - Replaced all browser popups with sleek, accessible modals
+- **NEW: Enhanced Cluster Map** - Split CPU/Memory views with improved tooltips showing all guests
+- **NEW: Unified Settings** - Reorganized data collection and configuration settings for better UX
 
 ---
 
@@ -69,7 +77,7 @@ ProxBalance features a sophisticated **penalty-based scoring algorithm** with **
 
 ### Core Capabilities
 - **Real-Time Monitoring** - Live CPU, memory, IOWait, and load metrics with sparkline visualizations
-- **Interactive Cluster Map** - Visual representation with 4 view modes (Usage, Allocated, Disk I/O, Network)
+- **Interactive Cluster Map** - Visual representation with 5 view modes (CPU Usage, Memory Usage, Allocated Resources, Disk I/O, Network)
 - **Smart Recommendations** - Intelligent migration suggestions with Suitability Rating (0-100%)
 - **One-Click Migrations** - Execute migrations with real-time progress tracking and transfer speed
 - **Node Maintenance Mode** - Mark nodes for maintenance with automatic evacuation

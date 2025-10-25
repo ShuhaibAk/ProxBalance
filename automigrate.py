@@ -111,17 +111,23 @@ def is_in_migration_window(config: Dict[str, Any]) -> Tuple[bool, str]:
     Returns:
         Tuple of (in_window, message)
     """
-    windows = config.get('automated_migrations', {}).get('schedule', {}).get('migration_windows', [])
+    schedule = config.get('automated_migrations', {}).get('schedule', {})
+    windows = schedule.get('migration_windows', [])
 
     if not windows:
         return True, "No windows defined (always allowed)"
 
+    # Get global timezone setting (fallback to window-specific or UTC)
+    global_tz = schedule.get('timezone', 'UTC')
+
     for window in windows:
-        if not window.get('enabled', False):
+        # Windows are enabled by default unless explicitly disabled
+        if not window.get('enabled', True):
             continue
 
         try:
-            tz = pytz.timezone(window.get('timezone', 'UTC'))
+            # Use window-specific timezone if set, otherwise use global timezone
+            tz = pytz.timezone(window.get('timezone', global_tz))
             now = datetime.now(tz)
 
             # Check day of week
@@ -142,14 +148,22 @@ def is_in_migration_window(config: Dict[str, Any]) -> Tuple[bool, str]:
                 in_window = current >= start or current <= end
 
             if in_window:
-                logger.info(f"In migration window: {window['name']}")
-                return True, f"In window: {window['name']}"
+                logger.info(f"In migration window: {window['name']} ({tz} time: {now.strftime('%H:%M')})")
+                return True, f"In window: {window['name']} ({tz} time: {now.strftime('%H:%M')})"
 
         except Exception as e:
             logger.error(f"Error checking window {window.get('name', 'unknown')}: {e}")
             continue
 
-    return False, "Outside all migration windows"
+    # Provide detailed message about why we're outside windows
+    try:
+        tz = pytz.timezone(global_tz)
+        now = datetime.now(tz)
+        current_time = now.strftime('%H:%M')
+        current_day = now.strftime('%A')
+        return False, f"Outside all migration windows (Current time: {current_day} {current_time} {global_tz})"
+    except:
+        return False, "Outside all migration windows"
 
 
 def is_in_blackout_window(config: Dict[str, Any]) -> Tuple[bool, str]:
@@ -162,19 +176,23 @@ def is_in_blackout_window(config: Dict[str, Any]) -> Tuple[bool, str]:
     Returns:
         Tuple of (in_blackout, message)
     """
-    blackouts = config.get('automated_migrations', {}).get('schedule', {}).get('blackout_windows', [])
+    schedule = config.get('automated_migrations', {}).get('schedule', {})
+    blackouts = schedule.get('blackout_windows', [])
 
     if not blackouts:
         return False, "No blackout windows defined"
 
+    # Get global timezone setting (same as migration windows)
+    global_tz = schedule.get('timezone', 'UTC')
+
     for blackout in blackouts:
-        if not blackout.get('enabled', False):
+        # Blackouts are enabled by default unless explicitly disabled
+        if not blackout.get('enabled', True):
             continue
 
         try:
-            # Use timezone from config or UTC
-            tz_str = config.get('automated_migrations', {}).get('schedule', {}).get('migration_windows', [{}])[0].get('timezone', 'UTC')
-            tz = pytz.timezone(tz_str)
+            # Use blackout-specific timezone if set, otherwise use global timezone
+            tz = pytz.timezone(blackout.get('timezone', global_tz))
             now = datetime.now(tz)
 
             # Check day of week
@@ -195,8 +213,8 @@ def is_in_blackout_window(config: Dict[str, Any]) -> Tuple[bool, str]:
                 in_blackout = current >= start or current <= end
 
             if in_blackout:
-                logger.info(f"In blackout window: {blackout['name']}")
-                return True, f"In blackout: {blackout['name']}"
+                logger.info(f"In blackout window: {blackout['name']} ({tz} time: {now.strftime('%H:%M')})")
+                return True, f"In blackout: {blackout['name']} ({tz} time: {now.strftime('%H:%M')})"
 
         except Exception as e:
             logger.error(f"Error checking blackout {blackout.get('name', 'unknown')}: {e}")
@@ -936,7 +954,7 @@ def main():
                 continue
 
             target_score = rec.get('target_node_score', 'N/A')
-            logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) to {target} (score: {target_score}) - {rec['reason']}")
+            logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) from {source} to {target} (score: {target_score}) - {rec['reason']}")
 
             result = execute_migration(vmid, target, source, guest_type, config, dry_run=dry_run)
 

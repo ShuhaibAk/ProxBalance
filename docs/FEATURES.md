@@ -27,24 +27,29 @@ Complete feature overview for ProxBalance.
 - Atomic cache updates prevent corruption
 
 ### Interactive Cluster Map
-Visual representation with 4 view modes:
+Visual representation with 5 view modes:
 
-1. **Usage View** - Real-time resource consumption
-   - CPU and memory utilization
+1. **CPU Usage View** - Real-time CPU consumption
+   - CPU utilization percentage
    - Color-coded health indicators
    - Running guest count
 
-2. **Allocated View** - Provisioned resources
+2. **Memory Usage View** - Real-time memory consumption
+   - Memory utilization percentage
+   - Color-coded health indicators
+   - Running guest count
+
+3. **Allocated View** - Provisioned resources
    - Total allocated CPU cores
    - Total allocated memory
    - Capacity planning insights
 
-3. **Disk I/O View** - Storage performance
+4. **Disk I/O View** - Storage performance
    - Read/write rates
    - IOWait metrics
    - Storage bottleneck identification
 
-4. **Network View** - Network traffic
+5. **Network View** - Network traffic
    - Inbound/outbound rates
    - Network saturation monitoring
    - Bandwidth utilization
@@ -148,6 +153,10 @@ Scheduled automation with comprehensive safety features.
 - **In-Progress Migration Tracking** - Live display of currently running migrations
   - Shows VM/CT name, ID, and source node
   - Displays start time and elapsed time (e.g., "2m 34s")
+  - **Progress tracking for both VMs and CTs**
+    - VM migrations: Shows percentage, transferred/total GiB, and transfer speed
+    - CT migrations: Shows percentage (from disk size), transferred GiB, and transfer speed
+    - Multi-disk support with aggregate progress for VMs
   - Blue pulsing border with animated spinner
   - Queries Proxmox cluster tasks API for real-time status
   - Auto-refreshes every 10 seconds

@@ -38,6 +38,71 @@ CACHE_FILE = os.path.join(BASE_PATH, 'cluster_cache.json')
 CONFIG_FILE = os.path.join(BASE_PATH, 'config.json')
 GIT_CMD = '/usr/bin/git'
 
+# Default penalty scoring configuration
+# These values can be customized via the settings UI
+DEFAULT_PENALTY_CONFIG = {
+    # Current load penalties (immediate state)
+    "cpu_high_penalty": 20,           # Penalty when CPU > threshold
+    "cpu_very_high_penalty": 50,      # Penalty when CPU > threshold+10
+    "cpu_extreme_penalty": 100,       # Penalty when CPU > threshold+20
+    "mem_high_penalty": 20,           # Penalty when Memory > threshold
+    "mem_very_high_penalty": 50,      # Penalty when Memory > threshold+10
+    "mem_extreme_penalty": 100,       # Penalty when Memory > threshold+20
+
+    # Sustained load penalties (7-day averages)
+    "cpu_sustained_high": 40,         # Penalty when 7d avg CPU > 70%
+    "cpu_sustained_very_high": 80,    # Penalty when 7d avg CPU > 80%
+    "cpu_sustained_critical": 150,    # Penalty when 7d avg CPU > 90%
+    "mem_sustained_high": 40,         # Penalty when 7d avg Memory > 70%
+    "mem_sustained_very_high": 80,    # Penalty when 7d avg Memory > 80%
+    "mem_sustained_critical": 150,    # Penalty when 7d avg Memory > 90%
+
+    # IOWait penalties
+    "iowait_high_penalty": 20,        # Penalty when immediate IOWait > 10%
+    "iowait_very_high_penalty": 40,   # Penalty when immediate IOWait > 20%
+    "iowait_extreme_penalty": 80,     # Penalty when immediate IOWait > 30%
+    "iowait_sustained_elevated": 15,  # Penalty when 7d avg IOWait > 10%
+    "iowait_sustained_high": 30,      # Penalty when 7d avg IOWait > 15%
+    "iowait_sustained_critical": 60,  # Penalty when 7d avg IOWait > 20%
+
+    # Trend penalties
+    "cpu_trend_rising_penalty": 15,   # Penalty for rising CPU trend
+    "mem_trend_rising_penalty": 15,   # Penalty for rising Memory trend
+
+    # Spike penalties (max values in week)
+    "cpu_spike_moderate": 5,          # Penalty when max CPU > 70%
+    "cpu_spike_high": 10,             # Penalty when max CPU > 80%
+    "cpu_spike_very_high": 20,        # Penalty when max CPU > 90%
+    "cpu_spike_extreme": 30,          # Penalty when max CPU > 95%
+    "mem_spike_moderate": 5,          # Penalty when max Memory > 75%
+    "mem_spike_high": 10,             # Penalty when max Memory > 85%
+    "mem_spike_very_high": 20,        # Penalty when max Memory > 90%
+    "mem_spike_extreme": 30,          # Penalty when max Memory > 95%
+
+    # Predicted post-migration penalties
+    "predicted_cpu_over_penalty": 25,        # Penalty when predicted CPU > threshold
+    "predicted_cpu_high_penalty": 50,        # Penalty when predicted CPU > threshold+10
+    "predicted_cpu_extreme_penalty": 100,    # Penalty when predicted CPU > threshold+20
+    "predicted_mem_over_penalty": 25,        # Penalty when predicted Memory > threshold
+    "predicted_mem_high_penalty": 50,        # Penalty when predicted Memory > threshold+10
+    "predicted_mem_extreme_penalty": 100,    # Penalty when predicted Memory > threshold+20
+
+    # Threshold offsets
+    "cpu_threshold_offset_1": 10,     # First threshold offset (used for +10 calculations)
+    "cpu_threshold_offset_2": 20,     # Second threshold offset (used for +20 calculations)
+    "mem_threshold_offset_1": 10,     # First threshold offset (used for +10 calculations)
+    "mem_threshold_offset_2": 20,     # Second threshold offset (used for +20 calculations)
+
+    # Score improvement requirements
+    "min_score_improvement": 15,      # Minimum score improvement to recommend migration
+    "maintenance_score_boost": 100,   # Extra score added to maintenance nodes for evacuation priority
+
+    # Time period weighting (for historical data)
+    "weight_current": 0.5,            # Weight for current/immediate metrics (50%)
+    "weight_24h": 0.3,                # Weight for 24-hour average metrics (30%)
+    "weight_7d": 0.2,                 # Weight for 7-day average metrics (20%)
+}
+
 # Global evacuation tracking using file-based storage for multi-worker compatibility
 SESSIONS_DIR = os.path.join(BASE_PATH, 'evacuation_sessions')
 if not os.path.exists(SESSIONS_DIR):
@@ -149,6 +214,41 @@ def load_config():
         }
     
     return config
+
+def load_penalty_config():
+    """Load penalty configuration from config.json, merging with defaults"""
+    config = load_config()
+    if config.get('error'):
+        # If config has error, return defaults
+        return DEFAULT_PENALTY_CONFIG.copy()
+
+    # Get penalty config from main config, or use empty dict
+    saved_penalties = config.get('penalty_scoring', {})
+
+    # Merge with defaults (saved values override defaults)
+    penalty_config = DEFAULT_PENALTY_CONFIG.copy()
+    penalty_config.update(saved_penalties)
+
+    return penalty_config
+
+def save_penalty_config(penalty_config: dict) -> bool:
+    """Save penalty configuration to config.json"""
+    try:
+        config = load_config()
+        if config.get('error'):
+            return False
+
+        # Update the penalty_scoring section
+        config['penalty_scoring'] = penalty_config
+
+        # Write back to file
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        return True
+    except Exception as e:
+        print(f"Error saving penalty config: {e}", file=sys.stderr)
+        return False
 
 def read_cache() -> Dict:
     """Read cluster data from cache (uses in-memory cache with TTL)"""
@@ -1086,7 +1186,10 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     target_name = target_node.get("name")
     metrics = target_node.get("metrics", {})
 
-    # Weighted time-based scoring: 50% current, 30% short-term (24h), 20% long-term (7-day)
+    # Load penalty configuration
+    penalty_cfg = load_penalty_config()
+
+    # Weighted time-based scoring: configurable weights from penalty config
     # This balances responsiveness with stability
     immediate_cpu = metrics.get("current_cpu", 0)
     immediate_mem = metrics.get("current_mem", 0)
@@ -1100,11 +1203,15 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     long_mem = metrics.get("avg_mem_week", 0)
     long_iowait = metrics.get("avg_iowait_week", 0)
 
-    # Calculate weighted scores
+    # Calculate weighted scores using configurable weights
+    weight_current = penalty_cfg.get("weight_current", 0.5)
+    weight_24h = penalty_cfg.get("weight_24h", 0.3)
+    weight_7d = penalty_cfg.get("weight_7d", 0.2)
+
     if metrics.get("has_historical"):
-        current_cpu = (immediate_cpu * 0.5) + (short_cpu * 0.3) + (long_cpu * 0.2)
-        current_mem = (immediate_mem * 0.5) + (short_mem * 0.3) + (long_mem * 0.2)
-        current_iowait = (immediate_iowait * 0.5) + (short_iowait * 0.3) + (long_iowait * 0.2)
+        current_cpu = (immediate_cpu * weight_current) + (short_cpu * weight_24h) + (long_cpu * weight_7d)
+        current_mem = (immediate_mem * weight_current) + (short_mem * weight_24h) + (long_mem * weight_7d)
+        current_iowait = (immediate_iowait * weight_current) + (short_iowait * weight_24h) + (long_iowait * weight_7d)
     else:
         # No historical data, use current only
         current_cpu = immediate_cpu
@@ -1122,75 +1229,81 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     # Initialize penalty accumulator
     penalties = 0
 
-    # Current load penalty - heavily penalize nodes with high current load
-    if immediate_cpu > (cpu_threshold + 20):
-        penalties += 100  # Extreme current CPU load
-    elif immediate_cpu > (cpu_threshold + 10):
-        penalties += 50   # Very high current CPU load
-    elif immediate_cpu > cpu_threshold:
-        penalties += 20   # High current CPU load
+    # Get configurable threshold offsets
+    cpu_offset_1 = penalty_cfg.get("cpu_threshold_offset_1", 10)
+    cpu_offset_2 = penalty_cfg.get("cpu_threshold_offset_2", 20)
+    mem_offset_1 = penalty_cfg.get("mem_threshold_offset_1", 10)
+    mem_offset_2 = penalty_cfg.get("mem_threshold_offset_2", 20)
 
-    if immediate_mem > (mem_threshold + 20):
-        penalties += 100  # Extreme current memory load
-    elif immediate_mem > (mem_threshold + 10):
-        penalties += 50   # Very high current memory load
+    # Current load penalty - heavily penalize nodes with high current load
+    if immediate_cpu > (cpu_threshold + cpu_offset_2):
+        penalties += penalty_cfg.get("cpu_extreme_penalty", 100)  # Extreme current CPU load
+    elif immediate_cpu > (cpu_threshold + cpu_offset_1):
+        penalties += penalty_cfg.get("cpu_very_high_penalty", 50)   # Very high current CPU load
+    elif immediate_cpu > cpu_threshold:
+        penalties += penalty_cfg.get("cpu_high_penalty", 20)   # High current CPU load
+
+    if immediate_mem > (mem_threshold + mem_offset_2):
+        penalties += penalty_cfg.get("mem_extreme_penalty", 100)  # Extreme current memory load
+    elif immediate_mem > (mem_threshold + mem_offset_1):
+        penalties += penalty_cfg.get("mem_very_high_penalty", 50)   # Very high current memory load
     elif immediate_mem > mem_threshold:
-        penalties += 20   # High current memory load
+        penalties += penalty_cfg.get("mem_high_penalty", 20)   # High current memory load
 
     # Sustained load penalty - penalize sustained high averages
     if long_cpu > 90:
-        penalties += 150  # Critically high sustained CPU
+        penalties += penalty_cfg.get("cpu_sustained_critical", 150)  # Critically high sustained CPU
     elif long_cpu > 80:
-        penalties += 80   # Very high sustained CPU
+        penalties += penalty_cfg.get("cpu_sustained_very_high", 80)   # Very high sustained CPU
     elif long_cpu > 70:
-        penalties += 40   # High sustained CPU
+        penalties += penalty_cfg.get("cpu_sustained_high", 40)   # High sustained CPU
 
     if long_mem > 90:
-        penalties += 150  # Critically high sustained memory
+        penalties += penalty_cfg.get("mem_sustained_critical", 150)  # Critically high sustained memory
     elif long_mem > 80:
-        penalties += 80   # Very high sustained memory
+        penalties += penalty_cfg.get("mem_sustained_very_high", 80)   # Very high sustained memory
     elif long_mem > 70:
-        penalties += 40   # High sustained memory
+        penalties += penalty_cfg.get("mem_sustained_high", 40)   # High sustained memory
 
     # IOWait penalty - penalize high disk wait times
     if immediate_iowait > 30:
-        penalties += 80   # Extreme current IOWait
+        penalties += penalty_cfg.get("iowait_extreme_penalty", 80)   # Extreme current IOWait
     elif immediate_iowait > 20:
-        penalties += 40   # Very high current IOWait
+        penalties += penalty_cfg.get("iowait_very_high_penalty", 40)   # Very high current IOWait
     elif immediate_iowait > 10:
-        penalties += 20   # High current IOWait
+        penalties += penalty_cfg.get("iowait_high_penalty", 20)   # High current IOWait
 
     if long_iowait > 20:
-        penalties += 60   # Critically high sustained IOWait
+        penalties += penalty_cfg.get("iowait_sustained_critical", 60)   # Critically high sustained IOWait
     elif long_iowait > 15:
-        penalties += 30   # High sustained IOWait
+        penalties += penalty_cfg.get("iowait_sustained_high", 30)   # High sustained IOWait
     elif long_iowait > 10:
-        penalties += 15   # Elevated sustained IOWait
+        penalties += penalty_cfg.get("iowait_sustained_elevated", 15)   # Elevated sustained IOWait
 
     # Trend penalty - penalize rising load trends
     if cpu_trend == "rising":
-        penalties += 15  # Rising CPU trend
+        penalties += penalty_cfg.get("cpu_trend_rising_penalty", 15)  # Rising CPU trend
     if mem_trend == "rising":
-        penalties += 15  # Rising memory trend
+        penalties += penalty_cfg.get("mem_trend_rising_penalty", 15)  # Rising memory trend
 
     # Max spike penalty - penalize brief spikes (less severe than sustained)
     if max_cpu_week > 95:
-        penalties += 30  # Extreme CPU spike
+        penalties += penalty_cfg.get("cpu_spike_extreme", 30)  # Extreme CPU spike
     elif max_cpu_week > 90:
-        penalties += 20  # Very high CPU spike
+        penalties += penalty_cfg.get("cpu_spike_very_high", 20)  # Very high CPU spike
     elif max_cpu_week > 80:
-        penalties += 10  # High CPU spike
+        penalties += penalty_cfg.get("cpu_spike_high", 10)  # High CPU spike
     elif max_cpu_week > 70:
-        penalties += 5   # Moderate CPU spike
+        penalties += penalty_cfg.get("cpu_spike_moderate", 5)   # Moderate CPU spike
 
     if max_mem_week > 95:
-        penalties += 30  # Extreme memory spike
+        penalties += penalty_cfg.get("mem_spike_extreme", 30)  # Extreme memory spike
     elif max_mem_week > 90:
-        penalties += 20  # Very high memory spike
+        penalties += penalty_cfg.get("mem_spike_very_high", 20)  # Very high memory spike
     elif max_mem_week > 85:
-        penalties += 10  # High memory spike
+        penalties += penalty_cfg.get("mem_spike_high", 10)  # High memory spike
     elif max_mem_week > 75:
-        penalties += 5   # Moderate memory spike
+        penalties += penalty_cfg.get("mem_spike_moderate", 5)   # Moderate memory spike
 
     # Predict post-migration load
     predicted = predict_post_migration_load(target_node, guest, adding=True)
@@ -1207,19 +1320,19 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
             )
 
     # Penalize if predicted load exceeds thresholds (don't disqualify)
-    if predicted["cpu"] > (cpu_threshold + 20):
-        penalties += 100  # Predicted CPU way over threshold
-    elif predicted["cpu"] > (cpu_threshold + 10):
-        penalties += 50   # Predicted CPU significantly over threshold
+    if predicted["cpu"] > (cpu_threshold + cpu_offset_2):
+        penalties += penalty_cfg.get("predicted_cpu_extreme_penalty", 100)  # Predicted CPU way over threshold
+    elif predicted["cpu"] > (cpu_threshold + cpu_offset_1):
+        penalties += penalty_cfg.get("predicted_cpu_high_penalty", 50)   # Predicted CPU significantly over threshold
     elif predicted["cpu"] > cpu_threshold:
-        penalties += 25   # Predicted CPU over threshold
+        penalties += penalty_cfg.get("predicted_cpu_over_penalty", 25)   # Predicted CPU over threshold
 
-    if predicted["mem"] > (mem_threshold + 20):
-        penalties += 100  # Predicted memory way over threshold
-    elif predicted["mem"] > (mem_threshold + 10):
-        penalties += 50   # Predicted memory significantly over threshold
+    if predicted["mem"] > (mem_threshold + mem_offset_2):
+        penalties += penalty_cfg.get("predicted_mem_extreme_penalty", 100)  # Predicted memory way over threshold
+    elif predicted["mem"] > (mem_threshold + mem_offset_1):
+        penalties += penalty_cfg.get("predicted_mem_high_penalty", 50)   # Predicted memory significantly over threshold
     elif predicted["mem"] > mem_threshold:
-        penalties += 25   # Predicted memory over threshold
+        penalties += penalty_cfg.get("predicted_mem_over_penalty", 25)   # Predicted memory over threshold
 
     # Health score (current state)
     health_score = calculate_node_health_score(target_node, metrics)
@@ -1531,11 +1644,14 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
     except Exception as e:
         print(f"Warning: Could not initialize Proxmox client for storage checks: {e}", file=sys.stderr)
 
+    # Load penalty configuration
+    penalty_cfg = load_penalty_config()
+
     # Minimum score improvement required to recommend migration (in points)
-    MIN_SCORE_IMPROVEMENT = 15
+    MIN_SCORE_IMPROVEMENT = penalty_cfg.get("min_score_improvement", 15)
 
     # Maintenance nodes get priority evacuation regardless of score
-    MAINTENANCE_SCORE_BOOST = 100  # Extra improvement to prioritize evacuation
+    MAINTENANCE_SCORE_BOOST = penalty_cfg.get("maintenance_score_boost", 100)  # Extra improvement to prioritize evacuation
 
     # Step 1: Calculate current score for each guest on its current node
     # Step 2: Calculate potential scores on all other nodes
@@ -1906,11 +2022,11 @@ def cancel_migration(task_id):
     """Cancel a running migration by stopping the Proxmox task"""
     try:
         config = load_config()
-        proxmox_host = config['proxmox']['host']
-        proxmox_port = config['proxmox'].get('port', 8006)
-        token_id = config['proxmox']['token_id']
-        token_secret = config['proxmox']['token_secret']
-        verify_ssl = config['proxmox'].get('verify_ssl', False)
+        proxmox_host = config.get('proxmox_host', 'localhost')
+        proxmox_port = config.get('proxmox_port', 8006)
+        token_id = config.get('proxmox_api_token_id', '')
+        token_secret = config.get('proxmox_api_token_secret', '')
+        verify_ssl = config.get('proxmox_verify_ssl', False)
 
         # Parse UPID to extract node: UPID:node:pid:pstart:starttime:type:vmid:user
         parts = task_id.split(':')
@@ -2119,6 +2235,8 @@ def evacuate_node():
         maintenance_nodes = set(data.get("maintenance_nodes", []))
         confirm = data.get("confirm", False)
         guest_actions = data.get("guest_actions", {})  # Actions per guest (migrate/ignore/poweroff)
+        target_node = data.get("target_node", None)  # Optional: Force all migrations to specific node
+        guest_targets = data.get("guest_targets", {})  # Optional: Per-guest target overrides
 
         if not source_node:
             return jsonify({"success": False, "error": "Missing node parameter"}), 400
@@ -2159,7 +2277,16 @@ def evacuate_node():
         if not available_nodes:
             return jsonify({"success": False, "error": "No available target nodes for evacuation"}), 400
 
-        print(f"Available target nodes: {[n['node'] for n in available_nodes]}", file=sys.stderr)
+        # If target_node is specified, validate it's in available_nodes
+        if target_node:
+            if target_node not in [n['node'] for n in available_nodes]:
+                return jsonify({
+                    "success": False,
+                    "error": f"Target node '{target_node}' is not available (offline, in maintenance, or is source node)"
+                }), 400
+            print(f"Using forced target node: {target_node}", file=sys.stderr)
+        else:
+            print(f"Available target nodes: {[n['node'] for n in available_nodes]}", file=sys.stderr)
 
         # Setup Proxmox API
         config = load_config()
@@ -2313,9 +2440,50 @@ def evacuate_node():
                     })
                     continue
 
-                # Find best target node from compatible nodes only
-                target_node = min(compatible_nodes, key=lambda n: n['cpu'] + n['mem'] + (pending_counts[n['node']] * 10))['node']
-                pending_counts[target_node] += 1
+                # Find best target node - priority: guest_targets > target_node > auto-select
+                vmid_str = str(vmid)
+                if vmid_str in guest_targets:
+                    # Use per-guest target override
+                    requested_target = guest_targets[vmid_str]
+                    if requested_target not in [n['node'] for n in compatible_nodes]:
+                        # Requested target not compatible - skip this guest
+                        missing_storage = storage_volumes - target_storage_map.get(requested_target, set())
+                        migration_plan.append({
+                            "vmid": vmid,
+                            "name": guest_name,
+                            "type": guest_type,
+                            "status": current_status,
+                            "target": None,
+                            "will_restart": False,
+                            "skipped": True,
+                            "skip_reason": f"Selected target '{requested_target}' missing required storage: {', '.join(sorted(missing_storage))}",
+                            "storage_volumes": list(storage_volumes),
+                            "storage_compatible": False
+                        })
+                        continue
+                    selected_target = requested_target
+                elif target_node:
+                    # Check if forced target_node is compatible with this guest's storage
+                    if target_node not in [n['node'] for n in compatible_nodes]:
+                        # Forced target not compatible - skip this guest
+                        migration_plan.append({
+                            "vmid": vmid,
+                            "name": guest_name,
+                            "type": guest_type,
+                            "status": current_status,
+                            "target": None,
+                            "will_restart": False,
+                            "skipped": True,
+                            "skip_reason": f"Target node '{target_node}' missing required storage: {', '.join(sorted(storage_volumes - target_storage_map.get(target_node, set())))}",
+                            "storage_volumes": list(storage_volumes),
+                            "storage_compatible": False
+                        })
+                        continue
+                    selected_target = target_node
+                else:
+                    # Auto-select best target based on load
+                    selected_target = min(compatible_nodes, key=lambda n: n['cpu'] + n['mem'] + (pending_counts[n['node']] * 10))['node']
+                pending_counts[selected_target] += 1
 
                 # Determine if will restart
                 will_restart = False
@@ -2331,7 +2499,7 @@ def evacuate_node():
                     "name": guest_name,
                     "type": guest_type,
                     "status": current_status,
-                    "target": target_node,
+                    "target": selected_target,
                     "will_restart": will_restart,
                     "skipped": False,
                     "skip_reason": None,
@@ -2967,6 +3135,341 @@ def update_config():
             "message": "Configuration updated successfully",
             "config": config
         })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/config/export", methods=["GET"])
+def export_config():
+    """Export complete configuration as downloadable JSON file"""
+    try:
+        from datetime import datetime
+        import io
+
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": config.get('message')
+            }), 500
+
+        # Add export metadata
+        export_data = {
+            "export_metadata": {
+                "export_date": datetime.now().isoformat(),
+                "proxbalance_version": "2.0",
+                "config_version": 1
+            },
+            "configuration": config
+        }
+
+        # Create JSON string
+        json_str = json.dumps(export_data, indent=2)
+
+        # Create file-like object
+        file_obj = io.BytesIO(json_str.encode('utf-8'))
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"proxbalance_config_{timestamp}.json"
+
+        return send_file(
+            file_obj,
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/config/backup", methods=["POST"])
+def backup_config():
+    """Create a backup of current configuration (keeps last 5)"""
+    try:
+        from datetime import datetime
+        import glob
+
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": config.get('message')
+            }), 500
+
+        # Create backups directory if it doesn't exist
+        backup_dir = os.path.join(BASE_PATH, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Generate backup filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_file = os.path.join(backup_dir, f"config_backup_{timestamp}.json")
+
+        # Save backup
+        with open(backup_file, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        # Rotate backups - keep only last 5
+        backup_files = sorted(glob.glob(os.path.join(backup_dir, 'config_backup_*.json')))
+        if len(backup_files) > 5:
+            # Remove oldest backups
+            for old_backup in backup_files[:-5]:
+                try:
+                    os.remove(old_backup)
+                except Exception as e:
+                    print(f"Warning: Could not remove old backup {old_backup}: {e}")
+
+        return jsonify({
+            "success": True,
+            "message": "Configuration backup created successfully",
+            "backup_file": os.path.basename(backup_file)
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def validate_config_structure(config_data):
+    """Validate imported configuration structure"""
+    errors = []
+    warnings = []
+
+    # Required fields
+    required_fields = ['proxmox_host']
+    for field in required_fields:
+        if field not in config_data:
+            errors.append(f"Missing required field: {field}")
+
+    # Check proxmox_host is not placeholder
+    if config_data.get('proxmox_host') == 'CHANGE_ME':
+        errors.append("proxmox_host is set to placeholder value 'CHANGE_ME'")
+
+    # Validate data types
+    if 'collection_interval_minutes' in config_data:
+        if not isinstance(config_data['collection_interval_minutes'], (int, float)):
+            errors.append("collection_interval_minutes must be a number")
+
+    if 'ui_refresh_interval_minutes' in config_data:
+        if not isinstance(config_data['ui_refresh_interval_minutes'], (int, float)):
+            errors.append("ui_refresh_interval_minutes must be a number")
+
+    # Check authentication method
+    if 'proxmox_auth_method' in config_data:
+        valid_auth_methods = ['api_token', 'password']
+        if config_data['proxmox_auth_method'] not in valid_auth_methods:
+            errors.append(f"Invalid proxmox_auth_method. Must be one of: {', '.join(valid_auth_methods)}")
+
+    # Warn about missing optional but recommended fields
+    recommended_fields = ['collection_interval_minutes', 'ui_refresh_interval_minutes', 'proxmox_port']
+    for field in recommended_fields:
+        if field not in config_data:
+            warnings.append(f"Optional field missing: {field} (will use default)")
+
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings
+    }
+
+
+@app.route("/api/config/import", methods=["POST"])
+def import_config():
+    """Import configuration from uploaded JSON file"""
+    try:
+        from datetime import datetime
+        import subprocess as sp
+
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({
+                "success": False,
+                "error": "No file uploaded"
+            }), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({
+                "success": False,
+                "error": "No file selected"
+            }), 400
+
+        # Read and parse JSON
+        try:
+            import_data = json.load(file)
+        except json.JSONDecodeError as e:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid JSON file: {str(e)}"
+            }), 400
+
+        # Extract configuration (handle both direct config and exported format with metadata)
+        if 'configuration' in import_data and 'export_metadata' in import_data:
+            # This is an exported config file
+            config_data = import_data['configuration']
+            metadata = import_data['export_metadata']
+        else:
+            # This is a direct config.json file
+            config_data = import_data
+            metadata = None
+
+        # Validate configuration
+        validation_result = validate_config_structure(config_data)
+        if not validation_result['valid']:
+            return jsonify({
+                "success": False,
+                "error": "Configuration validation failed",
+                "validation_errors": validation_result['errors'],
+                "validation_warnings": validation_result['warnings']
+            }), 400
+
+        # Create automatic backup before importing
+        current_config = load_config()
+        if not current_config.get('error'):
+            backup_dir = os.path.join(BASE_PATH, 'backups')
+            os.makedirs(backup_dir, exist_ok=True)
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_file = os.path.join(backup_dir, f"config_backup_pre_import_{timestamp}.json")
+
+            with open(backup_file, 'w') as f:
+                json.dump(current_config, f, indent=2)
+
+        # Save imported configuration
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config_data, f, indent=2)
+
+        # Restart services if credentials changed
+        systemctl_cmd = "/usr/bin/systemctl"
+        if os.path.exists(systemctl_cmd) and os.path.exists("/etc/systemd/system/proxmox-collector.service"):
+            try:
+                sp.run([systemctl_cmd, "restart", "proxmox-collector.timer"],
+                      capture_output=True, text=True, timeout=5)
+                sp.run([systemctl_cmd, "restart", "proxmox-balance"],
+                      capture_output=True, text=True, timeout=5)
+            except Exception as e:
+                print(f"Warning: Could not restart services: {e}")
+
+        return jsonify({
+            "success": True,
+            "message": "Configuration imported successfully",
+            "validation_warnings": validation_result['warnings'],
+            "metadata": metadata
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/penalty-config", methods=["GET"])
+def get_penalty_config():
+    """Get penalty scoring configuration with defaults"""
+    try:
+        penalty_config = load_penalty_config()
+        return jsonify({
+            "success": True,
+            "config": penalty_config,
+            "defaults": DEFAULT_PENALTY_CONFIG
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/penalty-config", methods=["POST"])
+def update_penalty_config():
+    """Update penalty scoring configuration"""
+    try:
+        data = request.json
+
+        if not data or 'config' not in data:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'config' in request body"
+            }), 400
+
+        penalty_config = data['config']
+
+        # Validate all values are numeric
+        for key, value in penalty_config.items():
+            if not isinstance(value, (int, float)):
+                return jsonify({
+                    "success": False,
+                    "error": f"Invalid value for {key}: must be a number"
+                }), 400
+
+        # Validate time period weights sum to 1.0 (with small tolerance for floating point)
+        weight_sum = penalty_config.get('weight_current', 0) + \
+                     penalty_config.get('weight_24h', 0) + \
+                     penalty_config.get('weight_7d', 0)
+
+        if abs(weight_sum - 1.0) > 0.01:  # Allow 1% tolerance
+            return jsonify({
+                "success": False,
+                "error": f"Time period weights must sum to 1.0 (currently: {weight_sum:.2f})"
+            }), 400
+
+        # Validate individual weight values are between 0 and 1
+        for weight_key in ['weight_current', 'weight_24h', 'weight_7d']:
+            if weight_key in penalty_config:
+                weight_val = penalty_config[weight_key]
+                if weight_val < 0 or weight_val > 1:
+                    return jsonify({
+                        "success": False,
+                        "error": f"{weight_key} must be between 0 and 1 (got: {weight_val})"
+                    }), 400
+
+        # Validate penalty values are non-negative (allow 0 to disable, but no negatives)
+        for key, value in penalty_config.items():
+            if key.endswith('_penalty') or key.endswith('_penalty_per_min'):
+                if value < 0:
+                    return jsonify({
+                        "success": False,
+                        "error": f"{key} cannot be negative (got: {value})"
+                    }), 400
+
+        # Validate threshold values are reasonable
+        for key, value in penalty_config.items():
+            if key.endswith('_threshold'):
+                if value < 0 or value > 100:
+                    return jsonify({
+                        "success": False,
+                        "error": f"{key} must be between 0 and 100 (got: {value})"
+                    }), 400
+
+        # Save to config file
+        if save_penalty_config(penalty_config):
+            return jsonify({
+                "success": True,
+                "message": "Penalty configuration updated successfully",
+                "config": penalty_config
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to save penalty configuration"
+            }), 500
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/penalty-config/reset", methods=["POST"])
+def reset_penalty_config():
+    """Reset penalty scoring configuration to defaults"""
+    try:
+        # Save defaults to config
+        if save_penalty_config(DEFAULT_PENALTY_CONFIG):
+            return jsonify({
+                "success": True,
+                "message": "Penalty configuration reset to defaults",
+                "config": DEFAULT_PENALTY_CONFIG
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to reset penalty configuration"
+            }), 500
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -5359,6 +5862,55 @@ def get_automigrate_status():
                                 except Exception as progress_err:
                                     pass  # Ignore progress parsing errors
 
+                                # For CT migrations (vzmigrate), parse progress from different format
+                                # Format: "32992526336 bytes (33 GB, 31 GiB) copied, 300 s, 110 MB/s"
+                                if not progress_info and task.get('type') == 'vzmigrate' and task_log:
+                                    try:
+                                        for line in reversed(task_log):
+                                            # Match CT migration progress line
+                                            match = re.search(r'([\d]+)\s+bytes\s+\([\d.]+\s+GB,\s+([\d.]+)\s+GiB\)\s+copied,\s+([\d]+)\s+s,\s+([\d.]+)\s+MB/s', line.get('t', ''))
+                                            if match:
+                                                bytes_copied = int(match.group(1))
+                                                gib_copied = float(match.group(2))
+                                                elapsed_seconds = int(match.group(3))
+                                                speed_mb_s = float(match.group(4))
+
+                                                # Try to get CT disk size to estimate percentage
+                                                total_gib = None
+                                                percentage = None
+                                                try:
+                                                    # Get CT config to find rootfs size
+                                                    source_node = task.get('node', 'unknown')
+                                                    if source_node != 'unknown' and vmid:
+                                                        config_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/nodes/{source_node}/lxc/{vmid}/config"
+                                                        config_response = requests.get(config_url, headers=headers, verify=verify_ssl, timeout=5)
+                                                        if config_response.status_code == 200:
+                                                            ct_config = config_response.json().get('data', {})
+                                                            rootfs = ct_config.get('rootfs', '')
+                                                            # Parse rootfs string like "local-lvm:vm-109-disk-0,size=128G"
+                                                            size_match = re.search(r'size=(\d+)G', rootfs)
+                                                            if size_match:
+                                                                total_gib = float(size_match.group(1))
+                                                                percentage = int((gib_copied / total_gib * 100)) if total_gib > 0 else None
+                                                except Exception:
+                                                    pass  # If we can't get size, just show transferred amount
+
+                                                # Build progress info
+                                                progress_info = {
+                                                    "transferred_gib": gib_copied,
+                                                    "speed_mib_s": speed_mb_s,  # MB/s is close enough to MiB/s for display
+                                                }
+
+                                                if total_gib and percentage is not None:
+                                                    progress_info["total_gib"] = total_gib
+                                                    progress_info["percentage"] = percentage
+                                                    progress_info["human_readable"] = f"{gib_copied:.1f} GiB of {total_gib:.1f} GiB ({percentage}%) at {speed_mb_s:.0f} MB/s"
+                                                else:
+                                                    progress_info["human_readable"] = f"{gib_copied:.1f} GiB transferred at {speed_mb_s:.0f} MB/s"
+                                                break
+                                    except Exception as ct_progress_err:
+                                        pass  # Ignore CT progress parsing errors
+
                                 # Extract starttime from UPID (format: UPID:node:pid:pstart:starttime:type:vmid:user)
                                 starttime = task.get('starttime')  # Try direct field first
                                 if not starttime and task_upid:
@@ -5408,6 +5960,58 @@ def get_automigrate_status():
             except (ValueError, TypeError):
                 pass
 
+        # Get current window status
+        import pytz
+        current_window = None
+        windows = config.get('automated_migrations', {}).get('schedule', {}).get('migration_windows', [])
+
+        if windows:
+            for window in windows:
+                # Windows are enabled by default unless explicitly disabled
+                if not window.get('enabled', True):
+                    continue
+
+                try:
+                    tz = pytz.timezone(window.get('timezone', 'UTC'))
+                    now = datetime.now(tz)
+
+                    # Check day of week
+                    current_day = now.strftime('%A').lower()
+                    window_days = [d.lower() for d in window.get('days', [])]
+                    if current_day not in window_days:
+                        continue
+
+                    # Parse time range
+                    from datetime import time as dt_time
+                    start = datetime.strptime(window['start_time'], '%H:%M').time()
+                    end = datetime.strptime(window['end_time'], '%H:%M').time()
+                    current = now.time()
+
+                    # Check time range (handles overnight windows)
+                    if start <= end:
+                        in_window = start <= current <= end
+                    else:  # Crosses midnight
+                        in_window = current >= start or current <= end
+
+                    if in_window:
+                        current_window = window['name']
+                        break
+                except Exception as e:
+                    print(f"Error checking window {window.get('name', 'unknown')}: {e}", file=sys.stderr)
+                    continue
+
+        # If no window is active and windows are defined, show "Outside migration windows"
+        # If no windows are defined, show "No windows defined (always allowed)"
+        if current_window is None:
+            if windows:
+                current_window = "Outside migration windows"
+            else:
+                current_window = "No windows defined (always allowed)"
+
+        # Update state with current window
+        state = history.get('state', {}).copy()
+        state['current_window'] = current_window
+
         return jsonify({
             "success": True,
             "enabled": auto_config.get('enabled', False),
@@ -5417,7 +6021,7 @@ def get_automigrate_status():
             "next_check": next_check,
             "recent_migrations": recent,
             "in_progress_migrations": in_progress_migrations,
-            "state": history.get('state', {}),
+            "state": state,
             "filter_reasons": history.get('state', {}).get('last_filter_reasons', [])
         })
 
@@ -5516,6 +6120,20 @@ def run_automigrate():
     try:
         print("Manual 'Run Now' triggered via API", file=sys.stderr)
 
+        # Check if any migrations are currently running cluster-wide
+        try:
+            status_data = get_automation_status_data()
+            if status_data.get('in_progress_migrations') and len(status_data['in_progress_migrations']) > 0:
+                running_migrations = status_data['in_progress_migrations']
+                migration_info = running_migrations[0]
+                return jsonify({
+                    "success": False,
+                    "error": f"Cannot start new migration: {migration_info['name']} ({migration_info['vmid']}) is currently migrating from {migration_info['source_node']} to {migration_info.get('target_node', 'unknown')}"
+                }), 409  # 409 Conflict
+        except Exception as check_err:
+            print(f"Warning: Could not check for running migrations: {check_err}", file=sys.stderr)
+            # Continue anyway - don't block on check failure
+
         # Run automigrate.py
         script_path = os.path.join(BASE_PATH, 'automigrate.py')
         venv_python = os.path.join(BASE_PATH, 'venv', 'bin', 'python3')
@@ -5526,26 +6144,58 @@ def run_automigrate():
                 "error": f"automigrate.py not found at {script_path}"
             }), 404
 
-        # Run automation in background - return immediately without waiting
-        # This allows long-running migrations to complete without HTTP timeout
-        # Log output to file for debugging
+        # Run automation and capture initial output to return migration details
+        # Run in background for long-running migrations, but capture first few seconds of output
+        import time
+        import re
+
         log_file = os.path.join(BASE_PATH, 'automigrate_manual.log')
-        with open(log_file, 'a') as f:
-            f.write(f"\n\n{'='*80}\n")
+
+        # Clear/create log file
+        with open(log_file, 'w') as f:
+            f.write(f"{'='*80}\n")
             f.write(f"Manual run started at {datetime.now().isoformat()}\n")
             f.write(f"{'='*80}\n\n")
-            f.flush()
-            subprocess.Popen(
-                [venv_python, script_path],
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                cwd=BASE_PATH
-            )
+
+        # Start process in background
+        process = subprocess.Popen(
+            [venv_python, script_path],
+            stdout=open(log_file, 'a'),
+            stderr=subprocess.STDOUT,
+            cwd=BASE_PATH
+        )
+
+        # Wait for script to start and log initial output (recommendations can take 10-15 seconds)
+        time.sleep(12)
+
+        # Read log file to extract migration info
+        migration_info = None
+        try:
+            with open(log_file, 'r') as f:
+                log_content = f.read()
+
+                # Parse log for migration start message
+                # Format: "2025-10-25 22:38:14,176 - __main__ - INFO - Migrating CT 109 (influxdb) from pve3 to pve6 (score: 58.91) - Balance CPU load (src: 53.4%, target: 38.6%)"
+                # Pattern matches: Migrating (VM|CT) {vmid} ({name}) from {source} to {target}
+                match = re.search(r'INFO - Migrating (VM|CT) (\d+) \(([^)]+)\) from (\S+) to (\S+)', log_content)
+                if match:
+                    guest_type, vmid, name, source_node, target_node = match.groups()
+
+                    migration_info = {
+                        "vmid": vmid,
+                        "name": name,
+                        "type": guest_type,
+                        "source_node": source_node,
+                        "target_node": target_node
+                    }
+        except Exception as parse_err:
+            print(f"Warning: Could not parse migration info from log: {parse_err}", file=sys.stderr)
 
         return jsonify({
             "success": True,
             "message": "Automation check started in background. Check status for results.",
-            "output": "Automation process started successfully. Monitor the automation status to see migration progress."
+            "output": "Automation process started successfully. Monitor the automation status to see migration progress.",
+            "migration_info": migration_info  # Include parsed migration details
         })
 
     except Exception as e:
@@ -5615,11 +6265,15 @@ OnUnitActiveSec={interval_minutes}min
                     with open(override_file, 'w') as f:
                         f.write(override_content)
 
-                    # Reload systemd and restart timer to apply changes
+                    # Reload systemd configuration
                     subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/systemctl', 'restart', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
 
-                    print(f"✓ Automigrate timer interval updated to {interval_minutes} minutes", file=sys.stderr)
+                    # Stop and start timer instead of restart to avoid immediate trigger
+                    # This preserves the existing schedule instead of resetting OnBootSec
+                    subprocess.run(['/usr/bin/systemctl', 'stop', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/systemctl', 'start', 'proxmox-balance-automigrate.timer'], check=True, capture_output=True)
+
+                    print(f"✓ Automigrate timer interval updated to {interval_minutes} minutes (will apply on next scheduled run)", file=sys.stderr)
                 except Exception as timer_err:
                     print(f"Warning: Failed to update systemd timer interval: {timer_err}", file=sys.stderr)
                     # Don't fail the request if timer update fails - config was still saved

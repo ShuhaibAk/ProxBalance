@@ -433,35 +433,50 @@ This prevents overwhelming the cluster with simultaneous migrations.
 
 ## Configuration
 
-### Adjusting Penalty Weights
+### Adjusting Penalty Weights (Web UI)
 
-Advanced users can modify penalty weights in `app.py`:
+You can now customize penalty weights directly through the Web UI:
 
-```python
-# CPU penalty (default: 10 per % over 70%)
-CPU_PENALTY_WEIGHT = 10
-CPU_THRESHOLD = 70
+1. Navigate to **Settings** in the web interface
+2. Expand the **Penalty Scoring Configuration** section
+3. Modify values as needed:
+   - **Time Period Weights** - Control how much weight to give recent vs. historical metrics
+   - **CPU/Memory/IOWait Penalties** - Adjust severity of resource usage penalties
+   - **Storage and HA Penalties** - Configure penalties for storage and high availability concerns
+4. The UI provides real-time validation and helpful examples
+5. Click **Save Penalty Config** to apply changes
 
-# Memory penalty (default: 10 per % over 70%)
-MEMORY_PENALTY_WEIGHT = 10
-MEMORY_THRESHOLD = 70
+#### Time Period Weights
 
-# IOWait penalty (default: 20 per %)
-IOWAIT_PENALTY_WEIGHT = 20
-IOWAIT_THRESHOLD = 5
+These control how the algorithm balances current state vs. historical trends:
 
-# Guest count penalty (default: 5 per VM)
-GUEST_COUNT_PENALTY = 5
+- **Current Weight** (default: 0.5) - Weight for current resource usage
+- **24h Weight** (default: 0.3) - Weight for 24-hour average usage
+- **7d Weight** (default: 0.2) - Weight for 7-day average usage
 
-# Anti-affinity violation penalty
-AFFINITY_VIOLATION_PENALTY = 1000
+**Must sum to 1.0.** The UI will show a validation indicator.
 
-# Storage incompatibility penalty
-STORAGE_PENALTY = 5000
+**Example Configurations:**
 
-# Maintenance mode penalty
-MAINTENANCE_PENALTY = 10000
 ```
+# Default (balanced view)
+Current: 0.5, 24h: 0.3, 7d: 0.2
+
+# Short-term focus (6-hour window)
+Current: 0.6, 24h: 0.4, 7d: 0.0
+
+# Historical focus
+Current: 0.2, 24h: 0.5, 7d: 0.3
+```
+
+#### Penalty Values
+
+All penalty values can be:
+- Set to **0** to disable that penalty
+- Increased to make the algorithm more sensitive to that condition
+- Must be **non-negative** (>= 0)
+
+Changes are saved to `config.json` under the `penalty_scoring` key and take effect immediately.
 
 ### Minimum Suitability Threshold
 

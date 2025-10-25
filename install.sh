@@ -968,7 +968,7 @@ echo ""
 if [ -f index.html ] && grep -q 'type="text/babel"' index.html; then
   echo "⚠  Legacy inline JSX detected - build required"
   NEEDS_BUILD=true
-elif [ -f src/app.jsx ] || [ -f src/app_fixed.jsx ]; then
+elif [ -f src/app.jsx ]; then
   echo "✓ Pre-compiled architecture detected - building"
   NEEDS_BUILD=true
 elif [ ! -f assets/js/app.js ]; then
@@ -1007,18 +1007,14 @@ BABEL_CONFIG
   # Step 3: Extract JSX from index.html if needed
   echo ""
   echo "Step 3/5: Preparing JSX source..."
-  if [ ! -f src/app.jsx ] && [ ! -f src/app_fixed.jsx ]; then
+  if [ ! -f src/app.jsx ]; then
     # Extract JSX from index.html
     if grep -q 'type="text/babel"' index.html; then
       echo "  ⚙  Extracting JSX from index.html..."
       sed -n '/<script type="text\/babel">/,/<\/script>/p' index.html | \
         sed '1d;$d' | \
         sed '1,2d' > src/app.jsx
-
-      # Add React hooks import at the top
-      echo 'const { useState, useEffect, useMemo, useCallback, useRef } = React;' | \
-        cat - src/app.jsx > src/app_fixed.jsx
-      echo "  ✓ JSX extracted and hooks import added"
+      echo "  ✓ JSX extracted"
     fi
   else
     echo "  ✓ JSX source already exists"
@@ -1027,13 +1023,13 @@ BABEL_CONFIG
   # Step 4: Compile JSX to JavaScript
   echo ""
   echo "Step 4/5: Compiling JSX to JavaScript..."
-  if [ -f src/app_fixed.jsx ]; then
-    npx babel src/app_fixed.jsx --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
-    COMPILED_SIZE=$(stat -c%s /var/www/html/assets/js/app.js 2>/dev/null)
-    echo "  ✓ Compiled to app.js (${COMPILED_SIZE} bytes)"
-  elif [ -f src/app.jsx ]; then
-    # Compile directly from src/app.jsx (already has hooks import)
-    npx babel src/app.jsx --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
+  if [ -f src/app.jsx ]; then
+    # Use node_modules/.bin/babel directly with preset flag if npx is not available
+    if command -v npx >/dev/null 2>&1; then
+      npx babel src/app.jsx --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
+    else
+      node_modules/.bin/babel src/app.jsx --presets=@babel/preset-react --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
+    fi
     COMPILED_SIZE=$(stat -c%s /var/www/html/assets/js/app.js 2>/dev/null)
     echo "  ✓ Compiled to app.js (${COMPILED_SIZE} bytes)"
   fi
