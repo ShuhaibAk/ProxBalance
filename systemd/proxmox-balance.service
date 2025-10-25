@@ -6,7 +6,7 @@ After=network.target
 Type=notify
 User=root
 WorkingDirectory=/opt/proxmox-balance-manager
-Environment="PATH=/opt/proxmox-balance-manager/venv/bin"
+Environment="PATH=/opt/proxmox-balance-manager/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/opt/proxmox-balance-manager/venv/bin/gunicorn \
     --workers 2 \
     --timeout 600 \

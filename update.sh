@@ -84,6 +84,15 @@ echo "Building web interface..."
 pct exec $CTID -- bash <<'BUILD_EOF'
 cd /opt/proxmox-balance-manager
 
+# Ensure curl is installed (needed for Node.js installation)
+if ! command -v curl >/dev/null 2>&1; then
+  echo "  → Installing curl..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update >/dev/null 2>&1
+  apt-get install -y curl >/dev/null 2>&1
+  echo "  ✓ curl installed"
+fi
+
 # Check if Node.js is installed
 if ! command -v node >/dev/null 2>&1; then
   echo "  ⚠  Node.js not found - installing Node.js 20 LTS..."

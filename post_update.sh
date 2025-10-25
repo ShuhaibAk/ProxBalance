@@ -6,6 +6,15 @@ set -e
 
 echo "Running post-update tasks..."
 
+# Ensure curl is installed (needed for Node.js installation)
+if ! command -v curl >/dev/null 2>&1; then
+  echo "  → Installing curl..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update >/dev/null 2>&1
+  apt-get install -y curl >/dev/null 2>&1
+  echo "  ✓ curl installed"
+fi
+
 # Build and update web interface
 echo "Building web interface..."
 cd /opt/proxmox-balance-manager
