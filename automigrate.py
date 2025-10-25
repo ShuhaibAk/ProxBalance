@@ -117,7 +117,8 @@ def is_in_migration_window(config: Dict[str, Any]) -> Tuple[bool, str]:
         return True, "No windows defined (always allowed)"
 
     for window in windows:
-        if not window.get('enabled', False):
+        # Windows are enabled by default unless explicitly disabled
+        if not window.get('enabled', True):
             continue
 
         try:
@@ -168,7 +169,8 @@ def is_in_blackout_window(config: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "No blackout windows defined"
 
     for blackout in blackouts:
-        if not blackout.get('enabled', False):
+        # Blackouts are enabled by default unless explicitly disabled
+        if not blackout.get('enabled', True):
             continue
 
         try:

@@ -311,8 +311,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             name: '',
             type: 'migration', // 'migration' or 'blackout'
             days: [],
-            start_time: '',
-            end_time: ''
+            start_time: '00:00',
+            end_time: '00:00'
           });
 
           // Save collapsed state to localStorage whenever it changes
@@ -4780,7 +4780,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     }
                                   });
 
-                                  setNewWindowData({ name: '', type: 'migration', days: [], start_time: '', end_time: '' });
+                                  setNewWindowData({ name: '', type: 'migration', days: [], start_time: '00:00', end_time: '00:00' });
                                   setShowTimeWindowForm(false);
                                 } else {
                                   setError('Please fill in all fields');
@@ -4796,7 +4796,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             </button>
                             <button
                               onClick={() => {
-                                setNewWindowData({ name: '', type: 'migration', days: [], start_time: '', end_time: '' });
+                                setNewWindowData({ name: '', type: 'migration', days: [], start_time: '00:00', end_time: '00:00' });
                                 setShowTimeWindowForm(false);
                               }}
                               className="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold"
@@ -4943,20 +4943,27 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                         </div>
                                       </td>
                                       <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-semibold inline-flex items-center gap-1 ${
-                                          migration.status === 'completed'
-                                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                            : migration.status === 'failed'
-                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                            : migration.status === 'timeout'
-                                            ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                                            : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
-                                        }`}>
-                                          {migration.status === 'completed' && <CheckCircle size={12} />}
-                                          {migration.status === 'failed' && <XCircle size={12} />}
-                                          {migration.status === 'timeout' && <Clock size={12} />}
-                                          {migration.status}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                          <span className={`px-2 py-1 rounded text-xs font-semibold inline-flex items-center gap-1 ${
+                                            migration.status === 'completed'
+                                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                              : migration.status === 'failed'
+                                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                              : migration.status === 'timeout'
+                                              ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                                              : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
+                                          }`}>
+                                            {migration.status === 'completed' && <CheckCircle size={12} />}
+                                            {migration.status === 'failed' && <XCircle size={12} />}
+                                            {migration.status === 'timeout' && <Clock size={12} />}
+                                            {migration.status}
+                                          </span>
+                                          {migration.dry_run && (
+                                            <span className="px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                              DRY RUN
+                                            </span>
+                                          )}
+                                        </div>
                                       </td>
                                       <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
                                         {durationDisplay}
@@ -5738,12 +5745,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                     {automationStatus.state && (
                       <div className="space-y-2 mb-4">
-                        {automationStatus.state.current_window && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-600 dark:text-gray-400">Current Window:</span>
-                            <span className="font-medium text-gray-900 dark:text-white">{automationStatus.state.current_window}</span>
-                          </div>
-                        )}
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Current Window:</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{automationStatus.state.current_window || 'Loading...'}</span>
+                        </div>
                         {automationStatus.state.last_run && (
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600 dark:text-gray-400">Last Run:</span>

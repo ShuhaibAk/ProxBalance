@@ -5689,6 +5689,58 @@ def get_automigrate_status():
             except (ValueError, TypeError):
                 pass
 
+        # Get current window status
+        import pytz
+        current_window = None
+        windows = config.get('automated_migrations', {}).get('schedule', {}).get('migration_windows', [])
+
+        if windows:
+            for window in windows:
+                # Windows are enabled by default unless explicitly disabled
+                if not window.get('enabled', True):
+                    continue
+
+                try:
+                    tz = pytz.timezone(window.get('timezone', 'UTC'))
+                    now = datetime.now(tz)
+
+                    # Check day of week
+                    current_day = now.strftime('%A').lower()
+                    window_days = [d.lower() for d in window.get('days', [])]
+                    if current_day not in window_days:
+                        continue
+
+                    # Parse time range
+                    from datetime import time as dt_time
+                    start = datetime.strptime(window['start_time'], '%H:%M').time()
+                    end = datetime.strptime(window['end_time'], '%H:%M').time()
+                    current = now.time()
+
+                    # Check time range (handles overnight windows)
+                    if start <= end:
+                        in_window = start <= current <= end
+                    else:  # Crosses midnight
+                        in_window = current >= start or current <= end
+
+                    if in_window:
+                        current_window = window['name']
+                        break
+                except Exception as e:
+                    print(f"Error checking window {window.get('name', 'unknown')}: {e}", file=sys.stderr)
+                    continue
+
+        # If no window is active and windows are defined, show "Outside migration windows"
+        # If no windows are defined, show "No windows defined (always allowed)"
+        if current_window is None:
+            if windows:
+                current_window = "Outside migration windows"
+            else:
+                current_window = "No windows defined (always allowed)"
+
+        # Update state with current window
+        state = history.get('state', {}).copy()
+        state['current_window'] = current_window
+
         return jsonify({
             "success": True,
             "enabled": auto_config.get('enabled', False),
@@ -5698,7 +5750,7 @@ def get_automigrate_status():
             "next_check": next_check,
             "recent_migrations": recent,
             "in_progress_migrations": in_progress_migrations,
-            "state": history.get('state', {}),
+            "state": state,
             "filter_reasons": history.get('state', {}).get('last_filter_reasons', [])
         })
 
