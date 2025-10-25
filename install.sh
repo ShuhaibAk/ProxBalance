@@ -709,6 +709,16 @@ install_dependencies() {
   spinner $! "Installing Python 3, venv, and pip"
   echo ""
 
+  # Install curl (needed for Node.js installation)
+  (
+    pct exec "$CTID" -- bash -c "
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get install -y curl >/dev/null 2>&1
+    "
+  ) &
+  spinner $! "Installing curl"
+  echo ""
+
   # Install Node.js (for Babel compilation)
   (
     pct exec "$CTID" -- bash -c "
