@@ -3431,24 +3431,39 @@ def update_system():
                     timeout=300  # 5 minute timeout for build
                 )
 
-                # Add build output to log
+                # Add build output to log (both stdout and stderr)
                 if result.stdout:
                     for line in result.stdout.strip().split('\n'):
                         if line.strip():
                             update_log.append(line)
 
+                # Add any stderr output
+                if result.stderr:
+                    for line in result.stderr.strip().split('\n'):
+                        if line.strip():
+                            update_log.append(f"[stderr] {line}")
+
                 if result.returncode == 0:
                     update_log.append("✓ Web interface built and updated")
                 else:
-                    update_log.append(f"⚠ Build completed with warnings: {result.stderr}")
+                    update_log.append(f"⚠ Build failed with exit code {result.returncode}")
+                    update_log.append("See stderr output above for details")
             else:
                 # Fallback to simple copy if post_update.sh doesn't exist
+                update_log.append(f"⚠ post_update.sh not found at {post_update_script}")
                 shutil.copy2("/opt/proxmox-balance-manager/index.html", "/var/www/html/index.html")
                 update_log.append("✓ Web interface updated (legacy mode)")
         except subprocess.TimeoutExpired:
-            update_log.append(f"⚠ Frontend build timed out - using existing web interface")
+            update_log.append(f"⚠ Frontend build timed out after 5 minutes")
         except Exception as e:
+            import traceback
             update_log.append(f"⚠ Failed to update web interface: {str(e)}")
+            update_log.append(f"Exception type: {type(e).__name__}")
+            # Add traceback for debugging
+            tb_lines = traceback.format_exc().split('\n')
+            for line in tb_lines:
+                if line.strip():
+                    update_log.append(f"  {line}")
 
         # Update Python dependencies
         update_log.append("Updating Python dependencies...")
