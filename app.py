@@ -38,6 +38,71 @@ CACHE_FILE = os.path.join(BASE_PATH, 'cluster_cache.json')
 CONFIG_FILE = os.path.join(BASE_PATH, 'config.json')
 GIT_CMD = '/usr/bin/git'
 
+# Default penalty scoring configuration
+# These values can be customized via the settings UI
+DEFAULT_PENALTY_CONFIG = {
+    # Current load penalties (immediate state)
+    "cpu_high_penalty": 20,           # Penalty when CPU > threshold
+    "cpu_very_high_penalty": 50,      # Penalty when CPU > threshold+10
+    "cpu_extreme_penalty": 100,       # Penalty when CPU > threshold+20
+    "mem_high_penalty": 20,           # Penalty when Memory > threshold
+    "mem_very_high_penalty": 50,      # Penalty when Memory > threshold+10
+    "mem_extreme_penalty": 100,       # Penalty when Memory > threshold+20
+
+    # Sustained load penalties (7-day averages)
+    "cpu_sustained_high": 40,         # Penalty when 7d avg CPU > 70%
+    "cpu_sustained_very_high": 80,    # Penalty when 7d avg CPU > 80%
+    "cpu_sustained_critical": 150,    # Penalty when 7d avg CPU > 90%
+    "mem_sustained_high": 40,         # Penalty when 7d avg Memory > 70%
+    "mem_sustained_very_high": 80,    # Penalty when 7d avg Memory > 80%
+    "mem_sustained_critical": 150,    # Penalty when 7d avg Memory > 90%
+
+    # IOWait penalties
+    "iowait_high_penalty": 20,        # Penalty when immediate IOWait > 10%
+    "iowait_very_high_penalty": 40,   # Penalty when immediate IOWait > 20%
+    "iowait_extreme_penalty": 80,     # Penalty when immediate IOWait > 30%
+    "iowait_sustained_elevated": 15,  # Penalty when 7d avg IOWait > 10%
+    "iowait_sustained_high": 30,      # Penalty when 7d avg IOWait > 15%
+    "iowait_sustained_critical": 60,  # Penalty when 7d avg IOWait > 20%
+
+    # Trend penalties
+    "cpu_trend_rising_penalty": 15,   # Penalty for rising CPU trend
+    "mem_trend_rising_penalty": 15,   # Penalty for rising Memory trend
+
+    # Spike penalties (max values in week)
+    "cpu_spike_moderate": 5,          # Penalty when max CPU > 70%
+    "cpu_spike_high": 10,             # Penalty when max CPU > 80%
+    "cpu_spike_very_high": 20,        # Penalty when max CPU > 90%
+    "cpu_spike_extreme": 30,          # Penalty when max CPU > 95%
+    "mem_spike_moderate": 5,          # Penalty when max Memory > 75%
+    "mem_spike_high": 10,             # Penalty when max Memory > 85%
+    "mem_spike_very_high": 20,        # Penalty when max Memory > 90%
+    "mem_spike_extreme": 30,          # Penalty when max Memory > 95%
+
+    # Predicted post-migration penalties
+    "predicted_cpu_over_penalty": 25,        # Penalty when predicted CPU > threshold
+    "predicted_cpu_high_penalty": 50,        # Penalty when predicted CPU > threshold+10
+    "predicted_cpu_extreme_penalty": 100,    # Penalty when predicted CPU > threshold+20
+    "predicted_mem_over_penalty": 25,        # Penalty when predicted Memory > threshold
+    "predicted_mem_high_penalty": 50,        # Penalty when predicted Memory > threshold+10
+    "predicted_mem_extreme_penalty": 100,    # Penalty when predicted Memory > threshold+20
+
+    # Threshold offsets
+    "cpu_threshold_offset_1": 10,     # First threshold offset (used for +10 calculations)
+    "cpu_threshold_offset_2": 20,     # Second threshold offset (used for +20 calculations)
+    "mem_threshold_offset_1": 10,     # First threshold offset (used for +10 calculations)
+    "mem_threshold_offset_2": 20,     # Second threshold offset (used for +20 calculations)
+
+    # Score improvement requirements
+    "min_score_improvement": 15,      # Minimum score improvement to recommend migration
+    "maintenance_score_boost": 100,   # Extra score added to maintenance nodes for evacuation priority
+
+    # Time period weighting (for historical data)
+    "weight_current": 0.5,            # Weight for current/immediate metrics (50%)
+    "weight_24h": 0.3,                # Weight for 24-hour average metrics (30%)
+    "weight_7d": 0.2,                 # Weight for 7-day average metrics (20%)
+}
+
 # Global evacuation tracking using file-based storage for multi-worker compatibility
 SESSIONS_DIR = os.path.join(BASE_PATH, 'evacuation_sessions')
 if not os.path.exists(SESSIONS_DIR):
@@ -149,6 +214,41 @@ def load_config():
         }
     
     return config
+
+def load_penalty_config():
+    """Load penalty configuration from config.json, merging with defaults"""
+    config = load_config()
+    if config.get('error'):
+        # If config has error, return defaults
+        return DEFAULT_PENALTY_CONFIG.copy()
+
+    # Get penalty config from main config, or use empty dict
+    saved_penalties = config.get('penalty_scoring', {})
+
+    # Merge with defaults (saved values override defaults)
+    penalty_config = DEFAULT_PENALTY_CONFIG.copy()
+    penalty_config.update(saved_penalties)
+
+    return penalty_config
+
+def save_penalty_config(penalty_config: dict) -> bool:
+    """Save penalty configuration to config.json"""
+    try:
+        config = load_config()
+        if config.get('error'):
+            return False
+
+        # Update the penalty_scoring section
+        config['penalty_scoring'] = penalty_config
+
+        # Write back to file
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        return True
+    except Exception as e:
+        print(f"Error saving penalty config: {e}", file=sys.stderr)
+        return False
 
 def read_cache() -> Dict:
     """Read cluster data from cache (uses in-memory cache with TTL)"""
@@ -1086,7 +1186,10 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     target_name = target_node.get("name")
     metrics = target_node.get("metrics", {})
 
-    # Weighted time-based scoring: 50% current, 30% short-term (24h), 20% long-term (7-day)
+    # Load penalty configuration
+    penalty_cfg = load_penalty_config()
+
+    # Weighted time-based scoring: configurable weights from penalty config
     # This balances responsiveness with stability
     immediate_cpu = metrics.get("current_cpu", 0)
     immediate_mem = metrics.get("current_mem", 0)
@@ -1100,11 +1203,15 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     long_mem = metrics.get("avg_mem_week", 0)
     long_iowait = metrics.get("avg_iowait_week", 0)
 
-    # Calculate weighted scores
+    # Calculate weighted scores using configurable weights
+    weight_current = penalty_cfg.get("weight_current", 0.5)
+    weight_24h = penalty_cfg.get("weight_24h", 0.3)
+    weight_7d = penalty_cfg.get("weight_7d", 0.2)
+
     if metrics.get("has_historical"):
-        current_cpu = (immediate_cpu * 0.5) + (short_cpu * 0.3) + (long_cpu * 0.2)
-        current_mem = (immediate_mem * 0.5) + (short_mem * 0.3) + (long_mem * 0.2)
-        current_iowait = (immediate_iowait * 0.5) + (short_iowait * 0.3) + (long_iowait * 0.2)
+        current_cpu = (immediate_cpu * weight_current) + (short_cpu * weight_24h) + (long_cpu * weight_7d)
+        current_mem = (immediate_mem * weight_current) + (short_mem * weight_24h) + (long_mem * weight_7d)
+        current_iowait = (immediate_iowait * weight_current) + (short_iowait * weight_24h) + (long_iowait * weight_7d)
     else:
         # No historical data, use current only
         current_cpu = immediate_cpu
@@ -1122,75 +1229,81 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     # Initialize penalty accumulator
     penalties = 0
 
-    # Current load penalty - heavily penalize nodes with high current load
-    if immediate_cpu > (cpu_threshold + 20):
-        penalties += 100  # Extreme current CPU load
-    elif immediate_cpu > (cpu_threshold + 10):
-        penalties += 50   # Very high current CPU load
-    elif immediate_cpu > cpu_threshold:
-        penalties += 20   # High current CPU load
+    # Get configurable threshold offsets
+    cpu_offset_1 = penalty_cfg.get("cpu_threshold_offset_1", 10)
+    cpu_offset_2 = penalty_cfg.get("cpu_threshold_offset_2", 20)
+    mem_offset_1 = penalty_cfg.get("mem_threshold_offset_1", 10)
+    mem_offset_2 = penalty_cfg.get("mem_threshold_offset_2", 20)
 
-    if immediate_mem > (mem_threshold + 20):
-        penalties += 100  # Extreme current memory load
-    elif immediate_mem > (mem_threshold + 10):
-        penalties += 50   # Very high current memory load
+    # Current load penalty - heavily penalize nodes with high current load
+    if immediate_cpu > (cpu_threshold + cpu_offset_2):
+        penalties += penalty_cfg.get("cpu_extreme_penalty", 100)  # Extreme current CPU load
+    elif immediate_cpu > (cpu_threshold + cpu_offset_1):
+        penalties += penalty_cfg.get("cpu_very_high_penalty", 50)   # Very high current CPU load
+    elif immediate_cpu > cpu_threshold:
+        penalties += penalty_cfg.get("cpu_high_penalty", 20)   # High current CPU load
+
+    if immediate_mem > (mem_threshold + mem_offset_2):
+        penalties += penalty_cfg.get("mem_extreme_penalty", 100)  # Extreme current memory load
+    elif immediate_mem > (mem_threshold + mem_offset_1):
+        penalties += penalty_cfg.get("mem_very_high_penalty", 50)   # Very high current memory load
     elif immediate_mem > mem_threshold:
-        penalties += 20   # High current memory load
+        penalties += penalty_cfg.get("mem_high_penalty", 20)   # High current memory load
 
     # Sustained load penalty - penalize sustained high averages
     if long_cpu > 90:
-        penalties += 150  # Critically high sustained CPU
+        penalties += penalty_cfg.get("cpu_sustained_critical", 150)  # Critically high sustained CPU
     elif long_cpu > 80:
-        penalties += 80   # Very high sustained CPU
+        penalties += penalty_cfg.get("cpu_sustained_very_high", 80)   # Very high sustained CPU
     elif long_cpu > 70:
-        penalties += 40   # High sustained CPU
+        penalties += penalty_cfg.get("cpu_sustained_high", 40)   # High sustained CPU
 
     if long_mem > 90:
-        penalties += 150  # Critically high sustained memory
+        penalties += penalty_cfg.get("mem_sustained_critical", 150)  # Critically high sustained memory
     elif long_mem > 80:
-        penalties += 80   # Very high sustained memory
+        penalties += penalty_cfg.get("mem_sustained_very_high", 80)   # Very high sustained memory
     elif long_mem > 70:
-        penalties += 40   # High sustained memory
+        penalties += penalty_cfg.get("mem_sustained_high", 40)   # High sustained memory
 
     # IOWait penalty - penalize high disk wait times
     if immediate_iowait > 30:
-        penalties += 80   # Extreme current IOWait
+        penalties += penalty_cfg.get("iowait_extreme_penalty", 80)   # Extreme current IOWait
     elif immediate_iowait > 20:
-        penalties += 40   # Very high current IOWait
+        penalties += penalty_cfg.get("iowait_very_high_penalty", 40)   # Very high current IOWait
     elif immediate_iowait > 10:
-        penalties += 20   # High current IOWait
+        penalties += penalty_cfg.get("iowait_high_penalty", 20)   # High current IOWait
 
     if long_iowait > 20:
-        penalties += 60   # Critically high sustained IOWait
+        penalties += penalty_cfg.get("iowait_sustained_critical", 60)   # Critically high sustained IOWait
     elif long_iowait > 15:
-        penalties += 30   # High sustained IOWait
+        penalties += penalty_cfg.get("iowait_sustained_high", 30)   # High sustained IOWait
     elif long_iowait > 10:
-        penalties += 15   # Elevated sustained IOWait
+        penalties += penalty_cfg.get("iowait_sustained_elevated", 15)   # Elevated sustained IOWait
 
     # Trend penalty - penalize rising load trends
     if cpu_trend == "rising":
-        penalties += 15  # Rising CPU trend
+        penalties += penalty_cfg.get("cpu_trend_rising_penalty", 15)  # Rising CPU trend
     if mem_trend == "rising":
-        penalties += 15  # Rising memory trend
+        penalties += penalty_cfg.get("mem_trend_rising_penalty", 15)  # Rising memory trend
 
     # Max spike penalty - penalize brief spikes (less severe than sustained)
     if max_cpu_week > 95:
-        penalties += 30  # Extreme CPU spike
+        penalties += penalty_cfg.get("cpu_spike_extreme", 30)  # Extreme CPU spike
     elif max_cpu_week > 90:
-        penalties += 20  # Very high CPU spike
+        penalties += penalty_cfg.get("cpu_spike_very_high", 20)  # Very high CPU spike
     elif max_cpu_week > 80:
-        penalties += 10  # High CPU spike
+        penalties += penalty_cfg.get("cpu_spike_high", 10)  # High CPU spike
     elif max_cpu_week > 70:
-        penalties += 5   # Moderate CPU spike
+        penalties += penalty_cfg.get("cpu_spike_moderate", 5)   # Moderate CPU spike
 
     if max_mem_week > 95:
-        penalties += 30  # Extreme memory spike
+        penalties += penalty_cfg.get("mem_spike_extreme", 30)  # Extreme memory spike
     elif max_mem_week > 90:
-        penalties += 20  # Very high memory spike
+        penalties += penalty_cfg.get("mem_spike_very_high", 20)  # Very high memory spike
     elif max_mem_week > 85:
-        penalties += 10  # High memory spike
+        penalties += penalty_cfg.get("mem_spike_high", 10)  # High memory spike
     elif max_mem_week > 75:
-        penalties += 5   # Moderate memory spike
+        penalties += penalty_cfg.get("mem_spike_moderate", 5)   # Moderate memory spike
 
     # Predict post-migration load
     predicted = predict_post_migration_load(target_node, guest, adding=True)
@@ -1207,19 +1320,19 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
             )
 
     # Penalize if predicted load exceeds thresholds (don't disqualify)
-    if predicted["cpu"] > (cpu_threshold + 20):
-        penalties += 100  # Predicted CPU way over threshold
-    elif predicted["cpu"] > (cpu_threshold + 10):
-        penalties += 50   # Predicted CPU significantly over threshold
+    if predicted["cpu"] > (cpu_threshold + cpu_offset_2):
+        penalties += penalty_cfg.get("predicted_cpu_extreme_penalty", 100)  # Predicted CPU way over threshold
+    elif predicted["cpu"] > (cpu_threshold + cpu_offset_1):
+        penalties += penalty_cfg.get("predicted_cpu_high_penalty", 50)   # Predicted CPU significantly over threshold
     elif predicted["cpu"] > cpu_threshold:
-        penalties += 25   # Predicted CPU over threshold
+        penalties += penalty_cfg.get("predicted_cpu_over_penalty", 25)   # Predicted CPU over threshold
 
-    if predicted["mem"] > (mem_threshold + 20):
-        penalties += 100  # Predicted memory way over threshold
-    elif predicted["mem"] > (mem_threshold + 10):
-        penalties += 50   # Predicted memory significantly over threshold
+    if predicted["mem"] > (mem_threshold + mem_offset_2):
+        penalties += penalty_cfg.get("predicted_mem_extreme_penalty", 100)  # Predicted memory way over threshold
+    elif predicted["mem"] > (mem_threshold + mem_offset_1):
+        penalties += penalty_cfg.get("predicted_mem_high_penalty", 50)   # Predicted memory significantly over threshold
     elif predicted["mem"] > mem_threshold:
-        penalties += 25   # Predicted memory over threshold
+        penalties += penalty_cfg.get("predicted_mem_over_penalty", 25)   # Predicted memory over threshold
 
     # Health score (current state)
     health_score = calculate_node_health_score(target_node, metrics)
@@ -1531,11 +1644,14 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
     except Exception as e:
         print(f"Warning: Could not initialize Proxmox client for storage checks: {e}", file=sys.stderr)
 
+    # Load penalty configuration
+    penalty_cfg = load_penalty_config()
+
     # Minimum score improvement required to recommend migration (in points)
-    MIN_SCORE_IMPROVEMENT = 15
+    MIN_SCORE_IMPROVEMENT = penalty_cfg.get("min_score_improvement", 15)
 
     # Maintenance nodes get priority evacuation regardless of score
-    MAINTENANCE_SCORE_BOOST = 100  # Extra improvement to prioritize evacuation
+    MAINTENANCE_SCORE_BOOST = penalty_cfg.get("maintenance_score_boost", 100)  # Extra improvement to prioritize evacuation
 
     # Step 1: Calculate current score for each guest on its current node
     # Step 2: Calculate potential scores on all other nodes
@@ -2967,6 +3083,119 @@ def update_config():
             "message": "Configuration updated successfully",
             "config": config
         })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/penalty-config", methods=["GET"])
+def get_penalty_config():
+    """Get penalty scoring configuration with defaults"""
+    try:
+        penalty_config = load_penalty_config()
+        return jsonify({
+            "success": True,
+            "config": penalty_config,
+            "defaults": DEFAULT_PENALTY_CONFIG
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/penalty-config", methods=["POST"])
+def update_penalty_config():
+    """Update penalty scoring configuration"""
+    try:
+        data = request.json
+
+        if not data or 'config' not in data:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'config' in request body"
+            }), 400
+
+        penalty_config = data['config']
+
+        # Validate all values are numeric
+        for key, value in penalty_config.items():
+            if not isinstance(value, (int, float)):
+                return jsonify({
+                    "success": False,
+                    "error": f"Invalid value for {key}: must be a number"
+                }), 400
+
+        # Validate time period weights sum to 1.0 (with small tolerance for floating point)
+        weight_sum = penalty_config.get('weight_current', 0) + \
+                     penalty_config.get('weight_24h', 0) + \
+                     penalty_config.get('weight_7d', 0)
+
+        if abs(weight_sum - 1.0) > 0.01:  # Allow 1% tolerance
+            return jsonify({
+                "success": False,
+                "error": f"Time period weights must sum to 1.0 (currently: {weight_sum:.2f})"
+            }), 400
+
+        # Validate individual weight values are between 0 and 1
+        for weight_key in ['weight_current', 'weight_24h', 'weight_7d']:
+            if weight_key in penalty_config:
+                weight_val = penalty_config[weight_key]
+                if weight_val < 0 or weight_val > 1:
+                    return jsonify({
+                        "success": False,
+                        "error": f"{weight_key} must be between 0 and 1 (got: {weight_val})"
+                    }), 400
+
+        # Validate penalty values are non-negative (allow 0 to disable, but no negatives)
+        for key, value in penalty_config.items():
+            if key.endswith('_penalty') or key.endswith('_penalty_per_min'):
+                if value < 0:
+                    return jsonify({
+                        "success": False,
+                        "error": f"{key} cannot be negative (got: {value})"
+                    }), 400
+
+        # Validate threshold values are reasonable
+        for key, value in penalty_config.items():
+            if key.endswith('_threshold'):
+                if value < 0 or value > 100:
+                    return jsonify({
+                        "success": False,
+                        "error": f"{key} must be between 0 and 100 (got: {value})"
+                    }), 400
+
+        # Save to config file
+        if save_penalty_config(penalty_config):
+            return jsonify({
+                "success": True,
+                "message": "Penalty configuration updated successfully",
+                "config": penalty_config
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to save penalty configuration"
+            }), 500
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/penalty-config/reset", methods=["POST"])
+def reset_penalty_config():
+    """Reset penalty scoring configuration to defaults"""
+    try:
+        # Save defaults to config
+        if save_penalty_config(DEFAULT_PENALTY_CONFIG):
+            return jsonify({
+                "success": True,
+                "message": "Penalty configuration reset to defaults",
+                "config": DEFAULT_PENALTY_CONFIG
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to reset penalty configuration"
+            }), 500
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

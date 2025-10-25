@@ -299,6 +299,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [showPenaltyConfig, setShowPenaltyConfig] = useState(false);
           const [savingPenaltyConfig, setSavingPenaltyConfig] = useState(false);
           const [penaltyConfigSaved, setPenaltyConfigSaved] = useState(false);
+          const [openPenaltyConfigOnSettings, setOpenPenaltyConfigOnSettings] = useState(false);
 
           // Unified Time Windows form state
           const [showTimeWindowForm, setShowTimeWindowForm] = useState(false);
@@ -423,6 +424,33 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }, 1000);
             return () => clearInterval(interval);
           }, []);
+
+          // Handle auto-expansion of Penalty Config when navigating from Migration Recommendations
+          useEffect(() => {
+            if (currentPage === 'settings' && openPenaltyConfigOnSettings) {
+              // Use requestAnimationFrame to ensure DOM is ready
+              requestAnimationFrame(() => {
+                setShowAdvancedSettings(true);
+                // Wait for Advanced Settings to expand before expanding nested section
+                requestAnimationFrame(() => {
+                  setShowPenaltyConfig(true);
+                  // Scroll to the penalty config section after expansion
+                  setTimeout(() => {
+                    const penaltySection = Array.from(document.querySelectorAll('button, h3, span')).find(el =>
+                      el.textContent && el.textContent.includes('Penalty Scoring Configuration')
+                    );
+                    if (penaltySection) {
+                      penaltySection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, 400);
+                  // Reset flag after all state updates
+                  setTimeout(() => {
+                    setOpenPenaltyConfigOnSettings(false);
+                  }, 500);
+                });
+              });
+            }
+          }, [currentPage, openPenaltyConfigOnSettings]);
 
           // Auto-refresh automation status every 10 seconds
           useEffect(() => {
@@ -7055,7 +7083,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             )}
 
                             <div className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-                              Weighted scoring used for recommendations: 50% current, 30% 24h avg, 20% 7-day avg
+                              Weighted scoring used for recommendations: {penaltyConfig ? `${(penaltyConfig.weight_current * 100).toFixed(0)}% current, ${(penaltyConfig.weight_24h * 100).toFixed(0)}% 24h avg, ${(penaltyConfig.weight_7d * 100).toFixed(0)}% 7-day avg` : '50% current, 30% 24h avg, 20% 7-day avg'}
                             </div>
                             <div className="grid grid-cols-3 gap-3">
                               <div className="bg-white dark:bg-gray-800 rounded p-2">
@@ -7065,7 +7093,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     const current = selectedNode.cpu_percent || 0;
                                     const short = selectedNode.metrics.avg_cpu || current;
                                     const long = selectedNode.metrics.avg_cpu_week || short;
-                                    return ((current * 0.5) + (short * 0.3) + (long * 0.2)).toFixed(1);
+                                    const wCurrent = penaltyConfig?.weight_current ?? 0.5;
+                                    const w24h = penaltyConfig?.weight_24h ?? 0.3;
+                                    const w7d = penaltyConfig?.weight_7d ?? 0.2;
+                                    return ((current * wCurrent) + (short * w24h) + (long * w7d)).toFixed(1);
                                   })()}%
                                 </div>
                                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
@@ -7079,7 +7110,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     const current = selectedNode.mem_percent || 0;
                                     const short = selectedNode.metrics.avg_mem || current;
                                     const long = selectedNode.metrics.avg_mem_week || short;
-                                    return ((current * 0.5) + (short * 0.3) + (long * 0.2)).toFixed(1);
+                                    const wCurrent = penaltyConfig?.weight_current ?? 0.5;
+                                    const w24h = penaltyConfig?.weight_24h ?? 0.3;
+                                    const w7d = penaltyConfig?.weight_7d ?? 0.2;
+                                    return ((current * wCurrent) + (short * w24h) + (long * w7d)).toFixed(1);
                                   })()}%
                                 </div>
                                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
@@ -7093,7 +7127,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     const current = selectedNode.metrics.current_iowait || 0;
                                     const short = selectedNode.metrics.avg_iowait || current;
                                     const long = selectedNode.metrics.avg_iowait_week || short;
-                                    return ((current * 0.5) + (short * 0.3) + (long * 0.2)).toFixed(1);
+                                    const wCurrent = penaltyConfig?.weight_current ?? 0.5;
+                                    const w24h = penaltyConfig?.weight_24h ?? 0.3;
+                                    const w7d = penaltyConfig?.weight_7d ?? 0.2;
+                                    return ((current * wCurrent) + (short * w24h) + (long * w7d)).toFixed(1);
                                   })()}%
                                 </div>
                                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
@@ -8019,10 +8056,21 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               </p>
                               <ul className="ml-4 space-y-1 text-blue-700 dark:text-blue-300 text-xs list-disc">
                                 <li><span className="font-semibold">Suitability Rating:</span> 0-100% (lower penalties = higher rating). Penalties accumulate for unfavorable conditions.</li>
-                                <li><span className="font-semibold">Time weighting:</span> Current load (50%), 24h average (30%), 7-day average (20%)</li>
+                                <li><span className="font-semibold">Time weighting:</span> Current load ({penaltyConfig ? (penaltyConfig.weight_current * 100).toFixed(0) : '50'}%), 24h average ({penaltyConfig ? (penaltyConfig.weight_24h * 100).toFixed(0) : '30'}%), 7-day average ({penaltyConfig ? (penaltyConfig.weight_7d * 100).toFixed(0) : '20'}%)</li>
                                 <li><span className="font-semibold">Penalties applied for:</span> High CPU/memory/IOWait, rising trends, historical spikes, predicted post-migration overload</li>
                                 <li><span className="font-semibold">Smart decisions:</span> Balances immediate needs with long-term stability and capacity planning</li>
                               </ul>
+                              <div className="mt-3 text-xs">
+                                <button
+                                  onClick={() => {
+                                    setCurrentPage('settings');
+                                    setOpenPenaltyConfigOnSettings(true);
+                                  }}
+                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline font-semibold"
+                                >
+                                  Configure penalty scoring weights in Settings →
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}
