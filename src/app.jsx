@@ -2692,12 +2692,227 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </button>
 
                       {showPenaltyConfig && penaltyConfig && penaltyDefaults && (
-                        <div className="mt-4">
-                          {/* Content moved from Advanced Settings - will be populated below */}
+                        <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded mt-4">
                           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                            The penalty configuration interface will appear here when you expand this section.
-                            For now, you can still access it in the Advanced Settings section below.
+                            Configure penalty weights used by the scoring algorithm when evaluating migration targets. Lower penalties favor that condition.
                           </p>
+
+                          {/* Time Period Weights */}
+                          <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+                            <h4 className="font-medium text-gray-900 dark:text-white">Time Period Weights</h4>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              Control how much weight to give to recent vs. historical metrics. Values must sum to 1.0.
+                              <br/>Example for 6-hour window: Current=0.6, 24h=0.4, 7d=0.0
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Current Weight (default: {penaltyDefaults.weight_current})
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="1"
+                                  value={penaltyConfig.weight_current}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_current: parseFloat(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  24h Weight (default: {penaltyDefaults.weight_24h})
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="1"
+                                  value={penaltyConfig.weight_24h}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_24h: parseFloat(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  7d Weight (default: {penaltyDefaults.weight_7d})
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="1"
+                                  value={penaltyConfig.weight_7d}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_7d: parseFloat(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                            {(() => {
+                              const sum = (penaltyConfig.weight_current || 0) + (penaltyConfig.weight_24h || 0) + (penaltyConfig.weight_7d || 0);
+                              const isValid = Math.abs(sum - 1.0) < 0.01;
+                              return (
+                                <div className={`text-sm font-medium ${isValid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                  Sum: {sum.toFixed(2)} {isValid ? '✓ Valid' : '✗ Must equal 1.0'}
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* CPU Penalties */}
+                          <div className="space-y-3">
+                            <h4 className="font-medium text-gray-900 dark:text-white">CPU Penalties</h4>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              Applied when target node CPU usage is high. Higher values = avoid nodes with high CPU. Set to 0 to disable penalty.
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  High (default: {penaltyDefaults.cpu_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={penaltyConfig.cpu_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_high_penalty: parseInt(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Very High (default: {penaltyDefaults.cpu_very_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={penaltyConfig.cpu_very_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_very_high_penalty: parseInt(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Extreme (default: {penaltyDefaults.cpu_extreme_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={penaltyConfig.cpu_extreme_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_extreme_penalty: parseInt(e.target.value) || 0})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Memory Penalties */}
+                          <div className="space-y-3">
+                            <h4 className="font-medium text-gray-900 dark:text-white">Memory Penalties</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  High (default: {penaltyDefaults.mem_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.mem_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_high_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Very High (default: {penaltyDefaults.mem_very_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.mem_very_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_very_high_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Extreme (default: {penaltyDefaults.mem_extreme_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.mem_extreme_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_extreme_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* IOWait Penalties */}
+                          <div className="space-y-3">
+                            <h4 className="font-medium text-gray-900 dark:text-white">IOWait Penalties</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Moderate (default: {penaltyDefaults.iowait_moderate_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.iowait_moderate_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_moderate_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  High (default: {penaltyDefaults.iowait_high_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.iowait_high_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_high_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                  Severe (default: {penaltyDefaults.iowait_severe_penalty})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={penaltyConfig.iowait_severe_penalty}
+                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_severe_penalty: parseInt(e.target.value)})}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+              </div>
+                            </div>
+                          </div>
+
+                          {/* Success Message */}
+                          {penaltyConfigSaved && (
+                            <div className="p-3 bg-green-100 dark:bg-green-900/30 border border-green-500 rounded text-green-800 dark:text-green-300">
+                              Penalty configuration saved successfully!
+                            </div>
+                          )}
+
+                          {/* Action Buttons */}
+                          <div className="flex gap-2 pt-4">
+                            <button
+                              onClick={savePenaltyConfig}
+                              disabled={savingPenaltyConfig}
+                              className={`flex-1 px-4 py-2 text-white rounded font-medium disabled:opacity-50 transition-colors ${
+                                penaltyConfigSaved
+                                  ? 'bg-green-600 dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600'
+                                  : 'bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600'
+                              }`}
+                            >
+                              {savingPenaltyConfig ? 'Saving...' : penaltyConfigSaved ? 'Saved!' : 'Save Penalty Config'}
+                            </button>
+                            <button
+                              onClick={resetPenaltyConfig}
+                              disabled={savingPenaltyConfig}
+                              className="flex-1 px-4 py-2 bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 font-medium disabled:opacity-50"
+                            >
+                              Reset to Defaults
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2926,245 +3141,6 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </div>
                     </div>
 
-                    <hr className="border-gray-300 dark:border-gray-600" />
-
-                    {/* Penalty Configuration Section */}
-                    <div>
-                      <button
-                        onClick={() => setShowPenaltyConfig(!showPenaltyConfig)}
-                        className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 hover:text-blue-600 dark:hover:text-blue-400"
-                      >
-                        <span>Penalty Scoring Configuration</span>
-                        {showPenaltyConfig ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                      </button>
-
-                      {showPenaltyConfig && penaltyConfig && penaltyDefaults && (
-                        <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                            Configure penalty weights used by the scoring algorithm when evaluating migration targets. Lower penalties favor that condition.
-                          </p>
-
-                          {/* Time Period Weights */}
-                          <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
-                            <h4 className="font-medium text-gray-900 dark:text-white">Time Period Weights</h4>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">
-                              Control how much weight to give to recent vs. historical metrics. Values must sum to 1.0.
-                              <br/>Example for 6-hour window: Current=0.6, 24h=0.4, 7d=0.0
-                            </p>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  Current Weight (default: {penaltyDefaults.weight_current})
-                                </label>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  max="1"
-                                  value={penaltyConfig.weight_current}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_current: parseFloat(e.target.value) || 0})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  24h Weight (default: {penaltyDefaults.weight_24h})
-                                </label>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  max="1"
-                                  value={penaltyConfig.weight_24h}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_24h: parseFloat(e.target.value) || 0})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  7d Weight (default: {penaltyDefaults.weight_7d})
-                                </label>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  max="1"
-                                  value={penaltyConfig.weight_7d}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, weight_7d: parseFloat(e.target.value) || 0})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                            </div>
-                            {(() => {
-                              const sum = (penaltyConfig.weight_current || 0) + (penaltyConfig.weight_24h || 0) + (penaltyConfig.weight_7d || 0);
-                              const isValid = Math.abs(sum - 1.0) < 0.01;
-                              return (
-                                <div className={`text-sm font-medium ${isValid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                  Sum: {sum.toFixed(2)} {isValid ? '✓ Valid' : '✗ Must equal 1.0'}
-                                </div>
-                              );
-                            })()}
-                          </div>
-
-                          {/* CPU Penalties */}
-                          <div className="space-y-3">
-                            <h4 className="font-medium text-gray-900 dark:text-white">CPU Penalties</h4>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">
-                              Applied when target node CPU usage is high. Higher values = avoid nodes with high CPU. Set to 0 to disable penalty.
-                            </p>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  High (default: {penaltyDefaults.cpu_high_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={penaltyConfig.cpu_high_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_high_penalty: parseInt(e.target.value) || 0})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  Very High (default: {penaltyDefaults.cpu_very_high_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={penaltyConfig.cpu_very_high_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_very_high_penalty: parseInt(e.target.value) || 0})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  Extreme (default: {penaltyDefaults.cpu_extreme_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={penaltyConfig.cpu_extreme_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, cpu_extreme_penalty: parseInt(e.target.value) || 0})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Memory Penalties */}
-                          <div className="space-y-3">
-                            <h4 className="font-medium text-gray-900 dark:text-white">Memory Penalties</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  High (default: {penaltyDefaults.mem_high_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  value={penaltyConfig.mem_high_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_high_penalty: parseInt(e.target.value)})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  Very High (default: {penaltyDefaults.mem_very_high_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  value={penaltyConfig.mem_very_high_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_very_high_penalty: parseInt(e.target.value)})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  Extreme (default: {penaltyDefaults.mem_extreme_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  value={penaltyConfig.mem_extreme_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, mem_extreme_penalty: parseInt(e.target.value)})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* IOWait Penalties */}
-                          <div className="space-y-3">
-                            <h4 className="font-medium text-gray-900 dark:text-white">IOWait Penalties</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  Moderate (default: {penaltyDefaults.iowait_moderate_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  value={penaltyConfig.iowait_moderate_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_moderate_penalty: parseInt(e.target.value)})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  High (default: {penaltyDefaults.iowait_high_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  value={penaltyConfig.iowait_high_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_high_penalty: parseInt(e.target.value)})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                                  Severe (default: {penaltyDefaults.iowait_severe_penalty})
-                                </label>
-                                <input
-                                  type="number"
-                                  value={penaltyConfig.iowait_severe_penalty}
-                                  onChange={(e) => setPenaltyConfig({...penaltyConfig, iowait_severe_penalty: parseInt(e.target.value)})}
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Success Message */}
-                          {penaltyConfigSaved && (
-                            <div className="p-3 bg-green-100 dark:bg-green-900/30 border border-green-500 rounded text-green-800 dark:text-green-300">
-                              Penalty configuration saved successfully!
-                            </div>
-                          )}
-
-                          {/* Action Buttons */}
-                          <div className="flex gap-2 pt-4">
-                            <button
-                              onClick={savePenaltyConfig}
-                              disabled={savingPenaltyConfig}
-                              className={`flex-1 px-4 py-2 text-white rounded font-medium disabled:opacity-50 transition-colors ${
-                                penaltyConfigSaved
-                                  ? 'bg-green-600 dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600'
-                                  : 'bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600'
-                              }`}
-                            >
-                              {savingPenaltyConfig ? 'Saving...' : penaltyConfigSaved ? 'Saved!' : 'Save Penalty Config'}
-                            </button>
-                            <button
-                              onClick={resetPenaltyConfig}
-                              disabled={savingPenaltyConfig}
-                              className="flex-1 px-4 py-2 bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 font-medium disabled:opacity-50"
-                            >
-                              Reset to Defaults
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <hr className="border-gray-300 dark:border-gray-600" />
 
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Service Management</h3>
