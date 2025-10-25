@@ -709,14 +709,14 @@ install_dependencies() {
   spinner $! "Installing Python 3, venv, and pip"
   echo ""
 
-  # Install curl (needed for Node.js installation)
+  # Install utilities (curl needed for Node.js installation)
   (
     pct exec "$CTID" -- bash -c "
       export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y curl >/dev/null 2>&1
+      apt-get install -y curl jq git >/dev/null 2>&1
     "
   ) &
-  spinner $! "Installing curl"
+  spinner $! "Installing utilities (curl, jq, git)"
   echo ""
 
   # Install Node.js (for Babel compilation)
@@ -739,16 +739,6 @@ install_dependencies() {
     "
   ) &
   spinner $! "Installing Nginx web server"
-  echo ""
-
-  # Install utilities
-  (
-    pct exec "$CTID" -- bash -c "
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y curl jq git >/dev/null 2>&1
-    "
-  ) &
-  spinner $! "Installing utilities (curl, jq, git)"
   echo ""
 
   msg_ok "All dependencies installed successfully"
@@ -973,15 +963,19 @@ echo "Frontend Build Process"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Check if we need to build (detect if index.html has inline JSX)
+# Check if we need to build
+# Build is required if: (1) legacy inline JSX exists, (2) JSX source exists, or (3) app.js doesn't exist
 if [ -f index.html ] && grep -q 'type="text/babel"' index.html; then
   echo "⚠  Legacy inline JSX detected - build required"
   NEEDS_BUILD=true
 elif [ -f src/app.jsx ] || [ -f src/app_fixed.jsx ]; then
-  echo "✓ Pre-compiled architecture detected"
+  echo "✓ Pre-compiled architecture detected - building"
+  NEEDS_BUILD=true
+elif [ ! -f assets/js/app.js ]; then
+  echo "⚠  app.js not found - build required"
   NEEDS_BUILD=true
 else
-  echo "ℹ  No JSX source found - assuming pre-built"
+  echo "✓ Pre-built app.js found - skipping build"
   NEEDS_BUILD=false
 fi
 
@@ -1092,6 +1086,12 @@ INDEX_FOOTER
 else
   echo "ℹ  Skipping build - copying pre-built files..."
   cp -f index.html /var/www/html/
+  if [ -d assets ]; then
+    echo "  → Copying assets directory..."
+    mkdir -p /var/www/html/assets
+    cp -r assets/* /var/www/html/assets/ 2>/dev/null || true
+    echo "  ✓ Assets copied"
+  fi
 fi
 BUILD_EOF
 
