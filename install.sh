@@ -1032,10 +1032,8 @@ BABEL_CONFIG
     COMPILED_SIZE=$(stat -c%s /var/www/html/assets/js/app.js 2>/dev/null)
     echo "  ✓ Compiled to app.js (${COMPILED_SIZE} bytes)"
   elif [ -f src/app.jsx ]; then
-    # Add hooks import on the fly
-    echo 'const { useState, useEffect, useMemo, useCallback, useRef } = React;' | \
-      cat - src/app.jsx | \
-      npx babel --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
+    # Compile directly from src/app.jsx (already has hooks import)
+    npx babel src/app.jsx --out-file /var/www/html/assets/js/app.js 2>&1 | grep -v "deoptimised" || true
     COMPILED_SIZE=$(stat -c%s /var/www/html/assets/js/app.js 2>/dev/null)
     echo "  ✓ Compiled to app.js (${COMPILED_SIZE} bytes)"
   fi
