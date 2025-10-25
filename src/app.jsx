@@ -246,10 +246,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             };
           });
 
-          // Cluster map view mode: 'usage' or 'allocated'
+          // Cluster map view mode: 'cpu', 'memory', 'allocated', 'disk_io', or 'network'
           const [clusterMapViewMode, setClusterMapViewMode] = useState(() => {
             const saved = localStorage.getItem('clusterMapViewMode');
-            return saved || 'usage';
+            // Migrate old 'usage' value to 'cpu'
+            if (saved === 'usage') return 'cpu';
+            return saved || 'cpu';
           });
 
           // Migration dialog state
@@ -6634,14 +6636,24 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           <span className="text-sm text-gray-600 dark:text-gray-400">View by:</span>
                           <div className="flex rounded-lg bg-gray-100 dark:bg-gray-700 p-1">
                             <button
-                              onClick={() => setClusterMapViewMode('usage')}
+                              onClick={() => setClusterMapViewMode('cpu')}
                               className={`px-3 py-1 text-sm rounded transition-colors ${
-                                clusterMapViewMode === 'usage'
+                                clusterMapViewMode === 'cpu'
                                   ? 'bg-blue-600 text-white'
                                   : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                               }`}
                             >
-                              Usage
+                              CPU
+                            </button>
+                            <button
+                              onClick={() => setClusterMapViewMode('memory')}
+                              className={`px-3 py-1 text-sm rounded transition-colors ${
+                                clusterMapViewMode === 'memory'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                              }`}
+                            >
+                              Memory
                             </button>
                             <button
                               onClick={() => setClusterMapViewMode('allocated')}
@@ -6684,7 +6696,13 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           {Object.values(data.nodes).map(node => {
                             const nodeGuests = Object.values(data.guests || {}).filter(g => g.node === node.name && g.status === 'running');
                             const maxResources = Math.max(...Object.values(data.guests || {}).map(g => {
-                              if (clusterMapViewMode === 'allocated') {
+                              if (clusterMapViewMode === 'cpu') {
+                                // Use CPU usage %
+                                return g.cpu_current || 0;
+                              } else if (clusterMapViewMode === 'memory') {
+                                // Use Memory usage %
+                                return g.mem_max_gb > 0 ? ((g.mem_used_gb || 0) / g.mem_max_gb) * 100 : 0;
+                              } else if (clusterMapViewMode === 'allocated') {
                                 // Use allocated resources (cores + GB)
                                 const cpuCores = g.cpu_cores || 0;
                                 const memGB = g.mem_max_gb || 0;
@@ -6700,10 +6718,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 const netOut = (g.net_out_bps || 0) / (1024 * 1024);
                                 return netIn + netOut;
                               } else {
-                                // Use current usage (CPU% + Memory%)
-                                const cpuUsage = g.cpu_current || 0;
-                                const memPercent = g.mem_max_gb > 0 ? ((g.mem_used_gb || 0) / g.mem_max_gb) * 100 : 0;
-                                return cpuUsage + memPercent;
+                                // Default: Use CPU usage
+                                return g.cpu_current || 0;
                               }
                             }), 1);
 
@@ -6795,7 +6811,13 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     const memPercent = guest.mem_max_gb > 0 ? ((guest.mem_used_gb || 0) / guest.mem_max_gb) * 100 : 0;
 
                                     let resourceValue;
-                                    if (clusterMapViewMode === 'allocated') {
+                                    if (clusterMapViewMode === 'cpu') {
+                                      // Use CPU usage %
+                                      resourceValue = cpuUsage;
+                                    } else if (clusterMapViewMode === 'memory') {
+                                      // Use Memory usage %
+                                      resourceValue = memPercent;
+                                    } else if (clusterMapViewMode === 'allocated') {
                                       // Use allocated resources (cores + GB)
                                       const cpuCores = guest.cpu_cores || 0;
                                       const memGB = guest.mem_max_gb || 0;
@@ -6811,8 +6833,8 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                       const netOut = (guest.net_out_bps || 0) / (1024 * 1024);
                                       resourceValue = netIn + netOut;
                                     } else {
-                                      // Use current usage (CPU% + Memory%)
-                                      resourceValue = cpuUsage + memPercent;
+                                      // Default: Use CPU usage
+                                      resourceValue = cpuUsage;
                                     }
 
                                     const sizeRatio = maxResources > 0 ? (resourceValue / maxResources) : 0.3;
@@ -6911,13 +6933,17 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           </div>
                           <div className="flex items-center gap-2">
                             <span>
-                              {clusterMapViewMode === 'allocated'
+                              {clusterMapViewMode === 'cpu'
+                                ? 'Circle size = CPU usage (%)'
+                                : clusterMapViewMode === 'memory'
+                                ? 'Circle size = Memory usage (%)'
+                                : clusterMapViewMode === 'allocated'
                                 ? 'Circle size = CPU cores + Memory allocated (GB)'
                                 : clusterMapViewMode === 'disk_io'
                                 ? 'Circle size = Disk I/O (Read + Write MB/s)'
                                 : clusterMapViewMode === 'network'
                                 ? 'Circle size = Network I/O (In + Out MB/s)'
-                                : 'Circle size = CPU usage (%) + Memory usage (%)'}
+                                : 'Circle size = CPU usage (%)'}
                             </span>
                           </div>
                         </div>
