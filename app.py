@@ -812,7 +812,7 @@ def node_scores():
                 mem_threshold=mem_threshold
             )
 
-            # Get weighted metrics for display
+            # Get weighted metrics for display using configured weights
             metrics = node.get('metrics', {})
             immediate_cpu = metrics.get("current_cpu", 0)
             immediate_mem = metrics.get("current_mem", 0)
@@ -823,9 +823,15 @@ def node_scores():
             long_cpu = metrics.get("avg_cpu_week", 0)
             long_mem = metrics.get("avg_mem_week", 0)
 
+            # Use configured weights from penalty config
+            penalty_cfg = load_penalty_config()
+            weight_current = penalty_cfg.get("weight_current", 0.5)
+            weight_24h = penalty_cfg.get("weight_24h", 0.3)
+            weight_7d = penalty_cfg.get("weight_7d", 0.2)
+
             if metrics.get("has_historical"):
-                weighted_cpu = (immediate_cpu * 0.5) + (short_cpu * 0.3) + (long_cpu * 0.2)
-                weighted_mem = (immediate_mem * 0.5) + (short_mem * 0.3) + (long_mem * 0.2)
+                weighted_cpu = (immediate_cpu * weight_current) + (short_cpu * weight_24h) + (long_cpu * weight_7d)
+                weighted_mem = (immediate_mem * weight_current) + (short_mem * weight_24h) + (long_mem * weight_7d)
             else:
                 weighted_cpu = immediate_cpu
                 weighted_mem = immediate_mem
@@ -1098,11 +1104,37 @@ def calculate_node_health_score(node: Dict, metrics: Dict) -> float:
     """
     Calculate comprehensive health score for a node (0-100, lower is better/healthier)
     Considers CPU, Memory, IOWait, Load Average, and Storage pressure
+    Uses configured time period weights
     """
-    # Get current/average metrics
-    cpu = metrics.get("avg_cpu", 0) if metrics.get("has_historical") else metrics.get("current_cpu", 0)
-    mem = metrics.get("avg_mem", 0) if metrics.get("has_historical") else metrics.get("current_mem", 0)
-    iowait = metrics.get("avg_iowait", 0) if metrics.get("has_historical") else metrics.get("current_iowait", 0)
+    # Load penalty config to get time period weights
+    penalty_cfg = load_penalty_config()
+    weight_current = penalty_cfg.get("weight_current", 0.5)
+    weight_24h = penalty_cfg.get("weight_24h", 0.3)
+    weight_7d = penalty_cfg.get("weight_7d", 0.2)
+
+    # Get metrics at different time scales
+    immediate_cpu = metrics.get("current_cpu", 0)
+    immediate_mem = metrics.get("current_mem", 0)
+    immediate_iowait = metrics.get("current_iowait", 0)
+
+    short_cpu = metrics.get("avg_cpu", 0)
+    short_mem = metrics.get("avg_mem", 0)
+    short_iowait = metrics.get("avg_iowait", 0)
+
+    long_cpu = metrics.get("avg_cpu_week", 0)
+    long_mem = metrics.get("avg_mem_week", 0)
+    long_iowait = metrics.get("avg_iowait_week", 0)
+
+    # Calculate weighted metrics using configured weights
+    if metrics.get("has_historical"):
+        cpu = (immediate_cpu * weight_current) + (short_cpu * weight_24h) + (long_cpu * weight_7d)
+        mem = (immediate_mem * weight_current) + (short_mem * weight_24h) + (long_mem * weight_7d)
+        iowait = (immediate_iowait * weight_current) + (short_iowait * weight_24h) + (long_iowait * weight_7d)
+    else:
+        cpu = immediate_cpu
+        mem = immediate_mem
+        iowait = immediate_iowait
+
     load = metrics.get("avg_load", 0)
     cores = node.get("cpu_cores", 1)
 
@@ -1133,13 +1165,38 @@ def predict_post_migration_load(node: Dict, guest: Dict, adding: bool = True) ->
     """
     Predict node load after adding or removing a guest
     Returns predicted CPU%, Memory%, and IOWait%
+    Uses configured time period weights
     """
     metrics = node.get("metrics", {})
 
-    # Current state
-    current_cpu = metrics.get("avg_cpu", 0) if metrics.get("has_historical") else metrics.get("current_cpu", 0)
-    current_mem = metrics.get("avg_mem", 0) if metrics.get("has_historical") else metrics.get("current_mem", 0)
-    current_iowait = metrics.get("avg_iowait", 0) if metrics.get("has_historical") else metrics.get("current_iowait", 0)
+    # Load penalty config to get time period weights
+    penalty_cfg = load_penalty_config()
+    weight_current = penalty_cfg.get("weight_current", 0.5)
+    weight_24h = penalty_cfg.get("weight_24h", 0.3)
+    weight_7d = penalty_cfg.get("weight_7d", 0.2)
+
+    # Get metrics at different time scales
+    immediate_cpu = metrics.get("current_cpu", 0)
+    immediate_mem = metrics.get("current_mem", 0)
+    immediate_iowait = metrics.get("current_iowait", 0)
+
+    short_cpu = metrics.get("avg_cpu", 0)
+    short_mem = metrics.get("avg_mem", 0)
+    short_iowait = metrics.get("avg_iowait", 0)
+
+    long_cpu = metrics.get("avg_cpu_week", 0)
+    long_mem = metrics.get("avg_mem_week", 0)
+    long_iowait = metrics.get("avg_iowait_week", 0)
+
+    # Calculate weighted current state using configured weights
+    if metrics.get("has_historical"):
+        current_cpu = (immediate_cpu * weight_current) + (short_cpu * weight_24h) + (long_cpu * weight_7d)
+        current_mem = (immediate_mem * weight_current) + (short_mem * weight_24h) + (long_mem * weight_7d)
+        current_iowait = (immediate_iowait * weight_current) + (short_iowait * weight_24h) + (long_iowait * weight_7d)
+    else:
+        current_cpu = immediate_cpu
+        current_mem = immediate_mem
+        current_iowait = immediate_iowait
 
     # Guest resource usage
     guest_cpu = guest.get("cpu_current", 0)  # Percentage of guest's allocated CPUs
@@ -1251,21 +1308,23 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
         penalties += penalty_cfg.get("mem_high_penalty", 20)   # High current memory load
 
     # Sustained load penalty - penalize sustained high averages
-    if long_cpu > 90:
-        penalties += penalty_cfg.get("cpu_sustained_critical", 150)  # Critically high sustained CPU
-    elif long_cpu > 80:
-        penalties += penalty_cfg.get("cpu_sustained_very_high", 80)   # Very high sustained CPU
-    elif long_cpu > 70:
-        penalties += penalty_cfg.get("cpu_sustained_high", 40)   # High sustained CPU
+    # Sustained load penalties - only apply if using weekly historical data (7d weight > 0)
+    if weight_7d > 0:
+        if long_cpu > 90:
+            penalties += penalty_cfg.get("cpu_sustained_critical", 150)  # Critically high sustained CPU
+        elif long_cpu > 80:
+            penalties += penalty_cfg.get("cpu_sustained_very_high", 80)   # Very high sustained CPU
+        elif long_cpu > 70:
+            penalties += penalty_cfg.get("cpu_sustained_high", 40)   # High sustained CPU
 
-    if long_mem > 90:
-        penalties += penalty_cfg.get("mem_sustained_critical", 150)  # Critically high sustained memory
-    elif long_mem > 80:
-        penalties += penalty_cfg.get("mem_sustained_very_high", 80)   # Very high sustained memory
-    elif long_mem > 70:
-        penalties += penalty_cfg.get("mem_sustained_high", 40)   # High sustained memory
+        if long_mem > 90:
+            penalties += penalty_cfg.get("mem_sustained_critical", 150)  # Critically high sustained memory
+        elif long_mem > 80:
+            penalties += penalty_cfg.get("mem_sustained_very_high", 80)   # Very high sustained memory
+        elif long_mem > 70:
+            penalties += penalty_cfg.get("mem_sustained_high", 40)   # High sustained memory
 
-    # IOWait penalty - penalize high disk wait times
+    # IOWait penalty - penalize high disk wait times (current always applies)
     if immediate_iowait > 30:
         penalties += penalty_cfg.get("iowait_extreme_penalty", 80)   # Extreme current IOWait
     elif immediate_iowait > 20:
@@ -1273,37 +1332,41 @@ def calculate_target_node_score(target_node: Dict, guest: Dict, pending_target_g
     elif immediate_iowait > 10:
         penalties += penalty_cfg.get("iowait_high_penalty", 20)   # High current IOWait
 
-    if long_iowait > 20:
-        penalties += penalty_cfg.get("iowait_sustained_critical", 60)   # Critically high sustained IOWait
-    elif long_iowait > 15:
-        penalties += penalty_cfg.get("iowait_sustained_high", 30)   # High sustained IOWait
-    elif long_iowait > 10:
-        penalties += penalty_cfg.get("iowait_sustained_elevated", 15)   # Elevated sustained IOWait
+    # Sustained IOWait penalties - only apply if using weekly historical data (7d weight > 0)
+    if weight_7d > 0:
+        if long_iowait > 20:
+            penalties += penalty_cfg.get("iowait_sustained_critical", 60)   # Critically high sustained IOWait
+        elif long_iowait > 15:
+            penalties += penalty_cfg.get("iowait_sustained_high", 30)   # High sustained IOWait
+        elif long_iowait > 10:
+            penalties += penalty_cfg.get("iowait_sustained_elevated", 15)   # Elevated sustained IOWait
 
-    # Trend penalty - penalize rising load trends
-    if cpu_trend == "rising":
-        penalties += penalty_cfg.get("cpu_trend_rising_penalty", 15)  # Rising CPU trend
-    if mem_trend == "rising":
-        penalties += penalty_cfg.get("mem_trend_rising_penalty", 15)  # Rising memory trend
+    # Trend penalty - only apply if using historical data (24h or 7d weights > 0)
+    if weight_24h > 0 or weight_7d > 0:
+        if cpu_trend == "rising":
+            penalties += penalty_cfg.get("cpu_trend_rising_penalty", 15)  # Rising CPU trend
+        if mem_trend == "rising":
+            penalties += penalty_cfg.get("mem_trend_rising_penalty", 15)  # Rising memory trend
 
-    # Max spike penalty - penalize brief spikes (less severe than sustained)
-    if max_cpu_week > 95:
-        penalties += penalty_cfg.get("cpu_spike_extreme", 30)  # Extreme CPU spike
-    elif max_cpu_week > 90:
-        penalties += penalty_cfg.get("cpu_spike_very_high", 20)  # Very high CPU spike
-    elif max_cpu_week > 80:
-        penalties += penalty_cfg.get("cpu_spike_high", 10)  # High CPU spike
-    elif max_cpu_week > 70:
-        penalties += penalty_cfg.get("cpu_spike_moderate", 5)   # Moderate CPU spike
+    # Max spike penalty - only apply if using weekly historical data (7d weight > 0)
+    if weight_7d > 0:
+        if max_cpu_week > 95:
+            penalties += penalty_cfg.get("cpu_spike_extreme", 30)  # Extreme CPU spike
+        elif max_cpu_week > 90:
+            penalties += penalty_cfg.get("cpu_spike_very_high", 20)  # Very high CPU spike
+        elif max_cpu_week > 80:
+            penalties += penalty_cfg.get("cpu_spike_high", 10)  # High CPU spike
+        elif max_cpu_week > 70:
+            penalties += penalty_cfg.get("cpu_spike_moderate", 5)   # Moderate CPU spike
 
-    if max_mem_week > 95:
-        penalties += penalty_cfg.get("mem_spike_extreme", 30)  # Extreme memory spike
-    elif max_mem_week > 90:
-        penalties += penalty_cfg.get("mem_spike_very_high", 20)  # Very high memory spike
-    elif max_mem_week > 85:
-        penalties += penalty_cfg.get("mem_spike_high", 10)  # High memory spike
-    elif max_mem_week > 75:
-        penalties += penalty_cfg.get("mem_spike_moderate", 5)   # Moderate memory spike
+        if max_mem_week > 95:
+            penalties += penalty_cfg.get("mem_spike_extreme", 30)  # Extreme memory spike
+        elif max_mem_week > 90:
+            penalties += penalty_cfg.get("mem_spike_very_high", 20)  # Very high memory spike
+        elif max_mem_week > 85:
+            penalties += penalty_cfg.get("mem_spike_high", 10)  # High memory spike
+        elif max_mem_week > 75:
+            penalties += penalty_cfg.get("mem_spike_moderate", 5)   # Moderate memory spike
 
     # Predict post-migration load
     predicted = predict_post_migration_load(target_node, guest, adding=True)
@@ -1795,11 +1858,26 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
                 src_metrics = nodes[src_node_name].get("metrics", {})
                 tgt_metrics = nodes[best_target].get("metrics", {})
 
+                # Use configured weights for metrics
+                config = load_config()
+                weight_current = config.get('automated_migrations', {}).get('weight_config', {}).get('weight_current', 1)
+                weight_24h = config.get('automated_migrations', {}).get('weight_config', {}).get('weight_24h', 0)
+                weight_7d = config.get('automated_migrations', {}).get('weight_config', {}).get('weight_7d', 0)
+
+                # Normalize weights to sum to 1
+                total_weight = weight_current + weight_24h + weight_7d
+                if total_weight > 0:
+                    w_current = weight_current / total_weight
+                    w_24h = weight_24h / total_weight
+                    w_7d = weight_7d / total_weight
+                else:
+                    w_current, w_24h, w_7d = 1, 0, 0
+
                 # Weighted metrics for reason
-                src_cpu = (src_metrics.get("current_cpu", 0) * 0.5 + src_metrics.get("avg_cpu", 0) * 0.3 + src_metrics.get("avg_cpu_week", 0) * 0.2)
-                src_mem = (src_metrics.get("current_mem", 0) * 0.5 + src_metrics.get("avg_mem", 0) * 0.3 + src_metrics.get("avg_mem_week", 0) * 0.2)
-                tgt_cpu = (tgt_metrics.get("current_cpu", 0) * 0.5 + tgt_metrics.get("avg_cpu", 0) * 0.3 + tgt_metrics.get("avg_cpu_week", 0) * 0.2)
-                tgt_mem = (tgt_metrics.get("current_mem", 0) * 0.5 + tgt_metrics.get("avg_mem", 0) * 0.3 + tgt_metrics.get("avg_mem_week", 0) * 0.2)
+                src_cpu = (src_metrics.get("current_cpu", 0) * w_current + src_metrics.get("avg_cpu", 0) * w_24h + src_metrics.get("avg_cpu_week", 0) * w_7d)
+                src_mem = (src_metrics.get("current_mem", 0) * w_current + src_metrics.get("avg_mem", 0) * w_24h + src_metrics.get("avg_mem_week", 0) * w_7d)
+                tgt_cpu = (tgt_metrics.get("current_cpu", 0) * w_current + tgt_metrics.get("avg_cpu", 0) * w_24h + tgt_metrics.get("avg_cpu_week", 0) * w_7d)
+                tgt_mem = (tgt_metrics.get("current_mem", 0) * w_current + tgt_metrics.get("avg_mem", 0) * w_24h + tgt_metrics.get("avg_mem_week", 0) * w_7d)
 
                 if src_cpu > src_mem:
                     reason = f"Balance CPU load (src: {src_cpu:.1f}%, target: {tgt_cpu:.1f}%)"
