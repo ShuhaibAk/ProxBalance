@@ -3324,8 +3324,62 @@ def import_config():
                 "validation_warnings": validation_result['warnings']
             }), 400
 
-        # Create automatic backup before importing
+        # Test imported API token validity
+        token_valid = False
+        token_test_error = None
+        imported_token_id = config_data.get('proxmox_api_token_id', '')
+        imported_token_secret = config_data.get('proxmox_api_token_secret', '')
+
+        if imported_token_id and imported_token_secret:
+            try:
+                proxmox_host = config_data.get('proxmox_host', 'localhost')
+                proxmox_port = config_data.get('proxmox_port', 8006)
+                verify_ssl = config_data.get('proxmox_verify_ssl', False)
+
+                # Test token with a simple API call
+                test_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/cluster/resources"
+                test_headers = {'Authorization': f'PVEAPIToken={imported_token_id}={imported_token_secret}'}
+                test_response = requests.get(test_url, headers=test_headers, verify=verify_ssl, timeout=5)
+
+                if test_response.status_code == 200:
+                    token_valid = True
+                else:
+                    token_test_error = f"HTTP {test_response.status_code}"
+            except Exception as e:
+                token_test_error = str(e)
+
+        # If imported token is invalid, offer to keep current token
         current_config = load_config()
+        if not token_valid and not current_config.get('error'):
+            current_token_id = current_config.get('proxmox_api_token_id', '')
+            current_token_secret = current_config.get('proxmox_api_token_secret', '')
+
+            # Test current token
+            current_token_valid = False
+            if current_token_id and current_token_secret:
+                try:
+                    proxmox_host = current_config.get('proxmox_host', 'localhost')
+                    proxmox_port = current_config.get('proxmox_port', 8006)
+                    verify_ssl = current_config.get('proxmox_verify_ssl', False)
+
+                    test_url = f"https://{proxmox_host}:{proxmox_port}/api2/json/cluster/resources"
+                    test_headers = {'Authorization': f'PVEAPIToken={current_token_id}={current_token_secret}'}
+                    test_response = requests.get(test_url, headers=test_headers, verify=verify_ssl, timeout=5)
+
+                    if test_response.status_code == 200:
+                        current_token_valid = True
+                except Exception:
+                    pass
+
+            # If current token is valid and imported is not, preserve current token
+            if current_token_valid:
+                validation_result['warnings'].append(
+                    f"Imported API token is invalid ({token_test_error}). Using existing valid token instead."
+                )
+                config_data['proxmox_api_token_id'] = current_token_id
+                config_data['proxmox_api_token_secret'] = current_token_secret
+
+        # Create automatic backup before importing
         if not current_config.get('error'):
             backup_dir = os.path.join(BASE_PATH, 'backups')
             os.makedirs(backup_dir, exist_ok=True)
