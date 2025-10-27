@@ -4653,11 +4653,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               type="checkbox"
                               checked={config.distribution_balancing?.enabled || false}
                               onChange={(e) => {
+                                const enabled = e.target.checked;
                                 const newConfig = { ...config };
                                 if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
-                                newConfig.distribution_balancing.enabled = e.target.checked;
+                                newConfig.distribution_balancing.enabled = enabled;
                                 setConfig(newConfig);
-                                saveConfig(newConfig);
+                                saveAutomationConfig({ distribution_balancing: { ...newConfig.distribution_balancing } });
                               }}
                               className="sr-only peer"
                             />
@@ -4683,7 +4684,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
                               newConfig.distribution_balancing.guest_count_threshold = parseInt(e.target.value);
                               setConfig(newConfig);
-                              saveConfig(newConfig);
+                              saveAutomationConfig({ distribution_balancing: { ...newConfig.distribution_balancing } });
                             }}
                             className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
                           />
@@ -4707,7 +4708,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
                               newConfig.distribution_balancing.max_cpu_cores = parseInt(e.target.value);
                               setConfig(newConfig);
-                              saveConfig(newConfig);
+                              saveAutomationConfig({ distribution_balancing: { ...newConfig.distribution_balancing } });
                             }}
                             className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
                           />
@@ -4731,7 +4732,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
                               newConfig.distribution_balancing.max_memory_gb = parseInt(e.target.value);
                               setConfig(newConfig);
-                              saveConfig(newConfig);
+                              saveAutomationConfig({ distribution_balancing: { ...newConfig.distribution_balancing } });
                             }}
                             className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
                           />
