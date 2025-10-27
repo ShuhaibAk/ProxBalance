@@ -269,6 +269,16 @@ def can_auto_migrate(guest: Dict[str, Any], rules: Dict[str, Any]) -> Tuple[bool
         if 'auto-migrate-ok' not in tags:
             return False, "Missing 'auto-migrate-ok' tag (whitelist mode)"
 
+    # Check for bind mounts on containers (LXC only)
+    # Only block if container has UNSHARED bind mounts
+    # Shared bind mounts (shared=1) can be migrated automatically
+    if guest.get('type') == 'CT':
+        mount_info = guest.get('mount_points', {})
+        if mount_info.get('has_unshared_bind_mount', False):
+            mount_count = len([mp for mp in mount_info.get('mount_points', [])
+                              if mp.get('is_bind_mount', False) and not mp.get('is_shared', False)])
+            return False, f"Container has {mount_count} unshared bind mount(s) - migration requires manual intervention"
+
     return True, "OK"
 
 
@@ -428,6 +438,8 @@ def validates_resource_improvement(recommendation: Dict[str, Any]) -> Tuple[bool
     import re
 
     reason = recommendation.get('reason', '')
+    is_dist_bal = recommendation.get('distribution_balancing', False)
+    prefix = "⚖️ Distribution Balancing: " if is_dist_bal else ""
 
     # Look for pattern like "Balance X load (src: Y%, target: Z%)"
     pattern = r'Balance\s+(\w+)\s+load\s+\(src:\s+([\d.]+)%,\s+target:\s+([\d.]+)%\)'
@@ -443,9 +455,9 @@ def validates_resource_improvement(recommendation: Dict[str, Any]) -> Tuple[bool
 
     # Target should have LOWER load than source for balance migrations
     if target_pct >= src_pct:
-        return False, f"Invalid balance: {resource_type} target load ({target_pct:.1f}%) >= source load ({src_pct:.1f}%)"
+        return False, f"{prefix}Would not improve load: {resource_type} target ({target_pct:.1f}%) >= source ({src_pct:.1f}%)"
 
-    return True, f"Valid balance: {resource_type} source ({src_pct:.1f}%) > target ({target_pct:.1f}%)"
+    return True, f"{prefix}Would improve load: {resource_type} source ({src_pct:.1f}%) > target ({target_pct:.1f}%)"
 
 
 def get_recommendations(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -683,6 +695,56 @@ def is_vm_in_cooldown(vmid: int, cooldown_minutes: int) -> bool:
     return False
 
 
+def is_rollback_migration(vmid: int, source_node: str, target_node: str, rollback_window_hours: int = 24) -> bool:
+    """
+    Check if this migration would be a rollback (migrating VM back to a node it was recently migrated from).
+
+    Args:
+        vmid: VM ID to check
+        source_node: Current source node
+        target_node: Proposed target node
+        rollback_window_hours: Time window in hours to check for rollbacks (default: 24)
+
+    Returns:
+        True if this would be a rollback migration, False otherwise
+    """
+    if rollback_window_hours <= 0:
+        return False
+
+    history = load_history()
+    migrations = history.get('migrations', [])
+
+    # Check if this VM was recently migrated FROM the target TO the source
+    now = datetime.utcnow()
+    rollback_threshold = now - timedelta(hours=rollback_window_hours)
+
+    for migration in reversed(migrations):  # Check most recent first
+        if migration.get('vmid') == vmid and migration.get('status') == 'success':
+            try:
+                migration_time = datetime.fromisoformat(migration.get('timestamp', ''))
+
+                # Only check migrations within the rollback window
+                if migration_time < rollback_threshold:
+                    # Past the rollback window, no need to check older entries
+                    return False
+
+                # Check if this would be a rollback:
+                # Previous migration went FROM target_node TO source_node
+                # Now we want to go FROM source_node TO target_node (rollback!)
+                if (migration.get('source_node') == target_node and
+                    migration.get('target_node') == source_node):
+                    logger.info(
+                        f"VM {vmid} rollback detected: would migrate back to {target_node} "
+                        f"(was migrated from {target_node} to {source_node} at {migration_time.isoformat()})"
+                    )
+                    return True
+
+            except (ValueError, TypeError):
+                continue
+
+    return False
+
+
 def record_migration(migration_record: Dict[str, Any]):
     """
     Record a migration to the history file.
@@ -742,6 +804,23 @@ def main():
     """Main automation logic."""
     lock_fd = None
     activity_log = []  # Initialize activity log at function level
+    run_start_time = time_module.time()  # Track run duration
+
+    # Initialize last_run summary object
+    last_run_summary = {
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'status': 'running',  # Will be updated at the end
+        'migrations_executed': 0,
+        'migrations_successful': 0,
+        'duration_seconds': 0,
+        'mode': 'unknown',
+        'decisions': [],
+        'safety_checks': {
+            'migration_window': 'Unknown',
+            'cluster_health': 'Unknown',
+            'running_migrations': 0
+        }
+    }
 
     try:
         lock_fd = acquire_lock()
@@ -750,7 +829,7 @@ def main():
         # Update last_run immediately at start of check (so UI knows we're running)
         try:
             history = load_history()
-            history.setdefault('state', {})['last_run'] = datetime.utcnow().isoformat() + 'Z'
+            history.setdefault('state', {})['last_run'] = last_run_summary
             save_history(history)
         except Exception as e:
             logger.error(f"Failed to update last_run at start: {e}")
@@ -762,26 +841,34 @@ def main():
         # 2. Check if enabled
         if not auto_config.get('enabled', False):
             logger.info("Automated migrations disabled in config")
+            last_run_summary['status'] = 'disabled'
+            last_run_summary['mode'] = 'disabled'
             return 0
 
         # 3. Check migration window
         in_window, window_msg = is_in_migration_window(config)
+        last_run_summary['safety_checks']['migration_window'] = window_msg
         if not in_window:
             logger.info(f"Not in migration window: {window_msg}")
+            last_run_summary['status'] = 'skipped'
             return 0
 
         # 4. Check blackout window
         in_blackout, blackout_msg = is_in_blackout_window(config)
         if in_blackout:
             logger.info(f"In blackout window: {blackout_msg}")
+            last_run_summary['status'] = 'skipped'
+            last_run_summary['safety_checks']['migration_window'] = blackout_msg
             return 0
 
         # 5. Safety checks
         cache_data = read_cache()
         safe, safety_msg = perform_safety_checks(config, cache_data)
+        last_run_summary['safety_checks']['cluster_health'] = safety_msg
         if not safe:
             logger.warning(f"Safety check failed: {safety_msg}")
             send_notification(config, 'failure', {'reason': safety_msg})
+            last_run_summary['status'] = 'failed'
             return 1
 
         logger.info(f"Safety checks passed: {safety_msg}")
@@ -819,6 +906,7 @@ def main():
             logger.warning(f"Could not check running migrations: {e}")
 
         logger.info(f"Currently {running_count} migrations running cluster-wide")
+        last_run_summary['safety_checks']['running_migrations'] = running_count
 
         # Calculate how many new migrations we can start
         available_slots = max(0, max_concurrent - running_count)
@@ -826,9 +914,11 @@ def main():
 
         if available_slots == 0:
             logger.info(f"Maximum concurrent migrations ({max_concurrent}) already running, skipping this run")
+            last_run_summary['status'] = 'skipped'
             return 0
 
         dry_run = auto_config.get('dry_run', True)
+        last_run_summary['mode'] = 'dry_run' if dry_run else 'live'
 
         logger.info(f"Will attempt up to {max_new_migrations} migrations (dry_run={dry_run}, max_concurrent={max_concurrent}, available_slots={available_slots})")
 
@@ -855,12 +945,32 @@ def main():
                 logger.info("No more recommendations available")
                 break
 
+            # Helper function to create decision entry with full metadata
+            def create_decision(vmid, guest, source_node, target_node, action, reason, recommendation):
+                return {
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'type': guest.get('type', 'Unknown'),
+                    'source_node': source_node,
+                    'target_node': target_node,
+                    'target_node_score': recommendation.get('target_node_score'),
+                    'action': action,
+                    'reason': reason,
+                    'confidence_score': recommendation.get('confidence_score'),
+                    'tags': guest.get('tags', {}).get('all_tags', []),
+                    'ha_managed': guest.get('ha_managed', False),
+                    'has_bind_mount': guest.get('mount_points', {}).get('has_bind_mount', False),
+                    'has_unshared_bind_mount': guest.get('mount_points', {}).get('has_unshared_bind_mount', False),
+                    'has_passthrough': guest.get('local_disks', {}).get('has_passthrough', False)
+                }
+
             # Re-filter recommendations with current cooldown/confidence/tag rules
             filtered = []
             filtered_reasons = []  # Track why VMs were filtered out
             for r in recommendations:
                 vmid = r.get('vmid')
                 source_node = r.get('source_node')
+                target_node = r.get('target_node')
                 is_maintenance_evac = source_node in maintenance_nodes
 
                 # Get guest info
@@ -872,14 +982,28 @@ def main():
 
                 # Check cooldown
                 if not is_maintenance_evac and is_vm_in_cooldown(vmid, cooldown_minutes):
-                    filtered_reasons.append(f"{vm_name} ({vmid}): in cooldown period")
+                    reason = "In cooldown period"
+                    filtered_reasons.append(f"{vm_name} ({vmid}): {reason.lower()}")
+                    last_run_summary['decisions'].append(create_decision(vmid, guest, source_node, target_node, 'filtered', reason, r))
                     continue
 
-                # Check confidence threshold
+                # Check rollback detection (if enabled) - bypass for distribution balancing and maintenance evacuations
+                is_distribution_balancing = r.get('distribution_balancing', False)
+                rollback_enabled = rules.get('rollback_detection_enabled', True)
+                rollback_window_hours = rules.get('rollback_window_hours', 24)
+                if not is_maintenance_evac and not is_distribution_balancing and rollback_enabled and is_rollback_migration(vmid, source_node, target_node, rollback_window_hours):
+                    reason = f"Rollback detected (would migrate back within {rollback_window_hours}h)"
+                    filtered_reasons.append(f"{vm_name} ({vmid}): {reason.lower()}")
+                    last_run_summary['decisions'].append(create_decision(vmid, guest, source_node, target_node, 'filtered', reason, r))
+                    continue
+
+                # Check confidence threshold (bypass for distribution balancing and maintenance evacuations)
                 confidence = r.get('confidence_score', 0)
                 min_confidence = rules.get('min_confidence_score', 75)
-                if not is_maintenance_evac and confidence < min_confidence:
-                    filtered_reasons.append(f"{vm_name} ({vmid}): confidence {confidence}% < {min_confidence}%")
+                if not is_maintenance_evac and not is_distribution_balancing and confidence < min_confidence:
+                    reason = f"Confidence {confidence}% below minimum {min_confidence}%"
+                    filtered_reasons.append(f"{vm_name} ({vmid}): {reason.lower()}")
+                    last_run_summary['decisions'].append(create_decision(vmid, guest, source_node, target_node, 'filtered', reason, r))
                     continue
 
                 # For maintenance evacuations, bypass tag checks
@@ -888,6 +1012,7 @@ def main():
                     can_migrate, tag_reason = can_auto_migrate(guest, rules)
                     if not can_migrate:
                         filtered_reasons.append(f"{vm_name} ({vmid}): {tag_reason}")
+                        last_run_summary['decisions'].append(create_decision(vmid, guest, source_node, target_node, 'filtered', tag_reason, r))
                         continue
 
                     # Check exclude group affinity
@@ -896,6 +1021,7 @@ def main():
                     )
                     if not ok:
                         filtered_reasons.append(f"{vm_name} ({vmid}): {affinity_reason}")
+                        last_run_summary['decisions'].append(create_decision(vmid, guest, source_node, target_node, 'filtered', affinity_reason, r))
                         continue
 
                     # Validate resource improvement for balance migrations
@@ -903,6 +1029,7 @@ def main():
                     if not is_valid:
                         logger.info(f"Skipping VM {vmid}: {balance_msg}")
                         filtered_reasons.append(f"{vm_name} ({vmid}): {balance_msg}")
+                        last_run_summary['decisions'].append(create_decision(vmid, guest, source_node, target_node, 'filtered', balance_msg, r))
                         continue
 
                 filtered.append(r)
@@ -916,14 +1043,38 @@ def main():
                     save_history(history)
                 except Exception as e:
                     logger.error(f"Failed to save filter reasons: {e}")
+
+                # Log all original recommendations as "skipped" or "filtered" for visibility
+                for r in recommendations:
+                    guest = cache_data.get('guests', {}).get(str(r.get('vmid')), {})
+                    # Check if this was already logged as filtered
+                    already_logged = any(d.get('vmid') == r.get('vmid') for d in last_run_summary['decisions'])
+                    if not already_logged:
+                        last_run_summary['decisions'].append(create_decision(
+                            r['vmid'],
+                            guest,
+                            r.get('source_node', r.get('current_node')),
+                            r['target_node'],
+                            'skipped',
+                            "Not selected (all recommendations filtered)",
+                            r
+                        ))
+
+                # Save decisions immediately so UI can see them
+                try:
+                    history = load_history()
+                    history.setdefault('state', {})['last_run'] = last_run_summary
+                    save_history(history)
+                except Exception as e:
+                    logger.error(f"Failed to save decisions: {e}")
+
                 break
 
             # Pick the best recommendation
             rec = filtered[0]
-            migrations_attempted += 1
             vmid = rec['vmid']
             target = rec['target_node']
-            source = rec['source_node']
+            source = rec.get('source_node', rec.get('current_node'))  # Support both field names
             guest_type = rec.get('type', 'VM')  # Default to VM if type not specified
 
             # Check if target node is safe (allows evacuation from overloaded source nodes)
@@ -938,6 +1089,17 @@ def main():
                     'action': 'skipped',
                     'reason': target_msg
                 })
+                # Add to decisions for last_run summary
+                last_run_summary['decisions'].append({
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'source_node': source,
+                    'target_node': target,
+                    'target_node_score': rec.get('target_node_score'),
+                    'action': 'skipped',
+                    'reason': target_msg,
+                    'confidence_score': rec.get('confidence_score')
+                })
                 continue
 
             # Check if this VM already has a migration in progress
@@ -951,12 +1113,80 @@ def main():
                     'action': 'skipped',
                     'reason': 'Migration already in progress'
                 })
+                # Add to decisions for last_run summary
+                last_run_summary['decisions'].append({
+                    'vmid': vmid,
+                    'name': guest.get('name', f'VM-{vmid}'),
+                    'source_node': source,
+                    'target_node': target,
+                    'target_node_score': rec.get('target_node_score'),
+                    'action': 'skipped',
+                    'reason': 'Migration already in progress',
+                    'confidence_score': rec.get('confidence_score')
+                })
                 continue
 
             target_score = rec.get('target_node_score', 'N/A')
             logger.info(f"Migrating {guest_type} {vmid} ({rec['name']}) from {source} to {target} (score: {target_score}) - {rec['reason']}")
 
+            # Populate ALL decisions BEFORE migration starts so UI can see them immediately
+            # 1. Add the decision for the migration we're about to execute (with 'pending' status)
+            guest_info = cache_data.get('guests', {}).get(str(vmid), {})
+            pending_decision = {
+                'vmid': vmid,
+                'name': rec['name'],
+                'type': guest_info.get('type', 'Unknown'),
+                'source_node': rec.get('source_node') or rec.get('current_node'),
+                'target_node': target,
+                'target_node_score': rec.get('target_node_score'),
+                'action': 'pending',  # Will be updated to executed/failed after migration
+                'reason': rec['reason'],
+                'confidence_score': rec['confidence_score'],
+                'status': 'pending',
+                'priority_rank': 1,  # This is the highest priority recommendation
+                'total_candidates': len(filtered),
+                'selected_reason': f'✅ SELECTED - Highest priority recommendation (ranked #1 of {len(filtered)})',
+                'tags': guest_info.get('tags', {}).get('all_tags', []),
+                'ha_managed': guest_info.get('ha_managed', False),
+                'has_bind_mount': guest_info.get('mount_points', {}).get('has_bind_mount', False),
+                'has_unshared_bind_mount': guest_info.get('mount_points', {}).get('has_unshared_bind_mount', False),
+                'has_passthrough': guest_info.get('local_disks', {}).get('has_passthrough', False),
+                'distribution_balancing': rec.get('distribution_balancing', False)
+            }
+            last_run_summary['decisions'].append(pending_decision)
+
+            # 2. Add all remaining recommendations as "skipped" (lower priority)
+            for idx, r in enumerate(filtered, start=1):
+                if r['vmid'] != vmid:  # Skip the one we're executing
+                    guest = cache_data.get('guests', {}).get(str(r['vmid']), {})
+                    decision = create_decision(
+                        r['vmid'],
+                        guest,
+                        r.get('source_node', r.get('current_node')),
+                        r['target_node'],
+                        'skipped',
+                        f"Lower priority - Ranked #{idx} of {len(filtered)}",
+                        r
+                    )
+                    decision['priority_rank'] = idx
+                    decision['total_candidates'] = len(filtered)
+                    decision['distribution_balancing'] = r.get('distribution_balancing', False)
+                    last_run_summary['decisions'].append(decision)
+
+            # 3. Save decisions BEFORE migration starts so UI can see them immediately
+            try:
+                history = load_history()
+                history.setdefault('state', {})['last_run'] = last_run_summary
+                save_history(history)
+                logger.info(f"Saved {len(last_run_summary['decisions'])} decisions before migration starts")
+            except Exception as e:
+                logger.error(f"Failed to save decisions before migration: {e}")
+
             result = execute_migration(vmid, target, source, guest_type, config, dry_run=dry_run)
+
+            # Track decision outcome
+            migrations_attempted += 1
+            last_run_summary['migrations_executed'] = migrations_attempted
 
             # Determine status based on result
             if result.get('success'):
@@ -970,7 +1200,7 @@ def main():
                 'timestamp': datetime.utcnow().isoformat(),
                 'vmid': vmid,
                 'name': rec['name'],
-                'source_node': rec['source_node'],
+                'source_node': rec.get('source_node') or rec.get('current_node'),
                 'target_node': target,
                 'target_node_score': rec.get('target_node_score'),  # Include node score
                 'reason': rec['reason'],
@@ -992,8 +1222,21 @@ def main():
 
             record_migration(migration_record)
 
+            # UPDATE the pending decision with execution results
+            # Find the pending decision we added before migration started
+            for decision in last_run_summary['decisions']:
+                if decision['vmid'] == vmid and decision.get('action') == 'pending':
+                    # Update the pending decision with results
+                    decision['action'] = 'executed' if result.get('success') else 'failed'
+                    decision['status'] = status
+                    if result.get('error'):
+                        decision['error'] = result['error']
+                    logger.info(f"Updated decision for VM {vmid} from 'pending' to '{decision['action']}'")
+                    break
+
             if result.get('success'):
                 success_count += 1
+                last_run_summary['migrations_successful'] = success_count
 
                 # Grace period: wait for cluster to settle before next migration
                 # Skip grace period if this is the last migration or if it's a dry run
@@ -1006,6 +1249,16 @@ def main():
                     break
 
         logger.info(f"Completed: {success_count}/{migrations_attempted} successful")
+
+        # Determine final status
+        if migrations_attempted == 0:
+            last_run_summary['status'] = 'no_action'
+        elif success_count == migrations_attempted:
+            last_run_summary['status'] = 'success'
+        elif success_count > 0:
+            last_run_summary['status'] = 'partial'
+        else:
+            last_run_summary['status'] = 'failed'
 
         send_notification(config, 'complete', {
             'total': migrations_attempted,
@@ -1026,16 +1279,28 @@ def main():
 
     except Exception as e:
         logger.exception(f"Unexpected error in automigrate: {e}")
+        last_run_summary['status'] = 'error'
         return 1
 
     finally:
-        # Always update state to record this automation run (even if exited early)
+        # Calculate total run duration
+        last_run_summary['duration_seconds'] = int(time_module.time() - run_start_time)
+
+        # Always save last_run summary (even if exited early)
         try:
             history = load_history()
-            history.setdefault('state', {})['last_run'] = datetime.utcnow().isoformat() + 'Z'
+            history.setdefault('state', {})['last_run'] = last_run_summary
+
+            # Archive completed run to run_history (keep last 50 runs)
+            if last_run_summary.get('status') in ['success', 'partial', 'failed', 'no_action']:
+                history.setdefault('run_history', []).insert(0, last_run_summary.copy())
+                # Keep only last 50 runs
+                history['run_history'] = history['run_history'][:50]
+                logger.info(f"Archived run to history (total: {len(history['run_history'])} runs)")
+
             save_history(history)
         except Exception as e:
-            logger.error(f"Failed to update state: {e}")
+            logger.error(f"Failed to update last_run summary: {e}")
 
         if lock_fd:
             release_lock(lock_fd)

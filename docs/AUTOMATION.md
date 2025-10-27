@@ -287,6 +287,251 @@ Use: HA configurations, redundancy requirements
 
 See [Guest Tag Management](../README.md#tagging-guests) for details.
 
+#### Minimum Score Improvement Threshold
+
+Controls the minimum score improvement (in points) required for a migration to be recommended.
+
+**Location**: Configuration → Penalty Scoring → Minimum Score Improvement
+
+```
+Default: 15 points
+Range: 1-100 points
+```
+
+**What it does**:
+- Filters out migrations that provide only marginal benefit
+- Higher values = more conservative (fewer migrations)
+- Lower values = more aggressive (more migrations)
+
+**Recommended Values**:
+```
+Conservative (20-30): Only migrate when there's significant benefit
+Balanced (10-15): Default setting, good balance between optimization and stability
+Aggressive (5-10): More sensitive to small imbalances
+Very Aggressive (1-5): Consider even minor improvements (testing only)
+```
+
+**Impact on Automation**:
+- Affects which recommendations appear in the automation queue
+- Works alongside confidence score threshold
+- Both thresholds must be met for a migration to execute
+
+**Example**:
+```
+If min_score_improvement = 15:
+- VM with 14-point improvement: Skipped (below threshold)
+- VM with 18-point improvement: Considered for migration
+- VM with 25-point improvement: Higher priority candidate
+```
+
+**When to Adjust**:
+- **Too many migrations**: Increase to 20-30
+- **Cluster imbalanced**: Decrease to 5-10
+- **Small VMs not migrating**: Decrease to 5-10 (or use Distribution Balancing)
+- **Production stability focus**: Keep at 15-20
+
+---
+
+#### Rollback Detection
+
+Prevents migration loops by detecting when a VM would be migrated back to a node it was recently migrated from.
+
+**Location**: Configuration → Automated Migrations → Rollback Detection
+
+```
+Default: Enabled
+Rollback Window: 24 hours
+Range: 1-168 hours
+```
+
+**What it does**:
+- Checks migration history before executing a migration
+- Detects if VM was recently migrated FROM the target node TO the source node
+- Prevents migration loops and unnecessary back-and-forth moves
+- Improves cluster stability
+
+**How it works**:
+```
+Example scenario:
+1. VM 100 migrated from pve3 → pve5 (1 hour ago)
+2. Automation suggests migrating VM 100 from pve5 → pve3
+3. Rollback detection: BLOCKS migration (within 24-hour window)
+4. VM stays on pve5, preventing migration loop
+```
+
+**Configuration**:
+```json
+{
+  "automated_migrations": {
+    "rules": {
+      "rollback_detection_enabled": true,
+      "rollback_window_hours": 24
+    }
+  }
+}
+```
+
+**When to Enable**:
+- **Always recommended** for production environments
+- Prevents oscillating migrations between nodes
+- Protects against unstable cluster conditions
+- Reduces unnecessary migration overhead
+
+**When to Disable**:
+- Testing migration behavior
+- Deliberately moving VMs back to original nodes
+- Troubleshooting cluster issues
+- **Not recommended** for production
+
+**Rollback Window Tuning**:
+```
+Short window (1-12 hours):
+- Faster recovery from intentional migrations
+- May not catch all oscillation patterns
+- Use in stable, well-tuned clusters
+
+Default window (24 hours):
+- Good balance for most environments
+- Catches daily oscillation patterns
+- Recommended for production
+
+Long window (48-168 hours):
+- Very conservative approach
+- Catches weekly oscillation patterns
+- Use for critical production workloads
+```
+
+**Bypassed for**:
+- Maintenance mode evacuations (priority override)
+- Emergency node evacuations
+
+---
+
+#### Distribution Balancing
+
+Automatically balances small VMs/CTs across nodes to distribute guest counts evenly.
+
+**Location**: Configuration → Automated Migrations → Distribution Balancing
+
+```
+Default: Disabled
+Guest Count Threshold: 2
+Max CPU Cores: 2 (0 = no limit)
+Max Memory GB: 4 (0 = no limit)
+```
+
+**What it does**:
+- Identifies nodes with uneven guest distribution
+- Recommends migrating small VMs/CTs from overloaded to underloaded nodes
+- Complements performance-based recommendations
+- Only migrates guests meeting size criteria
+
+**How it works**:
+```
+Example scenario:
+1. pve4 has 19 running guests, pve6 has 4 running guests (diff = 15)
+2. Guest count difference >= threshold (2): ELIGIBLE for distribution balancing
+3. Find small guests on pve4 (≤ 2 CPU cores, ≤ 4 GB memory)
+4. Generate recommendations to migrate eligible guests: pve4 → pve6
+5. Recommendations have moderate confidence (60) and "distribution_balancing" flag
+```
+
+**Configuration**:
+```json
+{
+  "distribution_balancing": {
+    "enabled": false,
+    "guest_count_threshold": 2,
+    "max_cpu_cores": 2,
+    "max_memory_gb": 4
+  }
+}
+```
+
+**Settings**:
+
+**Guest Count Threshold** (Range: 1-10)
+- Minimum difference in guest counts to trigger balancing
+- Higher values = less sensitive (only balance major imbalances)
+- Lower values = more sensitive (balance minor imbalances)
+- Example: threshold=2 means pve4(10 guests) vs pve6(7 guests) won't trigger
+
+**Max CPU Cores** (Range: 0-32, 0 = no limit)
+- Only migrate guests with ≤ this many CPU cores
+- Prevents migrating large, resource-intensive VMs
+- Default: 2 cores (targets small utility VMs)
+- Example: max_cpu_cores=2 means 4-core VMs stay put
+- Set to 0 to disable CPU filtering
+
+**Max Memory GB** (Range: 0-256, 0 = no limit)
+- Only migrate guests with ≤ this amount of memory
+- Prevents migrating memory-intensive workloads
+- Default: 4 GB (targets small utility VMs)
+- Example: max_memory_gb=4 means 8GB VMs stay put
+- Set to 0 to disable memory filtering
+
+**Recommended Values**:
+```
+Conservative (threshold=3, cpu=1, mem=2):
+- Only balance significant imbalances
+- Only migrate very small guests (DNS, proxies)
+- Minimal distribution activity
+
+Balanced (threshold=2, cpu=2, mem=4):
+- Default settings
+- Targets small utility VMs (monitoring, services)
+- Good balance between distribution and stability
+- Suitable for most clusters
+
+Aggressive (threshold=1, cpu=4, mem=8):
+- Balance even minor imbalances
+- Migrate small to medium guests
+- More distribution activity
+```
+
+**When to Enable**:
+- Clusters with uneven guest distribution
+- Nodes with significantly different guest counts
+- Small utility VMs (DNS, monitoring, etc.)
+- When performance-based recommendations don't address imbalance
+
+**When to Disable**:
+- Clusters already evenly distributed
+- All guests are large (>16GB, >4 cores)
+- Specific placement requirements
+- Testing performance-based migrations only
+
+**Integration with Other Features**:
+- **Works alongside** performance-based recommendations
+- **Respects** tag-based exclusions (ignore, affinity)
+- **Respects** storage compatibility checks
+- **Bypassed for** maintenance mode evacuations
+- **Subject to** confidence score threshold (60)
+- **Subject to** minimum score improvement threshold
+- **Subject to** rollback detection
+
+**Recommendations**:
+```
+- Flag: "distribution_balancing": true
+- Confidence Score: 60 (moderate)
+- Score Improvement: 10 points
+- Reason: "Distribution balancing: pve4 (19 guests) → pve6 (4 guests)"
+```
+
+**Impact**:
+- Helps achieve even guest distribution
+- Reduces node overload from guest count alone
+- Improves cluster resource utilization
+- May not improve performance metrics directly
+
+**Tuning Tips**:
+- **Too many distribution migrations**: Increase guest_count_threshold to 3-4
+- **Large VMs being migrated**: Decrease max_cpu_cores/max_memory_gb
+- **Not enough balancing**: Decrease guest_count_threshold to 1
+- **Want to balance specific guests**: Adjust max_cpu_cores/max_memory_gb to match
+
+---
+
 #### Maintenance Mode Evacuation
 
 When a node is placed in maintenance mode:

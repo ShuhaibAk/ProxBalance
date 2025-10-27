@@ -1649,6 +1649,129 @@ def check_storage_compatibility(guest: Dict, src_node_name: str, tgt_node_name: 
         return True  # Allow migration on error to avoid blocking valid migrations
 
 
+def calculate_node_guest_counts(nodes: Dict, guests: Dict) -> Dict[str, int]:
+    """
+    Calculate the number of running guests on each node.
+
+    Args:
+        nodes: Dictionary of node data
+        guests: Dictionary of guest data
+
+    Returns:
+        Dictionary mapping node names to running guest counts
+    """
+    guest_counts = {}
+
+    # Initialize all nodes with 0 counts
+    for node_name in nodes.keys():
+        guest_counts[node_name] = 0
+
+    # Count running guests per node
+    for guest_id, guest in guests.items():
+        if guest.get('status') == 'running':
+            node = guest.get('node')
+            if node in guest_counts:
+                guest_counts[node] += 1
+
+    return guest_counts
+
+
+def find_distribution_candidates(
+    nodes: Dict,
+    guests: Dict,
+    guest_count_threshold: int = 2,
+    max_cpu_cores: int = 2,
+    max_memory_gb: int = 4
+) -> List[Dict]:
+    """
+    Find small guests on overloaded nodes that could be migrated for distribution balancing.
+
+    Args:
+        nodes: Dictionary of node data
+        guests: Dictionary of guest data
+        guest_count_threshold: Minimum difference in guest counts to trigger balancing
+        max_cpu_cores: Maximum CPU cores for a guest to be considered (0 = no limit)
+        max_memory_gb: Maximum memory in GB for a guest to be considered (0 = no limit)
+
+    Returns:
+        List of candidate dictionaries with guest and migration details
+    """
+    guest_counts = calculate_node_guest_counts(nodes, guests)
+
+    # Find nodes with max and min guest counts
+    if not guest_counts:
+        return []
+
+    max_count = max(guest_counts.values())
+    min_count = min(guest_counts.values())
+
+    # Only proceed if difference exceeds threshold
+    if (max_count - min_count) < guest_count_threshold:
+        return []
+
+    # Find overloaded and underloaded nodes
+    overloaded_nodes = [node for node, count in guest_counts.items() if count == max_count]
+    underloaded_nodes = [node for node, count in guest_counts.items() if count == min_count]
+
+    if not overloaded_nodes or not underloaded_nodes:
+        return []
+
+    candidates = []
+
+    # Find small guests on overloaded nodes
+    for guest_id, guest in guests.items():
+        if guest.get('status') != 'running':
+            continue
+
+        current_node = guest.get('node')
+        if current_node not in overloaded_nodes:
+            continue
+
+        # Skip guests with ignore tag
+        tags = guest.get('tags', {})
+        if isinstance(tags, dict) and tags.get('has_ignore', False):
+            print(f"Skipping {guest_id} ({guest.get('name')}) - has ignore tag", file=sys.stderr)
+            continue
+
+        # Check guest size constraints
+        # Try both field names for compatibility with different cache formats
+        cpu_cores = guest.get('cpu_cores', guest.get('maxcpu', 0))
+
+        # Try mem_max_gb first, then fall back to maxmem in bytes
+        memory_gb = guest.get('mem_max_gb', 0)
+        if memory_gb == 0:
+            memory_bytes = guest.get('maxmem', 0)
+            memory_gb = memory_bytes / (1024**3) if memory_bytes > 0 else 0
+
+        # Apply size filters (0 means no limit)
+        if max_cpu_cores > 0 and cpu_cores > max_cpu_cores:
+            print(f"Skipping {guest_id} ({guest.get('name')}) - CPU cores {cpu_cores} > {max_cpu_cores}", file=sys.stderr)
+            continue
+        if max_memory_gb > 0 and memory_gb > max_memory_gb:
+            print(f"Skipping {guest_id} ({guest.get('name')}) - Memory {memory_gb:.2f} GB > {max_memory_gb} GB", file=sys.stderr)
+            continue
+
+        # This guest is a candidate for distribution balancing
+        for target_node in underloaded_nodes:
+            if target_node == current_node:
+                continue
+
+            candidates.append({
+                'guest_id': guest_id,
+                'guest_name': guest.get('name', f'VM {guest_id}'),
+                'guest_type': guest.get('type', 'unknown'),
+                'source_node': current_node,
+                'target_node': target_node,
+                'source_count': guest_counts[current_node],
+                'target_count': guest_counts[target_node],
+                'cpu_cores': cpu_cores,
+                'memory_gb': round(memory_gb, 2),
+                'reason': f"⚖️ DISTRIBUTION BALANCING: {current_node} ({guest_counts[current_node]} guests) → {target_node} ({guest_counts[target_node]} guests)"
+            })
+
+    return candidates
+
+
 def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 60.0, mem_threshold: float = 70.0, iowait_threshold: float = 30.0, maintenance_nodes: set = None) -> List[Dict]:
     """
     Generate intelligent migration recommendations using pure score-based analysis
@@ -1656,7 +1779,7 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
     Pure score-based approach:
     - Calculates suitability score for each guest on its current node
     - Calculates suitability score for each guest on all potential target nodes
-    - Recommends migration if score improvement is significant (>15 points)
+    - Recommends migration if score improvement is significant (>min_score_improvement points, default 15)
     - No arbitrary thresholds - uses penalty-based scoring system
 
     Scoring factors (lower score = better):
@@ -1744,6 +1867,39 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
             # Skip stopped guests (unless on maintenance node)
             if guest.get("status") != "running" and src_node_name not in maintenance_nodes:
                 continue
+
+            # Skip guests with passthrough disks (hardware-bound, cannot migrate)
+            local_disk_info = guest.get("local_disks", {})
+            if local_disk_info.get("is_pinned", False):
+                # Passthrough disks cannot be migrated even for maintenance
+                continue
+
+            # Check for bind mounts on containers
+            has_bind_mount = False
+            bind_mount_warning = None
+            if guest.get("type") == "CT":
+                mount_info = guest.get("mount_points", {})
+
+                # Only skip if container has UNSHARED bind mounts
+                # Shared bind mounts (shared=1) can be migrated if path exists on target
+                if mount_info.get("has_unshared_bind_mount", False):
+                    has_bind_mount = True
+                    mount_points = mount_info.get("mount_points", [])
+                    unshared_bind_mounts = [mp for mp in mount_points if mp.get("is_bind_mount", False) and not mp.get("is_shared", False)]
+                    bind_paths = [mp.get("source", "") for mp in unshared_bind_mounts]
+                    bind_mount_warning = f"Container has {len(unshared_bind_mounts)} unshared bind mount(s): {', '.join(bind_paths[:2])}{'...' if len(bind_paths) > 2 else ''}. Migration requires --restart --force and manual path verification on target node."
+
+                    # Skip CTs with unshared bind mounts (unless on maintenance node where evacuation is priority)
+                    if src_node_name not in maintenance_nodes:
+                        continue
+
+                # For shared bind mounts, add informational note but allow migration
+                elif mount_info.get("has_shared_mount", False):
+                    mount_points = mount_info.get("mount_points", [])
+                    shared_mounts = [mp for mp in mount_points if mp.get("is_bind_mount", False) and mp.get("is_shared", False)]
+                    if shared_mounts:
+                        shared_paths = [mp.get("source", "") for mp in shared_mounts]
+                        bind_mount_warning = f"Container has {len(shared_mounts)} shared bind mount(s): {', '.join(shared_paths[:2])}{'...' if len(shared_paths) > 2 else ''}. Ensure paths exist on target node."
 
             # Calculate current score (how well current node suits this guest)
             current_score = calculate_target_node_score(src_node, guest, {}, cpu_threshold, mem_threshold)
@@ -1889,7 +2045,37 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
             # Cap at 100 for the conversion formula
             suitability_rating = round(max(0, 100 - min(best_score, 100)), 1)
 
-            recommendations.append({
+            # Check for mount points and prepare warnings/metadata
+            bind_mount_warning = None
+            mount_point_info = {}
+            if guest.get("type") == "CT":
+                mount_info = guest.get("mount_points", {})
+                if mount_info.get("has_mount_points", False):
+                    mount_points = mount_info.get("mount_points", [])
+
+                    # Add mount point metadata for UI
+                    mount_point_info = {
+                        "has_mount_points": True,
+                        "mount_count": mount_info.get("mount_count", 0),
+                        "has_shared_mount": mount_info.get("has_shared_mount", False),
+                        "has_unshared_bind_mount": mount_info.get("has_unshared_bind_mount", False),
+                        "mount_paths": [mp.get("source", "") for mp in mount_points]
+                    }
+
+                    # Generate appropriate warnings
+                    if mount_info.get("has_unshared_bind_mount", False):
+                        # Unshared bind mounts (only appears for maintenance evacuations)
+                        unshared_mounts = [mp for mp in mount_points if mp.get("is_bind_mount", False) and not mp.get("is_shared", False)]
+                        bind_paths = [mp.get("source", "") for mp in unshared_mounts]
+                        bind_mount_warning = f"⚠️ Container has {len(unshared_mounts)} unshared bind mount(s): {', '.join(bind_paths[:2])}{'...' if len(bind_paths) > 2 else ''}. Migration requires --restart --force and manual path verification on target node."
+                    elif mount_info.get("has_shared_mount", False):
+                        # Shared bind mounts (informational)
+                        shared_mounts = [mp for mp in mount_points if mp.get("is_bind_mount", False) and mp.get("is_shared", False)]
+                        if shared_mounts:
+                            shared_paths = [mp.get("source", "") for mp in shared_mounts]
+                            bind_mount_warning = f"ℹ️ Container has {len(shared_mounts)} shared bind mount(s): {', '.join(shared_paths[:2])}{'...' if len(shared_paths) > 2 else ''}. Ensure these paths exist on {best_target}."
+
+            recommendation = {
                 "vmid": vmid_int,
                 "name": guest.get("name", "unknown"),
                 "type": guest.get("type", "unknown"),
@@ -1902,7 +2088,15 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
                 "mem_gb": guest.get("mem_max_gb", 0),
                 "command": "{} migrate {} {} {}".format(cmd_type, vmid_int, best_target, cmd_flag),
                 "confidence_score": round(min(100, score_improvement * 2), 1)  # Convert improvement to confidence
-            })
+            }
+
+            # Add mount point metadata and warnings if present
+            if mount_point_info:
+                recommendation["mount_point_info"] = mount_point_info
+            if bind_mount_warning:
+                recommendation["bind_mount_warning"] = bind_mount_warning
+
+            recommendations.append(recommendation)
 
             # Note: pending_target_guests was already updated when the candidate was added (line 1563)
 
@@ -1911,6 +2105,81 @@ def generate_recommendations(nodes: Dict, guests: Dict, cpu_threshold: float = 6
             import traceback
             traceback.print_exc()
             continue
+
+    # Distribution Balancing: Add recommendations for small guests to balance node guest counts
+    try:
+        config = load_config()
+        dist_config = config.get('distribution_balancing', {})
+
+        if dist_config.get('enabled', False):
+            print("Distribution balancing is enabled, finding candidates...", file=sys.stderr)
+
+            guest_count_threshold = dist_config.get('guest_count_threshold', 2)
+            max_cpu_cores = dist_config.get('max_cpu_cores', 2)
+            max_memory_gb = dist_config.get('max_memory_gb', 4)
+
+            distribution_candidates = find_distribution_candidates(
+                nodes=nodes,
+                guests=guests,
+                guest_count_threshold=guest_count_threshold,
+                max_cpu_cores=max_cpu_cores,
+                max_memory_gb=max_memory_gb
+            )
+
+            print(f"Found {len(distribution_candidates)} distribution balancing candidates", file=sys.stderr)
+
+            # Convert distribution candidates to recommendation format
+            for candidate in distribution_candidates:
+                guest_id = candidate['guest_id']
+                guest = guests.get(guest_id)
+
+                if not guest:
+                    continue
+
+                # Check if this guest already has a performance-based recommendation
+                already_recommended = any(
+                    rec.get('vmid') == guest_id for rec in recommendations
+                )
+
+                if already_recommended:
+                    print(f"Skipping distribution recommendation for {guest_id} - already has performance recommendation", file=sys.stderr)
+                    continue
+
+                # Check storage compatibility
+                if proxmox and storage_cache:
+                    if not check_storage_compatibility(guest, candidate['source_node'], candidate['target_node'], proxmox, storage_cache):
+                        print(f"Skipping {guest_id}: storage incompatible with {candidate['target_node']}", file=sys.stderr)
+                        continue
+
+                # Create recommendation
+                vmid_int = int(guest_id) if isinstance(guest_id, str) and guest_id.isdigit() else guest_id
+                guest_type = guest.get('type', 'qemu')
+                cmd_type = 'pct' if guest_type == 'lxc' else 'qm'
+                cmd_flag = '--restart' if guest_type == 'lxc' else '--online'
+
+                recommendation = {
+                    "vmid": guest_id,
+                    "name": candidate['guest_name'],
+                    "type": candidate['guest_type'],
+                    "current_node": candidate['source_node'],
+                    "target_node": candidate['target_node'],
+                    "target_node_score": 50,  # Neutral score for distribution balancing
+                    "suitability_rating": 50,  # Neutral suitability
+                    "score_improvement": 10,  # Modest improvement score
+                    "reason": candidate['reason'],
+                    "mem_gb": candidate['memory_gb'],
+                    "command": f"{cmd_type} migrate {vmid_int} {candidate['target_node']} {cmd_flag}",
+                    "confidence_score": 60,  # Moderate confidence for distribution moves
+                    "distribution_balancing": True  # Flag to identify these recommendations
+                }
+
+                recommendations.append(recommendation)
+                print(f"Added distribution recommendation: {candidate['guest_name']} ({guest_id}) from {candidate['source_node']} to {candidate['target_node']}", file=sys.stderr)
+
+    except Exception as e:
+        print(f"Error in distribution balancing: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
 
     return recommendations
 
@@ -6086,10 +6355,13 @@ def get_automigrate_status():
 
         if last_run and auto_config.get('enabled', False) and timer_active:
             try:
-                last_run_dt = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
-                next_check_dt = last_run_dt + timedelta(minutes=check_interval_minutes)
-                next_check = next_check_dt.isoformat().replace('+00:00', 'Z')
-            except (ValueError, TypeError):
+                # last_run is a dict with 'timestamp' field
+                timestamp = last_run.get('timestamp') if isinstance(last_run, dict) else last_run
+                if timestamp:
+                    last_run_dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    next_check_dt = last_run_dt + timedelta(minutes=check_interval_minutes)
+                    next_check = next_check_dt.isoformat().replace('+00:00', 'Z')
+            except (ValueError, TypeError, AttributeError):
                 pass
 
         # Get current window status
@@ -6170,37 +6442,59 @@ def get_automigrate_status():
 
 @app.route("/api/automigrate/history", methods=["GET"])
 def get_automigrate_history():
-    """Get full migration history with optional filtering"""
+    """Get automation run history with decisions, or individual migration history"""
     try:
         history_file = os.path.join(BASE_PATH, 'migration_history.json')
 
         if not os.path.exists(history_file):
-            return jsonify({"success": True, "migrations": [], "total": 0})
+            return jsonify({"success": True, "runs": [], "migrations": [], "total": 0})
 
         with open(history_file, 'r') as f:
             history = json.load(f)
 
         # Get query parameters
-        limit = request.args.get('limit', 100, type=int)
+        limit = request.args.get('limit', 50, type=int)
         status_filter = request.args.get('status', None, type=str)
+        view_type = request.args.get('type', 'runs', type=str)  # 'runs' or 'migrations'
 
-        migrations = history.get('migrations', [])
+        if view_type == 'runs':
+            # Return automation run history (with decisions)
+            runs = history.get('run_history', [])
 
-        # Apply status filter if provided
-        if status_filter:
-            migrations = [m for m in migrations if m.get('status') == status_filter]
+            # Apply status filter if provided
+            if status_filter:
+                runs = [r for r in runs if r.get('status') == status_filter]
 
-        # Get total before limiting
-        total = len(migrations)
+            # Get total before limiting
+            total = len(runs)
 
-        # Limit results (get most recent)
-        migrations = migrations[-limit:]
+            # Limit results (already in newest-first order)
+            runs = runs[:limit]
 
-        return jsonify({
-            "success": True,
-            "migrations": migrations,
-            "total": total
-        })
+            return jsonify({
+                "success": True,
+                "runs": runs,
+                "total": total
+            })
+        else:
+            # Return individual migration history (legacy behavior)
+            migrations = history.get('migrations', [])
+
+            # Apply status filter if provided
+            if status_filter:
+                migrations = [m for m in migrations if m.get('status') == status_filter]
+
+            # Get total before limiting
+            total = len(migrations)
+
+            # Limit results (get most recent)
+            migrations = migrations[-limit:]
+
+            return jsonify({
+                "success": True,
+                "migrations": migrations,
+                "total": total
+            })
 
     except Exception as e:
         print(f"Error getting automigrate history: {str(e)}", file=sys.stderr)

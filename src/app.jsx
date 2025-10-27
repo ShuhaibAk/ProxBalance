@@ -7,6 +7,7 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
         const Play = ({ size }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>);
         const CheckCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>);
         const XCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>);
+        const ClipboardList = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="15" y2="16"></line></svg>);
         const Tag = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>);
         const AlertTriangle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>);
         const Info = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>);
@@ -37,6 +38,8 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
         const Package = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>);
         const Bell = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>);
         const MinusCircle = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>);
+        const Folder = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>);
+        const Minus = ({ size, className }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><line x1="5" y1="12" x2="19" y2="12"></line></svg>);
 
 // Logo component
 const ProxBalanceLogo = ({ size = 32 }) => (
@@ -196,6 +199,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [selectedNode, setSelectedNode] = useState(null); // Selected node from Cluster Map for details/maintenance modal
           const [selectedGuestDetails, setSelectedGuestDetails] = useState(null); // Selected guest from Cluster Map for details modal
 
+          // Guest modal collapse state (always starts collapsed, not persisted)
+          const [guestModalCollapsed, setGuestModalCollapsed] = useState({
+            mountPoints: true,
+            passthroughDisks: true
+          });
+
           // Tag management
           const [showTagModal, setShowTagModal] = useState(false);
           const [tagModalGuest, setTagModalGuest] = useState(null);
@@ -244,6 +253,13 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               safetyRules: false,
               additionalRules: false,
               automatedMigrations: true,  // Collapsed by default
+              howItWorks: true,  // Collapsed by default - penalty scoring explanation
+              decisionTree: true,  // Collapsed by default - migration decision tree flowchart
+              distributionBalancing: true,  // Collapsed by default - distribution balancing section
+              distributionBalancingHelp: true,  // Collapsed by default - distribution balancing help text
+              lastRunSummary: true,  // Collapsed by default - last automation run details
+              mountPoints: true,  // Collapsed by default in guest details modal
+              passthroughDisks: true,  // Collapsed by default in guest details modal
               notificationSettings: true  // Collapsed by default (coming soon)
             };
           });
@@ -270,6 +286,9 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             state: {}
           });
           const [loadingAutomationStatus, setLoadingAutomationStatus] = useState(false);
+          const [runHistory, setRunHistory] = useState([]);
+          const [loadingRunHistory, setLoadingRunHistory] = useState(false);
+          const [expandedRun, setExpandedRun] = useState(null); // Track which run is expanded
           const [automationConfig, setAutomationConfig] = useState({
             enabled: false,
             dry_run: false,
@@ -404,6 +423,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             fetchSystemInfo();
             fetchAutomationStatus();
             fetchAutomationConfig();
+            fetchRunHistory();
             checkPermissions();
             fetchPenaltyConfig();
           }, []);
@@ -439,11 +459,14 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 setShowPenaltyConfig(true);
                 // Scroll to the penalty config section after expansion
                 setTimeout(() => {
-                  const penaltySection = Array.from(document.querySelectorAll('button, h3, span')).find(el =>
-                    el.textContent && el.textContent.includes('Penalty Scoring Configuration')
-                  );
+                  const penaltySection = document.getElementById('penalty-config-section');
                   if (penaltySection) {
                     penaltySection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Flash the section briefly
+                    penaltySection.style.boxShadow = '0 0 20px rgba(59, 130, 246, 0.5)';
+                    setTimeout(() => {
+                      penaltySection.style.boxShadow = '';
+                    }, 2000);
                   }
                 }, 200);
                 // Reset flag after all state updates
@@ -458,9 +481,20 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           useEffect(() => {
             const interval = setInterval(() => {
               fetchAutomationStatus();
+              fetchRunHistory();
             }, 10000); // 10 seconds
             return () => clearInterval(interval);
           }, []);
+
+          // Reset guest modal collapse state when a new guest is selected
+          useEffect(() => {
+            if (selectedGuestDetails) {
+              setGuestModalCollapsed({
+                mountPoints: true,
+                passthroughDisks: true
+              });
+            }
+          }, [selectedGuestDetails?.vmid]); // Only reset when vmid changes
 
           const checkPermissions = async () => {
             try {
@@ -931,6 +965,21 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               console.error('Failed to fetch automation status:', err);
             } finally {
               setLoadingAutomationStatus(false);
+            }
+          };
+
+          const fetchRunHistory = async (limit = 10) => {
+            setLoadingRunHistory(true);
+            try {
+              const response = await fetch(`${API_BASE}/automigrate/history?type=runs&limit=${limit}`);
+              const result = await response.json();
+              if (result.success) {
+                setRunHistory(result.runs || []);
+              }
+            } catch (err) {
+              console.error('Failed to fetch run history:', err);
+            } finally {
+              setLoadingRunHistory(false);
             }
           };
 
@@ -2688,7 +2737,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     <hr className="border-gray-300 dark:border-gray-600" />
 
                     {/* Penalty Scoring Configuration - Standalone Section */}
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                    <div id="penalty-config-section" className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                       <button
                         onClick={() => setShowPenaltyConfig(!showPenaltyConfig)}
                         className="w-full flex items-center justify-between text-left group"
@@ -2897,6 +2946,32 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                 />
               </div>
+                            </div>
+                          </div>
+
+                          {/* Minimum Score Improvement */}
+                          <div className="space-y-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+                            <h4 className="font-medium text-gray-900 dark:text-white">Minimum Score Improvement</h4>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              Minimum score improvement (in points) required for a migration to be recommended. This threshold filters out migrations that would provide only marginal benefit.
+                              <br />Lower values = more sensitive to small improvements (more migrations)
+                              <br />Higher values = only migrate when there's significant benefit (fewer migrations)
+                            </p>
+                            <div className="max-w-md">
+                              <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                                Minimum Score Improvement (default: {penaltyDefaults.min_score_improvement || 15})
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={penaltyConfig.min_score_improvement !== undefined ? penaltyConfig.min_score_improvement : 15}
+                                onChange={(e) => setPenaltyConfig({...penaltyConfig, min_score_improvement: parseInt(e.target.value) || 15})}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                Recommended values: Conservative (20-30), Balanced (10-15), Aggressive (5-10)
+                              </p>
                             </div>
                           </div>
 
@@ -3811,23 +3886,38 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                     </div>)}
                   </div>
 
-                  {/* Penalty-Based Scoring Info */}
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-5 mb-6">
-                    <div className="flex items-start gap-3">
-                      <Info size={24} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-bold text-blue-900 dark:text-blue-200 mb-2">How Automated Migrations Work</div>
+                  {/* Penalty-Based Scoring Info - Collapsible */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg mb-6">
+                    <button
+                      onClick={() => setCollapsedSections(prev => ({...prev, howItWorks: !prev.howItWorks}))}
+                      className="w-full flex items-center justify-between p-5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Info size={24} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                        <div className="font-bold text-blue-900 dark:text-blue-200 text-left">How Automated Migrations Work</div>
+                      </div>
+                      {collapsedSections.howItWorks ? (
+                        <ChevronDown size={20} className="text-blue-600 dark:text-blue-400" />
+                      ) : (
+                        <ChevronUp size={20} className="text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
+
+                    {!collapsedSections.howItWorks && (
+                      <div className="px-5 pb-5">
                         <div className="text-sm text-blue-800 dark:text-blue-300 space-y-2">
                           <p>
                             Automated migrations use a <strong>penalty-based scoring system</strong> to intelligently balance your cluster.
-                            Each node accumulates penalties based on resource usage, trends, and spikes - lower scores indicate healthier nodes.
+                            Each node accumulates penalties based on multiple factors - lower scores indicate better migration targets.
                           </p>
                           <div className="mt-3 p-3 bg-white/50 dark:bg-gray-800/50 rounded border border-blue-300 dark:border-blue-600">
                             <div className="font-semibold text-blue-900 dark:text-blue-100 mb-1">Penalty Factors:</div>
                             <ul className="list-disc list-inside ml-2 mt-1 space-y-1 text-sm">
-                              <li><strong>High CPU/Memory/IOWait:</strong> Immediate resource pressure (0-80 penalty points)</li>
-                              <li><strong>Rising Trends:</strong> Resources trending upward over time (0-30 penalty points)</li>
-                              <li><strong>Recent Spikes:</strong> Sudden resource spikes detected (0-20 penalty points)</li>
+                              <li><strong>Current Load:</strong> Immediate resource pressure from CPU, Memory, and IOWait (20-100 points each)</li>
+                              <li><strong>Sustained Load:</strong> Long-term resource usage patterns over 7 days (15-150 points)</li>
+                              <li><strong>Rising Trends:</strong> Resources trending upward over time (15 points per metric)</li>
+                              <li><strong>Load Spikes:</strong> Maximum resource peaks detected in recent history (5-30 points)</li>
+                              <li><strong>Predicted Load:</strong> Post-migration resource levels to prevent overloading targets</li>
                             </ul>
                             <p className="mt-3 text-sm">
                               <button
@@ -3835,15 +3925,312 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline font-semibold"
                               >
                                 View Migration Recommendations →
-                              </button> to see detailed scoring and suggested migrations.
+                              </button> to see detailed scoring, confidence levels, and suggested migrations.
                             </p>
                             <p className="mt-2 text-xs text-blue-700 dark:text-blue-300 italic">
-                              💡 The system automatically finds the best migration pairs by comparing source node penalties with target node suitability.
+                              💡 The system finds optimal migration pairs by comparing source node penalties with target node suitability scores. Only migrations with significant score improvements ({penaltyConfig?.min_score_improvement || 15}+ points by default) are recommended.
+                            </p>
+                            <p className="mt-3 text-sm">
+                              <button
+                                onClick={() => {
+                                  // Navigate to Settings page and open penalty config
+                                  setCurrentPage('settings');
+                                  setOpenPenaltyConfigOnSettings(true);
+                                }}
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline font-semibold"
+                              >
+                                ⚙️ Configure Penalty Weights →
+                              </button>
                             </p>
                           </div>
                         </div>
                       </div>
-                    </div>
+                    )}
+                  </div>
+
+                  {/* Decision Tree - Collapsible */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg mb-6">
+                    <button
+                      onClick={() => setCollapsedSections(prev => ({...prev, decisionTree: !prev.decisionTree}))}
+                      className="w-full flex items-center justify-between p-5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Info size={24} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                        <div className="font-bold text-blue-900 dark:text-blue-200 text-left">Migration Decision Flowchart</div>
+                      </div>
+                      {collapsedSections.decisionTree ? (
+                        <ChevronDown size={20} className="text-blue-600 dark:text-blue-400" />
+                      ) : (
+                        <ChevronUp size={20} className="text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
+
+                    {!collapsedSections.decisionTree && (
+                      <div className="px-5 pb-5">
+                        <div className="text-sm text-blue-800 dark:text-blue-300 space-y-4">
+                          <p className="font-semibold text-blue-900 dark:text-blue-200">
+                            This decision tree shows all possible paths through the automated migration process:
+                          </p>
+
+                          {/* Decision Tree Diagram */}
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-750 rounded-lg p-6 border-2 border-blue-300 dark:border-blue-600 shadow-sm">
+                            <div className="space-y-4">
+
+                              {/* Start Box */}
+                              <div className="flex justify-center">
+                                <div className="bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 text-white px-8 py-4 rounded-xl font-bold text-base shadow-lg hover:shadow-xl transition-shadow">
+                                  🚀 Automation Run Triggered
+                                </div>
+                              </div>
+
+                              {/* Flow connector with arrow */}
+                              <div className="flex flex-col items-center">
+                                <div className="w-0.5 h-6 bg-gradient-to-b from-blue-400 to-blue-500 dark:from-blue-500 dark:to-blue-600"></div>
+                                <div className="text-blue-500 dark:text-blue-400">▼</div>
+                              </div>
+
+                              {/* Decision boxes */}
+                              <div className="space-y-3">
+
+                                {/* Step 1 */}
+                                <div className="bg-white dark:bg-gray-700 rounded-xl border-2 border-blue-200 dark:border-blue-700 p-5 shadow-md hover:shadow-lg transition-all hover:border-blue-400 dark:hover:border-blue-500">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">1</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <span>⚙️</span> Is automation enabled?
+                                      </div>
+                                      <div className="space-y-2 text-xs">
+                                        <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/10 rounded-lg">
+                                          <span className="text-red-600 dark:text-red-400 font-bold">✗ NO</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="bg-red-500 dark:bg-red-600 text-white px-3 py-1 rounded-md font-semibold shadow-sm">STOP</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/10 rounded-lg">
+                                          <span className="text-green-600 dark:text-green-400 font-bold">✓ YES</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">Continue ↓</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Step 2 */}
+                                <div className="bg-white dark:bg-gray-700 rounded-xl border-2 border-blue-200 dark:border-blue-700 p-5 shadow-md hover:shadow-lg transition-all hover:border-blue-400 dark:hover:border-blue-500">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">2</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <span>⏱️</span> Is cooldown period elapsed?
+                                      </div>
+                                      <div className="space-y-2 text-xs">
+                                        <div className="flex items-center gap-2 p-2 bg-orange-50 dark:bg-orange-900/10 rounded-lg">
+                                          <span className="text-orange-600 dark:text-orange-400 font-bold">✗ NO</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="bg-orange-500 dark:bg-orange-600 text-white px-3 py-1 rounded-md font-semibold shadow-sm">SKIP</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/10 rounded-lg">
+                                          <span className="text-green-600 dark:text-green-400 font-bold">✓ YES</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">Continue ↓</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Step 3 */}
+                                <div className="bg-white dark:bg-gray-700 rounded-xl border-2 border-blue-200 dark:border-blue-700 p-5 shadow-md hover:shadow-lg transition-all hover:border-blue-400 dark:hover:border-blue-500">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">3</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <span>🕐</span> In allowed time window?
+                                      </div>
+                                      <div className="space-y-2 text-xs">
+                                        <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/10 rounded-lg">
+                                          <span className="text-red-600 dark:text-red-400 font-bold">✗ BLACKOUT</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="bg-red-500 dark:bg-red-600 text-white px-3 py-1 rounded-md font-semibold shadow-sm">BLOCKED</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 p-2 bg-orange-50 dark:bg-orange-900/10 rounded-lg">
+                                          <span className="text-orange-600 dark:text-orange-400 font-bold">✗ OUTSIDE</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="bg-orange-500 dark:bg-orange-600 text-white px-3 py-1 rounded-md font-semibold shadow-sm">SKIP</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/10 rounded-lg">
+                                          <span className="text-green-600 dark:text-green-400 font-bold">✓ YES</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">Continue ↓</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Step 4 */}
+                                <div className="bg-white dark:bg-gray-700 rounded-xl border-2 border-blue-200 dark:border-blue-700 p-5 shadow-md hover:shadow-lg transition-all hover:border-blue-400 dark:hover:border-blue-500">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">4</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <span>🏥</span> Is cluster healthy? <span className="text-xs font-normal text-gray-500 dark:text-gray-400">(if enabled)</span>
+                                      </div>
+                                      <div className="space-y-2 text-xs">
+                                        <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/10 rounded-lg">
+                                          <span className="text-red-600 dark:text-red-400 font-bold">✗ NO</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="bg-red-500 dark:bg-red-600 text-white px-3 py-1 rounded-md font-semibold shadow-sm">ABORT</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/10 rounded-lg">
+                                          <span className="text-green-600 dark:text-green-400 font-bold">✓ YES</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">Continue ↓</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Step 5 - Process Box */}
+                                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl border-2 border-indigo-300 dark:border-indigo-600 p-5 shadow-md">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-indigo-600 to-purple-600 dark:from-indigo-500 dark:to-purple-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">5</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                                        <span>🎯</span> Generate Recommendations
+                                      </div>
+                                      <div className="text-xs text-gray-700 dark:text-gray-300 space-y-1.5 bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg">
+                                        <div className="flex items-start gap-2"><span className="text-indigo-600 dark:text-indigo-400">▸</span> Calculate penalty scores for all nodes</div>
+                                        <div className="flex items-start gap-2"><span className="text-indigo-600 dark:text-indigo-400">▸</span> Find VMs on high-penalty nodes</div>
+                                        <div className="flex items-start gap-2"><span className="text-indigo-600 dark:text-indigo-400">▸</span> Match with low-penalty target nodes</div>
+                                        <div className="flex items-start gap-2"><span className="text-indigo-600 dark:text-indigo-400">▸</span> Apply filters (tags, storage, rollback detection)</div>
+                                        <div className="flex items-start gap-2"><span className="text-indigo-600 dark:text-indigo-400">▸</span> Calculate confidence scores</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Step 6 */}
+                                <div className="bg-white dark:bg-gray-700 rounded-xl border-2 border-blue-200 dark:border-blue-700 p-5 shadow-md hover:shadow-lg transition-all hover:border-blue-400 dark:hover:border-blue-500">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">6</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <span>📊</span> Any recommendations above min confidence?
+                                      </div>
+                                      <div className="space-y-2 text-xs">
+                                        <div className="flex items-center gap-2 p-2 bg-orange-50 dark:bg-orange-900/10 rounded-lg">
+                                          <span className="text-orange-600 dark:text-orange-400 font-bold">✗ NO</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="bg-orange-500 dark:bg-orange-600 text-white px-3 py-1 rounded-md font-semibold shadow-sm">SKIP</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/10 rounded-lg">
+                                          <span className="text-green-600 dark:text-green-400 font-bold">✓ YES</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">Continue ↓</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Step 7 */}
+                                <div className="bg-white dark:bg-gray-700 rounded-xl border-2 border-blue-200 dark:border-blue-700 p-5 shadow-md hover:shadow-lg transition-all hover:border-blue-400 dark:hover:border-blue-500">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">7</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <span>🧪</span> Is dry run mode enabled?
+                                      </div>
+                                      <div className="space-y-2 text-xs">
+                                        <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
+                                          <span className="text-blue-600 dark:text-blue-400 font-bold">✓ YES</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="bg-blue-500 dark:bg-blue-600 text-white px-3 py-1 rounded-md font-semibold shadow-sm">LOG ONLY</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/10 rounded-lg">
+                                          <span className="text-green-600 dark:text-green-400 font-bold">✗ NO</span>
+                                          <span className="text-gray-500 dark:text-gray-400">→</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">Execute ↓</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Step 8 - Action Box */}
+                                <div className="bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-xl border-2 border-emerald-300 dark:border-emerald-600 p-5 shadow-md">
+                                  <div className="flex items-start gap-3">
+                                    <div className="bg-gradient-to-br from-emerald-600 to-green-600 dark:from-emerald-500 dark:to-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">8</div>
+                                    <div className="flex-1">
+                                      <div className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                                        <span>⚡</span> Execute Migrations
+                                      </div>
+                                      <div className="text-xs text-gray-700 dark:text-gray-300 space-y-1.5 bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg">
+                                        <div className="flex items-start gap-2"><span className="text-emerald-600 dark:text-emerald-400">▸</span> Limit to max migrations per run (default: 3)</div>
+                                        <div className="flex items-start gap-2"><span className="text-emerald-600 dark:text-emerald-400">▸</span> Execute migrations sequentially</div>
+                                        <div className="flex items-start gap-2"><span className="text-emerald-600 dark:text-emerald-400">▸</span> If migration fails + abort_on_failure: STOP batch</div>
+                                        <div className="flex items-start gap-2"><span className="text-emerald-600 dark:text-emerald-400">▸</span> If migration fails + pause_on_failure: DISABLE automation</div>
+                                        <div className="flex items-start gap-2"><span className="text-emerald-600 dark:text-emerald-400">▸</span> Track migration status and update history</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                              </div>
+
+                              {/* Flow connector with arrow */}
+                              <div className="flex flex-col items-center">
+                                <div className="w-0.5 h-6 bg-gradient-to-b from-emerald-400 to-green-500 dark:from-emerald-500 dark:to-green-600"></div>
+                                <div className="text-emerald-500 dark:text-emerald-400">▼</div>
+                              </div>
+
+                              {/* End Box */}
+                              <div className="flex justify-center">
+                                <div className="bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-600 dark:from-emerald-500 dark:via-green-500 dark:to-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-base shadow-lg hover:shadow-xl transition-shadow flex items-center gap-3">
+                                  <span className="text-2xl">✓</span> <span>Run Complete</span>
+                                </div>
+                              </div>
+
+                            </div>
+                          </div>
+
+                          <div className="mt-4 p-4 bg-blue-100 dark:bg-blue-900/30 rounded-lg border border-blue-300 dark:border-blue-600">
+                            <div className="font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                              <span>💡</span> Configuration Profiles
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                              <div className="bg-white dark:bg-gray-800 p-3 rounded border border-blue-200 dark:border-blue-700">
+                                <div className="font-bold text-gray-900 dark:text-white mb-1">🛡️ Conservative</div>
+                                <div className="text-gray-600 dark:text-gray-400 space-y-0.5">
+                                  <div>• Min confidence: 80+</div>
+                                  <div>• Max migrations: 1-2</div>
+                                  <div>• Cooldown: 60+ min</div>
+                                </div>
+                              </div>
+                              <div className="bg-white dark:bg-gray-800 p-3 rounded border border-blue-200 dark:border-blue-700">
+                                <div className="font-bold text-gray-900 dark:text-white mb-1">⚖️ Balanced</div>
+                                <div className="text-gray-600 dark:text-gray-400 space-y-0.5">
+                                  <div>• Min confidence: 70+</div>
+                                  <div>• Max migrations: 3-5</div>
+                                  <div>• Cooldown: 30-60 min</div>
+                                </div>
+                              </div>
+                              <div className="bg-white dark:bg-gray-800 p-3 rounded border border-blue-200 dark:border-blue-700">
+                                <div className="font-bold text-gray-900 dark:text-white mb-1">⚡ Aggressive</div>
+                                <div className="text-gray-600 dark:text-gray-400 space-y-0.5">
+                                  <div>• Min confidence: 60+</div>
+                                  <div>• Max migrations: 5-10</div>
+                                  <div>• Cooldown: 15-30 min</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Safety & Rules */}
@@ -3936,6 +4323,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           Wait time between migrations for cluster to settle (0 = no wait)
                         </p>
                       </div>
+
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                           Max Node CPU %
@@ -3964,68 +4352,90 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       </div>
                     </div>
 
-                    <div className="mt-4 space-y-3">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.rules?.respect_ignore_tags !== false}
-                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, respect_ignore_tags: e.target.checked } })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Respect 'ignore' tags
-                        </label>
-                      </div>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.rules?.require_auto_migrate_ok_tag || false}
-                          onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, require_auto_migrate_ok_tag: e.target.checked } })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Require 'auto_migrate_ok' tag (only migrate VMs with this tag)
-                        </label>
-                      </div>
-                      <div className="flex flex-col">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={automationConfig.rules?.respect_exclude_affinity !== false}
-                            onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, respect_exclude_affinity: e.target.checked } })}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            Respect anti-affinity (exclude_* tags)
+                    <div className="mt-4 space-y-4">
+                      {/* Respect 'ignore' Tags */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Respect 'ignore' Tags</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Skip VMs tagged with 'pb-ignore' or 'ignore' during automated migrations. Use for critical VMs that require manual migration planning.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.rules?.respect_ignore_tags !== false}
+                              onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, respect_ignore_tags: e.target.checked } })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
                           </label>
                         </div>
-                        <p className="ml-6 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Prevents VMs with the same exclude tag from clustering on one node.<br/>
-                          Example: Two VMs with 'exclude_database' will spread across different nodes for fault tolerance.
-                        </p>
                       </div>
-                      <div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={automationConfig.rules?.allow_container_restarts === true}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                // Show warning for enabling container restarts
-                                setConfirmAllowContainerRestarts(true);
-                              } else {
-                                // Disabling is safe, no confirmation needed
-                                saveAutomationConfig({ rules: { ...automationConfig.rules, allow_container_restarts: false } });
-                              }
-                            }}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            Allow container restarts for migration (may cause brief downtime)
+
+                      {/* Require 'auto_migrate_ok' Tag */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Require 'auto_migrate_ok' Tag</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Only migrate VMs with 'auto-migrate-ok' or 'auto_migrate_ok' tag (opt-in mode). All other VMs will be excluded from automated migrations.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.rules?.require_auto_migrate_ok_tag || false}
+                              onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, require_auto_migrate_ok_tag: e.target.checked } })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Respect Anti-Affinity */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Respect Anti-Affinity (exclude_* tags)</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Prevents VMs with the same exclude tag from clustering on one node. Example: Two VMs with 'exclude_database' will spread across different nodes for fault tolerance.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.rules?.respect_exclude_affinity !== false}
+                              onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, respect_exclude_affinity: e.target.checked } })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                          </label>
+                        </div>
+                      </div>
+                      {/* Allow Container Restarts */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Allow Container Restarts for Migration</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Enables automated migrations to restart containers that cannot be live-migrated. Containers will experience brief downtime during migration.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.rules?.allow_container_restarts === true}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  // Show warning for enabling container restarts
+                                  setConfirmAllowContainerRestarts(true);
+                                } else {
+                                  // Disabling is safe, no confirmation needed
+                                  saveAutomationConfig({ rules: { ...automationConfig.rules, allow_container_restarts: false } });
+                                }
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
                           </label>
                         </div>
                         {confirmAllowContainerRestarts && (
-                          <div className="mt-2 ml-6">
+                          <div className="mt-3">
                             <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3">
                               <div className="flex items-start gap-2">
                                 <AlertTriangle size={18} className="text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
@@ -4059,56 +4469,282 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-col">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={automationConfig.safety_checks?.check_cluster_health !== false}
-                            onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, check_cluster_health: e.target.checked } })}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            Check cluster health before migrating
+
+                      {/* Rollback Detection */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Rollback Detection</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Prevent migration loops by detecting when a VM would be migrated back to a node it was recently migrated from.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.rules?.rollback_detection_enabled !== false}
+                              onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, rollback_detection_enabled: e.target.checked } })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
                           </label>
                         </div>
-                        <p className="ml-6 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Verifies cluster is healthy before migrating: cluster has quorum, all nodes CPU {'<'} 85%, all nodes memory {'<'} 90%.<br/>
-                          Prevents migrations during cluster stress that could worsen the situation. Recommended for production.
-                        </p>
+                        {automationConfig.rules?.rollback_detection_enabled !== false && (
+                          <div className="px-4 pb-4">
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Rollback Detection Window (hours)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="168"
+                              value={automationConfig.rules?.rollback_window_hours || 24}
+                              onChange={(e) => saveAutomationConfig({ rules: { ...automationConfig.rules, rollback_window_hours: parseInt(e.target.value) } })}
+                              className="w-32 px-2 py-1 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white"
+                            />
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              How far back to check for previous migrations (default: 24 hours)
+                            </p>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={automationConfig.safety_checks?.abort_on_failure !== false}
-                          onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, abort_on_failure: e.target.checked } })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                          Abort batch if a migration fails
-                        </label>
-                      </div>
-                      <div className="flex flex-col">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={automationConfig.safety_checks?.pause_on_failure === true}
-                            onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, pause_on_failure: e.target.checked } })}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            Pause automation after migration failure
+
+                      {/* Check Cluster Health */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Check Cluster Health Before Migrating</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Verifies cluster is healthy before migrating: cluster has quorum, all nodes CPU &lt; 85%, all nodes memory &lt; 90%. Prevents migrations during cluster stress that could worsen the situation. Recommended for production.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.safety_checks?.check_cluster_health !== false}
+                              onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, check_cluster_health: e.target.checked } })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
                           </label>
                         </div>
-                        <p className="ml-6 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Automatically disables automated migrations if any migration fails.<br/>
-                          Prevents cascading failures and requires manual review before resuming automation.
-                        </p>
+                      </div>
+                      {/* Abort Batch on Failure */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Abort Batch if a Migration Fails</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Stops executing remaining migrations in the current batch if any single migration fails. Prevents cascading issues when a migration error might indicate a cluster problem.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.safety_checks?.abort_on_failure !== false}
+                              onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, abort_on_failure: e.target.checked } })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                          </label>
+                        </div>
+                      </div>
+                      {/* Pause Automation After Failure */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Pause Automation After Migration Failure</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Automatically disables automated migrations if any migration fails. Prevents cascading failures and requires manual review before resuming automation. Highly recommended for production environments.</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={automationConfig.safety_checks?.pause_on_failure === true}
+                              onChange={(e) => saveAutomationConfig({ safety_checks: { ...automationConfig.safety_checks, pause_on_failure: e.target.checked } })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                          </label>
+                        </div>
                       </div>
                     </div>
                     </>
                     )}
                   </div>
 
+                  {/* Distribution Balancing */}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                    <button
+                      onClick={() => setCollapsedSections(prev => ({ ...prev, distributionBalancing: !prev.distributionBalancing }))}
+                      className="w-full flex items-center justify-between text-left mb-4 hover:opacity-80 transition-opacity"
+                    >
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Distribution Balancing</h2>
+                      <ChevronDown
+                        size={24}
+                        className={`text-gray-600 dark:text-gray-400 transition-transform ${collapsedSections.distributionBalancing ? '-rotate-180' : ''}`}
+                      />
+                    </button>
+
+                    {!collapsedSections.distributionBalancing && (
+                    <>
+                    {/* Collapsible detailed description */}
+                    <div className="mb-4">
+                      <button
+                        onClick={() => setCollapsedSections(prev => ({ ...prev, distributionBalancingHelp: !prev.distributionBalancingHelp }))}
+                        className="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
+                      >
+                        {collapsedSections.distributionBalancingHelp ? (
+                          <>
+                            <ChevronDown size={16} className="-rotate-90" />
+                            Show detailed explanation
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown size={16} />
+                            Hide detailed explanation
+                          </>
+                        )}
+                      </button>
+
+                      {!collapsedSections.distributionBalancingHelp && (
+                        <div className="mt-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg space-y-3">
+                          <div>
+                            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">What is Distribution Balancing?</h3>
+                            <p className="text-sm text-blue-800 dark:text-blue-200">
+                              Complements performance-based recommendations by focusing on <strong>evening out the number of VMs/CTs across nodes</strong>, rather than just CPU, memory, or I/O metrics.
+                            </p>
+                          </div>
+
+                          <div>
+                            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">The Problem It Solves</h3>
+                            <p className="text-sm text-blue-800 dark:text-blue-200">
+                              A node with 19 small VMs (DNS, monitoring, utilities) may show low resource usage but still suffers from management overhead, slower operations (start/stop/backup), and uneven workload distribution. Distribution balancing addresses this by moving small guests to less populated nodes.
+                            </p>
+                          </div>
+
+                          <div>
+                            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">How It Works</h3>
+                            <ol className="text-sm text-blue-800 dark:text-blue-200 list-decimal list-inside space-y-1">
+                              <li>Counts running guests on each node (e.g., pve4: 19, pve6: 4)</li>
+                              <li>If difference ≥ threshold (default: 2), finds small guests on overloaded node</li>
+                              <li>Only considers guests ≤ max CPU cores (default: 2) and ≤ max memory (default: 4 GB)</li>
+                              <li>Recommends migrating eligible small guests to underloaded nodes</li>
+                              <li>Works alongside performance-based recommendations, respects tags and storage compatibility</li>
+                            </ol>
+                          </div>
+
+                          <div>
+                            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">When to Enable</h3>
+                            <p className="text-sm text-blue-800 dark:text-blue-200">
+                              ✓ Many small utility VMs (DNS, monitoring, etc.)<br />
+                              ✓ Nodes with very different guest counts (e.g., 19 vs 4)<br />
+                              ✓ Performance metrics don't show the imbalance<br />
+                              ✓ Want more even workload distribution for management simplicity
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Enable Distribution Balancing */}
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">Enable Distribution Balancing</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">Automatically balance small workloads across nodes to prevent guest count imbalance</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={config.distribution_balancing?.enabled || false}
+                              onChange={(e) => {
+                                const newConfig = { ...config };
+                                if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
+                                newConfig.distribution_balancing.enabled = e.target.checked;
+                                setConfig(newConfig);
+                                saveConfig(newConfig);
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {config.distribution_balancing?.enabled && (
+                      <div className="grid grid-cols-3 gap-4 mt-4">
+                        {/* Guest Count Threshold */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Guest Count Threshold
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            value={config.distribution_balancing?.guest_count_threshold || 2}
+                            onChange={(e) => {
+                              const newConfig = { ...config };
+                              if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
+                              newConfig.distribution_balancing.guest_count_threshold = parseInt(e.target.value);
+                              setConfig(newConfig);
+                              saveConfig(newConfig);
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Minimum difference in guest counts to trigger balancing
+                          </p>
+                        </div>
+
+                        {/* Max CPU Cores */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Max CPU Cores
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="32"
+                            value={config.distribution_balancing?.max_cpu_cores || 2}
+                            onChange={(e) => {
+                              const newConfig = { ...config };
+                              if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
+                              newConfig.distribution_balancing.max_cpu_cores = parseInt(e.target.value);
+                              setConfig(newConfig);
+                              saveConfig(newConfig);
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Only migrate guests with ≤ this many CPU cores (0 = no limit)
+                          </p>
+                        </div>
+
+                        {/* Max Memory GB */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Max Memory (GB)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="256"
+                            value={config.distribution_balancing?.max_memory_gb || 4}
+                            onChange={(e) => {
+                              const newConfig = { ...config };
+                              if (!newConfig.distribution_balancing) newConfig.distribution_balancing = {};
+                              newConfig.distribution_balancing.max_memory_gb = parseInt(e.target.value);
+                              setConfig(newConfig);
+                              saveConfig(newConfig);
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Only migrate guests with ≤ this much memory (0 = no limit)
+                          </p>
+                        </div>
+                      </div>
+                      )}
+                    </div>
+                    </>
+                    )}
+                  </div>
 
                   {/* Notifications - DISABLED FOR NOW - Awaiting additional development
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
@@ -6059,12 +6695,18 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             <span className="text-gray-600 dark:text-gray-400">Last Run:</span>
                             <span className="font-medium text-gray-900 dark:text-white">
                               {(() => {
-                                // Handle timestamps with or without 'Z' suffix
+                                // Handle both old string format and new object format
                                 let timestamp = automationStatus.state.last_run;
-                                if (!timestamp.endsWith('Z') && !timestamp.includes('+')) {
-                                  timestamp += 'Z'; // Assume UTC if no timezone specified
+                                if (typeof timestamp === 'object' && timestamp !== null) {
+                                  timestamp = timestamp.timestamp;
                                 }
-                                return new Date(timestamp).toLocaleString();
+                                if (timestamp && typeof timestamp === 'string') {
+                                  if (!timestamp.endsWith('Z') && !timestamp.includes('+')) {
+                                    timestamp += 'Z'; // Assume UTC if no timezone specified
+                                  }
+                                  return new Date(timestamp).toLocaleString();
+                                }
+                                return 'Never';
                               })()}
                             </span>
                           </div>
@@ -6192,6 +6834,200 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             );
                           })}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Last Run Summary - Collapsible */}
+                    {automationStatus.state?.last_run && typeof automationStatus.state.last_run === 'object' && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <button
+                          onClick={() => setCollapsedSections(prev => ({...prev, lastRunSummary: !prev.lastRunSummary}))}
+                          className="w-full flex items-center justify-between mb-3 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 rounded-lg transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <ClipboardList size={16} className="text-blue-600 dark:text-blue-400" />
+                            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Last Run Summary</h4>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(automationStatus.state.last_run.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          {collapsedSections.lastRunSummary ? (
+                            <ChevronDown size={18} className="text-gray-500" />
+                          ) : (
+                            <ChevronUp size={18} className="text-gray-500" />
+                          )}
+                        </button>
+
+                        {!collapsedSections.lastRunSummary && (
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                            {/* Run Overview */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                              <div className="bg-white/60 dark:bg-gray-800/60 rounded p-3">
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Status</div>
+                                <div className={`text-sm font-bold ${
+                                  automationStatus.state.last_run.status === 'success' ? 'text-green-600 dark:text-green-400' :
+                                  automationStatus.state.last_run.status === 'partial' ? 'text-yellow-600 dark:text-yellow-400' :
+                                  automationStatus.state.last_run.status === 'failed' ? 'text-red-600 dark:text-red-400' :
+                                  'text-gray-600 dark:text-gray-400'
+                                }`}>
+                                  {automationStatus.state.last_run.status === 'success' ? '✓ Success' :
+                                   automationStatus.state.last_run.status === 'partial' ? '◐ Partial' :
+                                   automationStatus.state.last_run.status === 'failed' ? '✗ Failed' :
+                                   automationStatus.state.last_run.status === 'no_action' ? '○ No Action' :
+                                   automationStatus.state.last_run.status}
+                                </div>
+                              </div>
+                              <div className="bg-white/60 dark:bg-gray-800/60 rounded p-3">
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Migrations</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {automationStatus.state.last_run.migrations_successful || 0} / {automationStatus.state.last_run.migrations_executed || 0}
+                                </div>
+                              </div>
+                              <div className="bg-white/60 dark:bg-gray-800/60 rounded p-3">
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Duration</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {automationStatus.state.last_run.duration_seconds ? `${Math.floor(automationStatus.state.last_run.duration_seconds / 60)}m ${automationStatus.state.last_run.duration_seconds % 60}s` : 'N/A'}
+                                </div>
+                              </div>
+                              <div className="bg-white/60 dark:bg-gray-800/60 rounded p-3">
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Mode</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {automationStatus.state.last_run.mode === 'dry_run' ? '🧪 Dry Run' : '🚀 Live'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Decision Details */}
+                            {automationStatus.state.last_run.decisions && automationStatus.state.last_run.decisions.length > 0 && (
+                              <div className="bg-white/60 dark:bg-gray-800/60 rounded p-3 mb-3 max-h-64 overflow-y-auto">
+                                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Decisions Made:</div>
+                                <div className="space-y-2">
+                                  {[...automationStatus.state.last_run.decisions].sort((a, b) => {
+                                    // Sort by priority: executed/pending first, then skipped by rank, then filtered last
+                                    const getOrder = (d) => {
+                                      if (d.action === 'executed' || d.action === 'pending' || d.action === 'failed') return 0;
+                                      if (d.action === 'skipped') return 1;
+                                      return 2; // filtered
+                                    };
+                                    const orderA = getOrder(a);
+                                    const orderB = getOrder(b);
+                                    if (orderA !== orderB) return orderA - orderB;
+                                    // Within same group, sort by priority rank
+                                    return (a.priority_rank || 999) - (b.priority_rank || 999);
+                                  }).map((decision, idx) => {
+                                    const isExecuted = decision.action === 'executed' || decision.action === 'failed';
+                                    const isPending = decision.action === 'pending';
+                                    const borderColor = isExecuted ? 'border-green-500' :
+                                                       isPending ? 'border-blue-500' :
+                                                       decision.action === 'skipped' ? 'border-yellow-500' :
+                                                       'border-gray-400';
+                                    const bgColor = isExecuted ? 'bg-green-50 dark:bg-green-900/20' :
+                                                   isPending ? 'bg-blue-50 dark:bg-blue-900/20' :
+                                                   'bg-gray-50 dark:bg-gray-700';
+
+                                    return (
+                                      <div key={idx} className={`text-xs ${bgColor} rounded p-2 border-l-4 ${borderColor} ${isPending ? 'animate-pulse' : ''}`}>
+                                        <div className="flex items-start justify-between">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              {/* Priority Rank Badge */}
+                                              {decision.priority_rank && (
+                                                <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                                                  decision.priority_rank === 1
+                                                    ? 'bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                                    : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+                                                }`}>
+                                                  #{decision.priority_rank}
+                                                </span>
+                                              )}
+
+                                              <span className="font-semibold text-gray-900 dark:text-white">
+                                                {decision.action === 'filtered' ? '⊗' :
+                                                 decision.action === 'skipped' ? '⏭' :
+                                                 decision.action === 'pending' ? '🔄' :
+                                                 decision.action === 'executed' ? '✅' : '✗'} {decision.name || `VM/CT ${decision.vmid}`}
+                                              </span>
+
+                                              {decision.type && (
+                                                <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                                  {decision.type}
+                                                </span>
+                                              )}
+
+                                              {decision.distribution_balancing && (
+                                                <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" title="Distribution Balancing">
+                                                  ⚖️ Balance
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            <span className="text-gray-600 dark:text-gray-400">
+                                              {decision.source_node} → {decision.target_node}
+                                              {decision.target_node_score && ` (score: ${decision.target_node_score})`}
+                                            </span>
+                                          </div>
+
+                                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                            decision.action === 'executed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                            decision.action === 'pending' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                            decision.action === 'skipped' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                            decision.action === 'filtered' ? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' :
+                                            'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                          }`}>
+                                            {decision.action}
+                                          </span>
+                                        </div>
+
+                                        {/* Show selected_reason for executed, regular reason for others */}
+                                        <div className="mt-1 text-gray-600 dark:text-gray-400">
+                                          {decision.selected_reason || decision.reason}
+                                        </div>
+
+                                        {decision.confidence_score && (
+                                          <div className="mt-1 text-blue-600 dark:text-blue-400 font-semibold text-[10px]">
+                                            Confidence: {decision.confidence_score}%
+                                          </div>
+                                        )}
+
+                                        {decision.error && (
+                                          <div className="mt-1 text-red-600 dark:text-red-400 text-[10px]">
+                                            Error: {decision.error}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Safety Checks */}
+                            {automationStatus.state.last_run.safety_checks && (
+                              <div className="bg-white/60 dark:bg-gray-800/60 rounded p-3">
+                                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Safety Checks:</div>
+                                <div className="grid grid-cols-1 gap-2 text-xs">
+                                  <div className="flex items-start gap-2">
+                                    <CheckCircle size={14} className="text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                                    <div className="flex-1">
+                                      <div className="font-semibold text-gray-900 dark:text-white">Migration Window</div>
+                                      <div className="text-gray-600 dark:text-gray-400">{automationStatus.state.last_run.safety_checks.migration_window}</div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <CheckCircle size={14} className="text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                                    <div className="flex-1">
+                                      <div className="font-semibold text-gray-900 dark:text-white">Cluster Health</div>
+                                      <div className="text-gray-600 dark:text-gray-400">{automationStatus.state.last_run.safety_checks.cluster_health}</div>
+                                    </div>
+                                  </div>
+                                  <div className="text-gray-600 dark:text-gray-400">
+                                    <span className="font-semibold text-gray-900 dark:text-white">Running migrations:</span> {automationStatus.state.last_run.safety_checks.running_migrations || 0}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -6417,24 +7253,38 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                               )}
                               {/* Rollback Detection */}
                               {(() => {
-                                // Check if this VM was migrated back to its source within 24 hours
-                                const rollbackWindow = 24 * 60 * 60 * 1000; // 24 hours in ms
+                                // Only show rollback warning if rollback detection is enabled in settings
+                                if (!automationConfig?.rules?.rollback_detection_enabled) {
+                                  return null;
+                                }
+
+                                // Use configured rollback window (default 24 hours if not set)
+                                const rollbackWindowHours = automationConfig?.rules?.rollback_window_hours || 24;
+                                const rollbackWindow = rollbackWindowHours * 60 * 60 * 1000; // Convert to ms
                                 const currentTime = new Date(migration.timestamp.endsWith('Z') ? migration.timestamp : migration.timestamp + 'Z');
 
-                                const rollback = automationStatus.recent_migrations.find(m =>
-                                  m.vmid === migration.vmid &&
-                                  m.id !== migration.id &&
-                                  m.source_node === migration.target_node && // Went from current target back to...
-                                  m.target_node === migration.source_node && // ...current source (rollback)
-                                  Math.abs(new Date(m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z') - currentTime) < rollbackWindow
-                                );
+                                // Find potential rollback - look for migration where this VM went back
+                                const rollback = automationStatus.recent_migrations.find(m => {
+                                  if (m.vmid !== migration.vmid) return false;
+                                  if (m.id === migration.id) return false;
+
+                                  // Check if it's a rollback (went from target back to source)
+                                  const isRollback = m.source_node === migration.target_node && m.target_node === migration.source_node;
+
+                                  // Check time window
+                                  const mTime = new Date(m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z');
+                                  const timeDiff = Math.abs(mTime - currentTime);
+                                  const withinWindow = timeDiff < rollbackWindow;
+
+                                  return isRollback && withinWindow;
+                                });
 
                                 if (rollback) {
                                   return (
                                     <div className="mt-2 p-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded flex items-start gap-2">
                                       <AlertTriangle size={14} className="text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
                                       <div className="text-xs text-orange-800 dark:text-orange-300">
-                                        <span className="font-semibold">Rollback Detected:</span> This VM was migrated back to its original node within 24 hours. This may indicate a problem with the target node or migration configuration.
+                                        <span className="font-semibold">Rollback Detected:</span> This VM was migrated back to its original node within {rollbackWindowHours} hour{rollbackWindowHours !== 1 ? 's' : ''}. This may indicate a problem with the target node or migration configuration.
                                       </div>
                                     </div>
                                   );
@@ -6442,6 +7292,121 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                 return null;
                               })()}
                             </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Past Automation Runs */}
+                    {runHistory.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                          <Clock size={14} />
+                          Past Automation Runs
+                        </h4>
+                        <div className="space-y-2">
+                          {runHistory.slice(0, 5).map((run, idx) => {
+                            const isExpanded = expandedRun === run.timestamp;
+
+                            // Format timestamp
+                            let timeDisplay = '';
+                            try {
+                              const timestamp = run.timestamp.endsWith('Z') ? run.timestamp : run.timestamp + 'Z';
+                              const runDate = new Date(timestamp);
+                              const now = new Date();
+                              const diffMs = now - runDate;
+                              const diffMins = Math.floor(diffMs / 60000);
+                              const diffHours = Math.floor(diffMs / 3600000);
+                              const diffDays = Math.floor(diffMs / 86400000);
+
+                              if (diffMins < 1) {
+                                timeDisplay = 'Just now';
+                              } else if (diffMins < 60) {
+                                timeDisplay = `${diffMins}m ago`;
+                              } else if (diffHours < 24) {
+                                timeDisplay = `${diffHours}h ago`;
+                              } else if (diffDays < 7) {
+                                timeDisplay = `${diffDays}d ago`;
+                              } else {
+                                timeDisplay = runDate.toLocaleDateString();
+                              }
+                            } catch (e) {
+                              timeDisplay = '';
+                            }
+
+                            return (
+                              <div key={idx} className="bg-gray-50 dark:bg-gray-800/50 rounded p-3 border border-gray-200 dark:border-gray-700">
+                                <div
+                                  className="flex items-center justify-between cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded p-1 transition-colors"
+                                  onClick={() => setExpandedRun(isExpanded ? null : run.timestamp)}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {isExpanded ? <ChevronDown size={14} className="text-gray-600 dark:text-gray-400" /> : <ChevronRight size={14} className="text-gray-600 dark:text-gray-400" />}
+                                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                      {timeDisplay}
+                                    </span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                      run.status === 'success'
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                        : run.status === 'partial'
+                                        ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
+                                        : run.status === 'no_action'
+                                        ? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                        : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                    }`}>
+                                      {run.status}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+                                    <span>{run.migrations_executed || 0} migration{run.migrations_executed !== 1 ? 's' : ''}</span>
+                                    <span>{run.duration_seconds || 0}s</span>
+                                  </div>
+                                </div>
+
+                                {isExpanded && run.decisions && run.decisions.length > 0 && (
+                                  <div className="mt-2 pl-5 space-y-1">
+                                    <div className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                                      Decisions ({run.decisions.length})
+                                    </div>
+                                    {run.decisions.map((decision, didx) => (
+                                      <div key={didx} className={`text-xs p-1.5 rounded ${
+                                        decision.action === 'executed'
+                                          ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700'
+                                          : decision.action === 'pending'
+                                          ? 'bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700'
+                                          : decision.action === 'skipped'
+                                          ? 'bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700'
+                                          : 'bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-600'
+                                      }`}>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-1">
+                                            {decision.action === 'executed' && <CheckCircle size={10} className="text-green-600 dark:text-green-400" />}
+                                            {decision.action === 'pending' && <RefreshCw size={10} className="text-blue-600 dark:text-blue-400" />}
+                                            {decision.action === 'skipped' && <Minus size={10} className="text-yellow-600 dark:text-yellow-400" />}
+                                            {decision.action === 'filtered' && <XCircle size={10} className="text-gray-600 dark:text-gray-400" />}
+                                            <span className="font-medium text-gray-900 dark:text-gray-100">{decision.name}</span>
+                                            <span className="text-gray-500 dark:text-gray-400">({decision.vmid})</span>
+                                            {decision.distribution_balancing && (
+                                              <span className="ml-1" title="Distribution Balancing">⚖️</span>
+                                            )}
+                                          </div>
+                                          {decision.priority_rank && (
+                                            <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                                              #{decision.priority_rank}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {decision.reason && (
+                                          <div className="text-[10px] text-gray-600 dark:text-gray-300 mt-0.5">
+                                            {decision.reason}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
@@ -7237,6 +8202,26 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                           </div>
                                         )}
 
+                                        {/* Mount Point Indicator - Border Dot (Top Right) */}
+                                        {guest.mount_points?.has_mount_points && !isMigrating && !isCompleted && (
+                                          <div
+                                            className={`absolute -top-0.5 -right-0.5 ${
+                                              guest.mount_points.has_unshared_bind_mount
+                                                ? 'bg-orange-500'
+                                                : 'bg-cyan-400'
+                                            } rounded-full w-3 h-3 shadow-lg ring-2 ring-white dark:ring-gray-800`}
+                                            title={`${guest.mount_points.mount_count} mount point(s)${guest.mount_points.has_shared_mount ? ' (shared - safe to migrate)' : ' (requires manual migration)'}`}
+                                          />
+                                        )}
+
+                                        {/* Pinned Disk Indicator - Border Dot (Top Left) */}
+                                        {guest.local_disks?.is_pinned && !isMigrating && !isCompleted && (
+                                          <div
+                                            className="absolute -top-0.5 -left-0.5 bg-red-500 rounded-full w-3 h-3 shadow-lg ring-2 ring-white dark:ring-gray-800"
+                                            title={`Cannot migrate: ${guest.local_disks.pinned_reason} (${guest.local_disks.total_pinned_disks} disk(s))`}
+                                          />
+                                        )}
+
                                         {/* Guest tooltip */}
                                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 px-4 py-3 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 text-white text-xs rounded-lg shadow-2xl border border-gray-700 dark:border-gray-600 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none whitespace-nowrap z-10">
                                           <div className="font-bold text-sm mb-2 text-blue-400 border-b border-gray-700 pb-2">
@@ -7310,6 +8295,22 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                                 <span className="font-semibold text-purple-400">{((guest.net_out_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s</span>
                                               </div>
                                             </div>
+
+                                            {/* Mount Point Info */}
+                                            {guest.mount_points?.has_mount_points && (
+                                              <div className={`border-t border-gray-700 pt-1.5 mt-1.5 flex items-center gap-2 ${
+                                                guest.mount_points.has_unshared_bind_mount ? 'text-orange-400' : 'text-green-400'
+                                              } bg-gray-800/50 px-2 py-1 rounded`}>
+                                                <Folder size={14} />
+                                                <div className="flex flex-col">
+                                                  <span className="text-xs font-semibold">
+                                                    {guest.mount_points.mount_count} mount point{guest.mount_points.mount_count > 1 ? 's' : ''}
+                                                    {guest.mount_points.has_shared_mount && ' (shared)'}
+                                                    {guest.mount_points.has_unshared_bind_mount && ' (manual migration required)'}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                       </div>
@@ -7734,18 +8735,18 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 {/* Guest Details Modal (from Cluster Map click) */}
                 {selectedGuestDetails && (
                   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedGuestDetails(null)}>
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                       {/* Modal Header */}
-                      <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-lg ${selectedGuestDetails.type === 'qemu' ? 'bg-purple-500' : 'bg-green-500'}`}>
-                            {selectedGuestDetails.type === 'qemu' ? <HardDrive size={24} className="text-white" /> : <Package size={24} className="text-white" />}
+                      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
+                        <div className="flex items-center gap-2">
+                          <div className={`p-1.5 rounded-lg ${selectedGuestDetails.type === 'qemu' ? 'bg-purple-500' : 'bg-green-500'}`}>
+                            {selectedGuestDetails.type === 'qemu' ? <HardDrive size={20} className="text-white" /> : <Package size={20} className="text-white" />}
                           </div>
                           <div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                               {selectedGuestDetails.name || `Guest ${selectedGuestDetails.vmid}`}
                             </h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
                               {selectedGuestDetails.type === 'qemu' ? 'Virtual Machine' : 'Container'} #{selectedGuestDetails.vmid}
                             </p>
                           </div>
@@ -7754,158 +8755,108 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           onClick={() => setSelectedGuestDetails(null)}
                           className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                         >
-                          <X size={24} />
+                          <X size={20} />
                         </button>
                       </div>
 
                       {/* Modal Body */}
-                      <div className="p-6 space-y-4">
-                        {/* Status and Location */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Status</div>
-                            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
+                      <div className="p-4">
+                        {/* Status Bar */}
+                        <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center gap-2">
+                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${
                               selectedGuestDetails.status === 'running' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
                               'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
                             }`}>
-                              {selectedGuestDetails.status === 'running' ? <Activity size={14} /> : <AlertCircle size={14} />}
+                              {selectedGuestDetails.status === 'running' ? <Activity size={12} /> : <AlertCircle size={12} />}
                               {selectedGuestDetails.status}
                             </div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Current Node</div>
-                            <div className="font-medium text-gray-900 dark:text-white">{selectedGuestDetails.currentNode}</div>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">on</span>
+                            <span className="text-xs font-medium text-gray-900 dark:text-white">{selectedGuestDetails.currentNode}</span>
                           </div>
                         </div>
 
-                        {/* Resource Usage */}
-                        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                          <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Resource Usage</h4>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-4">
-                              {/* Sparkline background */}
-                              <svg className="absolute inset-0 w-full h-full opacity-20" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                <polyline
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="text-blue-600 dark:text-blue-400"
-                                  points={generateSparkline(selectedGuestDetails.cpu_current || 0, 100, 40, 0.3)}
-                                />
-                              </svg>
-                              <div className="relative z-10">
-                                <div className="text-sm text-gray-600 dark:text-gray-300 mb-1">CPU</div>
-                                <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                                  {(selectedGuestDetails.cpu_current || 0).toFixed(1)}%
-                                </div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">{selectedGuestDetails.cpu_cores || 0} cores allocated</div>
-                              </div>
+                        {/* Resource Usage - Compact 2-Column Grid with Sparklines */}
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          {/* CPU */}
+                          <div className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded p-2 border border-blue-200 dark:border-blue-800">
+                            {/* Sparkline background */}
+                            <svg className="absolute inset-0 w-full h-full opacity-30" preserveAspectRatio="none" viewBox="0 0 100 100">
+                              <polyline
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                className="text-blue-600 dark:text-blue-400"
+                                points={generateSparkline(selectedGuestDetails.cpu_current || 0, 100, 30, 0.3)}
+                              />
+                            </svg>
+                            <div className="relative z-10">
+                              <div className="text-[10px] uppercase tracking-wide text-blue-600 dark:text-blue-400 font-medium mb-0.5">CPU</div>
+                              <div className="text-xl font-bold text-gray-900 dark:text-white">{(selectedGuestDetails.cpu_current || 0).toFixed(1)}%</div>
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400">{selectedGuestDetails.cpu_cores || 0} cores</div>
                             </div>
-                            <div className="relative overflow-hidden bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-4">
-                              {/* Sparkline background */}
-                              <svg className="absolute inset-0 w-full h-full opacity-20" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                <polyline
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="text-purple-600 dark:text-purple-400"
-                                  points={generateSparkline(selectedGuestDetails.mem_max_gb > 0 ? ((selectedGuestDetails.mem_used_gb / selectedGuestDetails.mem_max_gb) * 100) : 0, 100, 40, 0.25)}
-                                />
-                              </svg>
-                              <div className="relative z-10">
-                                <div className="text-sm text-gray-600 dark:text-gray-300 mb-1">Memory</div>
-                                <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                                  {selectedGuestDetails.mem_max_gb > 0 ? ((selectedGuestDetails.mem_used_gb / selectedGuestDetails.mem_max_gb) * 100).toFixed(1) : 0}%
-                                </div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                  {(selectedGuestDetails.mem_used_gb || 0).toFixed(1)} / {(selectedGuestDetails.mem_max_gb || 0).toFixed(1)} GB
-                                </div>
+                          </div>
+
+                          {/* Memory */}
+                          <div className="relative overflow-hidden bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded p-2 border border-purple-200 dark:border-purple-800">
+                            {/* Sparkline background */}
+                            <svg className="absolute inset-0 w-full h-full opacity-30" preserveAspectRatio="none" viewBox="0 0 100 100">
+                              <polyline
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                className="text-purple-600 dark:text-purple-400"
+                                points={generateSparkline(selectedGuestDetails.mem_max_gb > 0 ? ((selectedGuestDetails.mem_used_gb / selectedGuestDetails.mem_max_gb) * 100) : 0, 100, 30, 0.25)}
+                              />
+                            </svg>
+                            <div className="relative z-10">
+                              <div className="text-[10px] uppercase tracking-wide text-purple-600 dark:text-purple-400 font-medium mb-0.5">Memory</div>
+                              <div className="text-xl font-bold text-gray-900 dark:text-white">
+                                {selectedGuestDetails.mem_max_gb > 0 ? ((selectedGuestDetails.mem_used_gb / selectedGuestDetails.mem_max_gb) * 100).toFixed(1) : 0}%
+                              </div>
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                {(selectedGuestDetails.mem_used_gb || 0).toFixed(1)} / {(selectedGuestDetails.mem_max_gb || 0).toFixed(1)} GB
                               </div>
                             </div>
                           </div>
                         </div>
 
-                        {/* Disk I/O */}
-                        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                          <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Disk I/O</h4>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="relative overflow-hidden bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-4">
-                              {/* Sparkline background */}
-                              <svg className="absolute inset-0 w-full h-full opacity-20" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                <polyline
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="text-green-600 dark:text-green-400"
-                                  points={generateSparkline((selectedGuestDetails.disk_read_bps || 0) / (1024 * 1024), Math.max(((selectedGuestDetails.disk_read_bps || 0) / (1024 * 1024)) * 1.5, 10), 40, 0.35)}
-                                />
-                              </svg>
-                              <div className="relative z-10">
-                                <div className="text-sm text-gray-600 dark:text-gray-300 mb-1">Read</div>
-                                <div className="text-xl font-bold text-gray-900 dark:text-white">
-                                  {((selectedGuestDetails.disk_read_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s
-                                </div>
+                        {/* I/O Metrics - Compact 2-Column */}
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          {/* Disk I/O (Read/Write Stacked) */}
+                          <div className="bg-green-50 dark:bg-green-900/20 rounded p-2 border border-green-200 dark:border-green-800">
+                            <div className="text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 font-medium mb-1">Disk I/O</div>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-gray-600 dark:text-gray-400">Read</span>
+                                <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {((selectedGuestDetails.disk_read_bps || 0) / (1024 * 1024)).toFixed(1)} MB/s
+                                </span>
                               </div>
-                            </div>
-                            <div className="relative overflow-hidden bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg p-4">
-                              {/* Sparkline background */}
-                              <svg className="absolute inset-0 w-full h-full opacity-20" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                <polyline
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="text-orange-600 dark:text-orange-400"
-                                  points={generateSparkline((selectedGuestDetails.disk_write_bps || 0) / (1024 * 1024), Math.max(((selectedGuestDetails.disk_write_bps || 0) / (1024 * 1024)) * 1.5, 10), 40, 0.4)}
-                                />
-                              </svg>
-                              <div className="relative z-10">
-                                <div className="text-sm text-gray-600 dark:text-gray-300 mb-1">Write</div>
-                                <div className="text-xl font-bold text-gray-900 dark:text-white">
-                                  {((selectedGuestDetails.disk_write_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s
-                                </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-gray-600 dark:text-gray-400">Write</span>
+                                <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {((selectedGuestDetails.disk_write_bps || 0) / (1024 * 1024)).toFixed(1)} MB/s
+                                </span>
                               </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Network I/O */}
-                        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                          <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Network I/O</h4>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="relative overflow-hidden bg-gradient-to-br from-cyan-50 to-cyan-100 dark:from-cyan-900/20 dark:to-cyan-800/20 rounded-lg p-4">
-                              {/* Sparkline background */}
-                              <svg className="absolute inset-0 w-full h-full opacity-20" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                <polyline
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="text-cyan-600 dark:text-cyan-400"
-                                  points={generateSparkline((selectedGuestDetails.net_in_bps || 0) / (1024 * 1024), Math.max(((selectedGuestDetails.net_in_bps || 0) / (1024 * 1024)) * 1.5, 10), 40, 0.45)}
-                                />
-                              </svg>
-                              <div className="relative z-10">
-                                <div className="text-sm text-gray-600 dark:text-gray-300 mb-1">In</div>
-                                <div className="text-xl font-bold text-gray-900 dark:text-white">
-                                  {((selectedGuestDetails.net_in_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s
-                                </div>
+                          {/* Network I/O (In/Out Stacked) */}
+                          <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded p-2 border border-cyan-200 dark:border-cyan-800">
+                            <div className="text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-400 font-medium mb-1">Network I/O</div>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-gray-600 dark:text-gray-400">In</span>
+                                <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {((selectedGuestDetails.net_in_bps || 0) / (1024 * 1024)).toFixed(1)} MB/s
+                                </span>
                               </div>
-                            </div>
-                            <div className="relative overflow-hidden bg-gradient-to-br from-pink-50 to-pink-100 dark:from-pink-900/20 dark:to-pink-800/20 rounded-lg p-4">
-                              {/* Sparkline background */}
-                              <svg className="absolute inset-0 w-full h-full opacity-20" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                <polyline
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  className="text-pink-600 dark:text-pink-400"
-                                  points={generateSparkline((selectedGuestDetails.net_out_bps || 0) / (1024 * 1024), Math.max(((selectedGuestDetails.net_out_bps || 0) / (1024 * 1024)) * 1.5, 10), 40, 0.5)}
-                                />
-                              </svg>
-                              <div className="relative z-10">
-                                <div className="text-sm text-gray-600 dark:text-gray-300 mb-1">Out</div>
-                                <div className="text-xl font-bold text-gray-900 dark:text-white">
-                                  {((selectedGuestDetails.net_out_bps || 0) / (1024 * 1024)).toFixed(2)} MB/s
-                                </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-gray-600 dark:text-gray-400">Out</span>
+                                <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {((selectedGuestDetails.net_out_bps || 0) / (1024 * 1024)).toFixed(1)} MB/s
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -7913,15 +8864,191 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                         {/* Tags */}
                         {selectedGuestDetails.tags && selectedGuestDetails.tags.all_tags && selectedGuestDetails.tags.all_tags.length > 0 && (
-                          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                            <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Tags</h4>
-                            <div className="flex flex-wrap gap-2">
+                          <div className="border-t border-gray-200 dark:border-gray-700 pt-2 mt-2">
+                            <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400 font-medium mb-1.5">Tags</div>
+                            <div className="flex flex-wrap gap-1.5">
                               {selectedGuestDetails.tags.all_tags.map((tag, idx) => (
                                 <span key={idx} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded text-xs">
                                   {tag}
                                 </span>
                               ))}
                             </div>
+                          </div>
+                        )}
+
+                        {/* Mount Points (Containers only) */}
+                        {selectedGuestDetails.type === 'CT' && selectedGuestDetails.mount_points && selectedGuestDetails.mount_points.has_mount_points && (
+                          <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                            <button
+                              onClick={() => setGuestModalCollapsed(prev => ({
+                                ...prev,
+                                mountPoints: !prev.mountPoints
+                              }))}
+                              className="flex items-center justify-between w-full mb-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 p-2 rounded transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Folder size={16} className={`${
+                                  selectedGuestDetails.mount_points.has_unshared_bind_mount
+                                    ? 'text-orange-600 dark:text-orange-400'
+                                    : 'text-green-600 dark:text-green-400'
+                                }`} />
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  Mount Points ({selectedGuestDetails.mount_points.mount_count})
+                                </h4>
+                              </div>
+                              {guestModalCollapsed.mountPoints ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronUp size={16} className="text-gray-500" />}
+                            </button>
+
+                            {!guestModalCollapsed.mountPoints && (
+                            <>
+                            {/* Mount Points List */}
+                            <div className="space-y-2">
+                              {selectedGuestDetails.mount_points.mount_points && selectedGuestDetails.mount_points.mount_points.map((mp, idx) => (
+                                <div key={idx} className={`p-3 rounded-lg border ${
+                                  mp.is_bind_mount && !mp.is_shared
+                                    ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
+                                    : mp.is_bind_mount && mp.is_shared
+                                    ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                                    : 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+                                }`}>
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="font-mono text-sm font-semibold text-gray-900 dark:text-white">
+                                          {mp.mount_path}
+                                        </span>
+                                        {mp.is_bind_mount && mp.is_shared && (
+                                          <span className="px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded">
+                                            SHARED
+                                          </span>
+                                        )}
+                                        {mp.is_bind_mount && !mp.is_shared && (
+                                          <span className="px-2 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded">
+                                            UNSHARED
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                                        <span className="font-medium">Source:</span> <span className="font-mono">{mp.source}</span>
+                                      </div>
+                                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                        <span className="font-medium">Type:</span> {mp.is_bind_mount ? 'Bind Mount' : 'Storage Mount'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {mp.is_bind_mount && !mp.is_shared && (
+                                    <div className="mt-2 pt-2 border-t border-orange-200 dark:border-orange-800">
+                                      <p className="text-xs text-orange-700 dark:text-orange-300 font-medium">
+                                        ⚠️ Migration requires --restart --force and manual path verification on target node
+                                      </p>
+                                    </div>
+                                  )}
+                                  {mp.is_bind_mount && mp.is_shared && (
+                                    <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
+                                      <p className="text-xs text-green-700 dark:text-green-300 font-medium">
+                                        ✓ Can be migrated (ensure path exists on target node)
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Migration Warning/Info */}
+                            {selectedGuestDetails.mount_points.has_unshared_bind_mount ? (
+                              <div className="mt-3 p-3 bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 rounded-lg">
+                                <div className="flex items-start gap-2">
+                                  <AlertTriangle size={16} className="text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" />
+                                  <div className="text-xs text-orange-800 dark:text-orange-200">
+                                    <p className="font-semibold mb-1">Manual Migration Required</p>
+                                    <p>This container has unshared bind mounts that require manual intervention. Use <span className="font-mono bg-orange-200 dark:bg-orange-800 px-1">pct migrate {selectedGuestDetails.vmid} &lt;target&gt; --restart --force</span> and verify paths exist on target node.</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : selectedGuestDetails.mount_points.has_shared_mount ? (
+                              <div className="mt-3 p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-lg">
+                                <div className="flex items-start gap-2">
+                                  <CheckCircle size={16} className="text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                                  <div className="text-xs text-green-800 dark:text-green-200">
+                                    <p className="font-semibold mb-1">Safe to Migrate</p>
+                                    <p>All bind mounts are marked as shared. Ensure these paths exist on the target node before migration.</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+                            </>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Local/Pinned Disks (VMs and CTs) */}
+                        {selectedGuestDetails.local_disks && selectedGuestDetails.local_disks.is_pinned && (
+                          <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                            <button
+                              onClick={() => setGuestModalCollapsed(prev => ({
+                                ...prev,
+                                passthroughDisks: !prev.passthroughDisks
+                              }))}
+                              className="flex items-center justify-between w-full mb-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 p-2 rounded transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle size={16} className="text-red-600 dark:text-red-400" />
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  Cannot Migrate - {selectedGuestDetails.local_disks.pinned_reason}
+                                </h4>
+                              </div>
+                              {guestModalCollapsed.passthroughDisks ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronUp size={16} className="text-gray-500" />}
+                            </button>
+
+                            {!guestModalCollapsed.passthroughDisks && (
+                            <>
+                            {/* Passthrough Disks */}
+                            {selectedGuestDetails.local_disks.passthrough_disks && selectedGuestDetails.local_disks.passthrough_disks.length > 0 && (
+                              <div className="mb-3">
+                                <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                  Passthrough Disks ({selectedGuestDetails.local_disks.passthrough_count})
+                                </h5>
+                                <div className="space-y-2">
+                                  {selectedGuestDetails.local_disks.passthrough_disks.map((disk, idx) => (
+                                    <div key={idx} className="p-3 rounded-lg border bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700">
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <span className="font-mono text-sm font-semibold text-gray-900 dark:text-white">
+                                              {disk.key}
+                                            </span>
+                                            <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded">
+                                              HARDWARE PASSTHROUGH
+                                            </span>
+                                          </div>
+                                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                                            <span className="font-medium">Device:</span> <span className="font-mono text-[11px]">{disk.device}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-800">
+                                        <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+                                          ⚠️ This disk is physically attached to the current node's hardware. Cannot be migrated.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Summary Warning */}
+                            <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg">
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle size={16} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                                <div className="text-xs text-red-800 dark:text-red-200">
+                                  <p className="font-semibold mb-1">Migration Blocked</p>
+                                  <p>This {selectedGuestDetails.type} has {selectedGuestDetails.local_disks.total_pinned_disks} disk(s) that prevent automatic migration. Manual intervention required.</p>
+                                </div>
+                              </div>
+                            </div>
+                            </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -8493,7 +9620,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                           <div className="px-4 pb-4">
                             <div className="text-sm text-blue-900 dark:text-blue-100">
                               <p className="text-blue-800 dark:text-blue-200 mb-2">
-                                ProxBalance uses a penalty-based scoring system to evaluate every guest on every node. Migrations are recommended when moving a guest would improve its suitability rating by <span className="font-bold">15+ points</span>.
+                                ProxBalance uses a penalty-based scoring system to evaluate every guest on every node. Migrations are recommended when moving a guest would improve its suitability rating by <span className="font-bold">{penaltyConfig?.min_score_improvement || 15}+ points</span>.
                               </p>
                               <ul className="ml-4 space-y-1 text-blue-700 dark:text-blue-300 text-xs list-disc">
                                 <li><span className="font-semibold">Suitability Rating:</span> 0-100% (lower penalties = higher rating). Penalties accumulate for unfavorable conditions.</li>
@@ -8558,6 +9685,17 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                   <span className={`font-semibold ${isCompleted ? 'text-green-700 dark:text-green-300' : 'text-gray-900 dark:text-white'}`}>
                                     [{rec.type} {rec.vmid}] {rec.name}
                                   </span>
+                                  {rec.mount_point_info?.has_mount_points && (
+                                    <span className={`flex items-center gap-1 px-2 py-0.5 ${
+                                      rec.mount_point_info.has_unshared_bind_mount
+                                        ? 'bg-orange-500'
+                                        : 'bg-green-500'
+                                    } text-white text-[10px] font-bold rounded`}
+                                    title={`${rec.mount_point_info.mount_count} mount point(s)${rec.mount_point_info.has_shared_mount ? ' (shared - can migrate)' : ' (requires manual migration)'}`}>
+                                      <Folder size={10} />
+                                      {rec.mount_point_info.mount_count} MP
+                                    </span>
+                                  )}
                                   {isMaintenance && !isCompleted && (
                                     <span className="px-2 py-0.5 bg-yellow-500 text-white text-[10px] font-bold rounded">
                                       MAINTENANCE
@@ -8586,7 +9724,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold ${
                                           rec.score_improvement >= 50 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
                                           rec.score_improvement >= 30 ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' :
-                                          rec.score_improvement >= 15 ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' :
+                                          rec.score_improvement >= (penaltyConfig?.min_score_improvement || 15) ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' :
                                           'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
                                         }`} title="How much better the target node is (penalty point reduction)">
                                           <span className="text-xs">Improvement:</span>
@@ -8614,6 +9752,22 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                     <div className="flex items-start gap-2">
                                       <span className="text-purple-600 dark:text-purple-400 font-semibold shrink-0">AI:</span>
                                       <span className="text-gray-700 dark:text-gray-300">{rec.ai_insight}</span>
+                                    </div>
+                                  </div>
+                                )}
+                                {rec.bind_mount_warning && (
+                                  <div className={`mt-2 p-2 ${
+                                    rec.mount_point_info?.has_unshared_bind_mount
+                                      ? 'bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border border-orange-300 dark:border-orange-700'
+                                      : 'bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 border border-green-300 dark:border-green-700'
+                                  } rounded text-xs`}>
+                                    <div className="flex items-start gap-2">
+                                      <Folder size={14} className={`shrink-0 ${
+                                        rec.mount_point_info?.has_unshared_bind_mount
+                                          ? 'text-orange-600 dark:text-orange-400'
+                                          : 'text-green-600 dark:text-green-400'
+                                      }`} />
+                                      <span className="text-gray-700 dark:text-gray-300">{rec.bind_mount_warning}</span>
                                     </div>
                                   </div>
                                 )}
