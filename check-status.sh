@@ -162,6 +162,74 @@ fi
 
 echo ""
 echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+echo -e "${BL}Frontend Build Status${CL}"
+echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+
+# Check Node.js
+NODE_VERSION=$(pct exec "$CTID" -- node --version 2>/dev/null || echo "not installed")
+if [ "$NODE_VERSION" != "not installed" ]; then
+    echo -e "${CM} Node.js: ${GN}${NODE_VERSION}${CL}"
+else
+    echo -e "${CROSS} Node.js: ${RD}not installed${CL}"
+fi
+
+# Check npm
+NPM_VERSION=$(pct exec "$CTID" -- npm --version 2>/dev/null || echo "not installed")
+if [ "$NPM_VERSION" != "not installed" ]; then
+    echo -e "${CM} npm: ${GN}v${NPM_VERSION}${CL}"
+else
+    echo -e "${CROSS} npm: ${RD}not installed${CL}"
+fi
+
+# Check Babel
+if pct exec "$CTID" -- test -d /opt/proxmox-balance-manager/node_modules/@babel/core 2>/dev/null; then
+    BABEL_VERSION=$(pct exec "$CTID" -- jq -r '.version // "unknown"' /opt/proxmox-balance-manager/node_modules/@babel/core/package.json 2>/dev/null)
+    echo -e "${CM} Babel: ${GN}v${BABEL_VERSION}${CL}"
+else
+    echo -e "${CROSS} Babel: ${RD}not installed${CL}"
+fi
+
+# Check compiled app.js
+if pct exec "$CTID" -- test -f /var/www/html/assets/js/app.js 2>/dev/null; then
+    APP_SIZE=$(pct exec "$CTID" -- stat -c%s /var/www/html/assets/js/app.js 2>/dev/null)
+    APP_SIZE_KB=$((APP_SIZE / 1024))
+    echo -e "${CM} Compiled app.js: ${GN}${APP_SIZE_KB} KB${CL}"
+else
+    echo -e "${CROSS} Compiled app.js: ${RD}missing${CL}"
+fi
+
+# Check React libraries
+if pct exec "$CTID" -- test -f /var/www/html/assets/js/react.production.min.js 2>/dev/null; then
+    REACT_SIZE=$(pct exec "$CTID" -- stat -c%s /var/www/html/assets/js/react.production.min.js 2>/dev/null)
+    REACT_SIZE_KB=$((REACT_SIZE / 1024))
+    echo -e "${CM} React: ${GN}${REACT_SIZE_KB} KB${CL}"
+else
+    echo -e "${CROSS} React: ${RD}missing${CL}"
+fi
+
+if pct exec "$CTID" -- test -f /var/www/html/assets/js/react-dom.production.min.js 2>/dev/null; then
+    REACT_DOM_SIZE=$(pct exec "$CTID" -- stat -c%s /var/www/html/assets/js/react-dom.production.min.js 2>/dev/null)
+    REACT_DOM_SIZE_KB=$((REACT_DOM_SIZE / 1024))
+    echo -e "${CM} React-DOM: ${GN}${REACT_DOM_SIZE_KB} KB${CL}"
+else
+    echo -e "${CROSS} React-DOM: ${RD}missing${CL}"
+fi
+
+# Check index.html
+if pct exec "$CTID" -- test -f /var/www/html/index.html 2>/dev/null; then
+    INDEX_SIZE=$(pct exec "$CTID" -- stat -c%s /var/www/html/index.html 2>/dev/null)
+    # Check if it references local React (good) or CDN (bad)
+    if pct exec "$CTID" -- grep -q 'assets/js/react.production.min.js' /var/www/html/index.html 2>/dev/null; then
+        echo -e "${CM} index.html: ${GN}optimized (${INDEX_SIZE} bytes)${CL}"
+    else
+        echo -e "${YW}⚠${CL} index.html: ${YW}not optimized (using CDN)${CL}"
+    fi
+else
+    echo -e "${CROSS} index.html: ${RD}missing${CL}"
+fi
+
+echo ""
+echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
 echo -e "${BL}Proxmox API Token Status${CL}"
 echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
 

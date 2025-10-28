@@ -34,22 +34,53 @@ STAR="${YW}★${CL}"
 SPINNER_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 
 # ═══════════════════════════════════════════════════════════════
+# Visual Design System
+# ═══════════════════════════════════════════════════════════════
+
+# Semantic color definitions (optimized for consistency)
+HEADER_COLOR="${BL}"        # Blue - Main headers and titles
+SECTION_COLOR="${CY}"       # Cyan - Section dividers and structure
+ACCENT_COLOR="${MG}"        # Magenta - Important highlights
+SUCCESS_COLOR="${GN}"       # Green - Success states
+WARNING_COLOR="${YW}"       # Yellow - Warnings and cautions
+ERROR_COLOR="${RD}"         # Red - Errors
+INFO_COLOR="${CY}"          # Cyan - Informational items
+PROMPT_COLOR="${CY}"        # Cyan - User input prompts
+VALUE_COLOR="${GN}"         # Green - Values and selections
+DIM_COLOR="${DIM}"          # Dim - Secondary text
+
+# Pure ASCII status indicators
+CHECK="[OK]"
+CROSS="[X]"
+INFO_ICON="[*]"
+WARN_ICON="[!]"
+ARROW=">"
+
+# Spacing constants
+SECTION_SPACING=2
+SUBSECTION_SPACING=1
+
+# Progress tracking
+CURRENT_STEP=0
+TOTAL_STEPS=0
+
+# ═══════════════════════════════════════════════════════════════
 # Helper Functions
 # ═══════════════════════════════════════════════════════════════
 msg_info() {
-  echo -e "${INFO} ${BOLD}${BL}${1}${CL}"
+  echo -e "${INFO_COLOR}${INFO_ICON}${CL} ${BOLD}${HEADER_COLOR}${1}${CL}"
 }
 
 msg_ok() {
-  echo -e "${CM} ${GN}${1}${CL}"
+  echo -e "${SUCCESS_COLOR}${CHECK}${CL} ${SUCCESS_COLOR}${1}${CL}"
 }
 
 msg_error() {
-  echo -e "${CROSS} ${BOLD}${RD}${1}${CL}"
+  echo -e "${ERROR_COLOR}${CROSS}${CL} ${BOLD}${ERROR_COLOR}${1}${CL}"
 }
 
 msg_warn() {
-  echo -e "${WARN} ${YW}${1}${CL}"
+  echo -e "${WARNING_COLOR}${WARN_ICON}${CL} ${WARNING_COLOR}${1}${CL}"
 }
 
 # Spinner for long-running operations
@@ -58,16 +89,16 @@ spinner() {
   local message=$2
   local i=0
 
-  tput civis # Hide cursor
+  tput civis 2>/dev/null || true # Hide cursor
   while kill -0 "$pid" 2>/dev/null; do
     i=$(( (i+1) % ${#SPINNER_FRAMES[@]} ))
-    printf "\r${CY}${SPINNER_FRAMES[$i]}${CL} ${DIM}${message}...${CL}"
+    printf "\r  ${CY}${SPINNER_FRAMES[$i]}${CL} ${DIM_COLOR}${message}...${CL}"
     sleep 0.1
   done
   wait "$pid"
   local exit_code=$?
-  tput cnorm # Show cursor
-  printf "\r"
+  printf "\r\033[K"  # Clear line
+  tput cnorm 2>/dev/null || true # Show cursor
   return $exit_code
 }
 
@@ -92,45 +123,123 @@ section_header() {
   local step=$2
   local total=$3
   echo ""
-  echo -e "${CY}╭─────────────────────────────────────────────────────────────────╮${CL}"
+  echo -e "${SECTION_COLOR}════════════════════════════════════════════════════════════════${CL}"
   if [ -n "$step" ] && [ -n "$total" ]; then
-    echo -e "${CY}│${CL} ${BOLD}${MG}Step ${step}/${total}:${CL} ${BOLD}${title}${CL}"
+    echo -e "  ${BOLD}${HEADER_COLOR}Step ${step}/${total}:${CL} ${BOLD}${title}${CL}"
   else
-    echo -e "${CY}│${CL} ${BOLD}${title}${CL}"
+    echo -e "  ${BOLD}${title}${CL}"
   fi
-  echo -e "${CY}╰─────────────────────────────────────────────────────────────────╯${CL}"
+  echo -e "${SECTION_COLOR}════════════════════════════════════════════════════════════════${CL}"
   echo ""
 }
 
+# Subsection header with progress tracking
+subsection_header() {
+  local title=$1
+  CURRENT_STEP=$((CURRENT_STEP + 1))
+  echo ""
+  echo -e "${SECTION_COLOR}════════════════════════════════════════════════════════════════${CL}"
+  echo -e "  ${BOLD}${HEADER_COLOR}Step ${CURRENT_STEP}/${TOTAL_STEPS}:${CL} ${BOLD}${title}${CL}"
+  echo -e "${SECTION_COLOR}════════════════════════════════════════════════════════════════${CL}"
+  echo ""
+}
+
+# Display information in a panel with colored background
+info_panel() {
+  local title=$1
+  shift
+  local lines=("$@")
+
+  echo ""
+  echo -e "${INFO_COLOR}════════════════════════════════════════════════════════════════${CL}"
+  echo -e "${BOLD}${HEADER_COLOR}${title}${CL}"
+  echo -e "${INFO_COLOR}════════════════════════════════════════════════════════════════${CL}"
+  echo ""
+  for line in "${lines[@]}"; do
+    echo -e "  ${line}"
+  done
+  echo ""
+  echo -e "${INFO_COLOR}────────────────────────────────────────────────────────────────${CL}"
+  echo ""
+}
+
+# Standardized user prompt
+prompt_user() {
+  local prompt_text=$1
+  local default_value=$2
+  local var_name=$3
+
+  if [ -n "$default_value" ]; then
+    echo -ne "${PROMPT_COLOR}${ARROW}${CL} ${prompt_text} ${DIM_COLOR}(default: ${default_value})${CL}: "
+  else
+    echo -ne "${PROMPT_COLOR}${ARROW}${CL} ${prompt_text}: "
+  fi
+
+  read user_input
+  if [ -z "$user_input" ] && [ -n "$default_value" ]; then
+    eval "$var_name='$default_value'"
+  else
+    eval "$var_name='$user_input'"
+  fi
+}
+
+# Display menu option in boxed style
+menu_option() {
+  local number=$1
+  local title=$2
+  local description=$3
+
+  echo -e "  ${BOLD}${PROMPT_COLOR}[${number}]${CL} ${BOLD}${title}${CL} ${DIM_COLOR}${description}${CL}"
+}
+
+# Smart divider with optional text
+divider() {
+  local text=$1
+  if [ -n "$text" ]; then
+    echo -e "${SECTION_COLOR}───── ${text} $(printf '─%.0s' {1..40})${CL}"
+  else
+    echo -e "${SECTION_COLOR}════════════════════════════════════════════════════════════════${CL}"
+  fi
+}
+
+# Display key-value status line
+status_line() {
+  local key=$1
+  local value=$2
+  local color=${3:-$VALUE_COLOR}
+
+  printf "  %-20s ${color}%s${CL}\n" "${key}:" "${value}"
+}
+
+# Progress step indicator
+progress_step() {
+  local step=$1
+  local total=$2
+  local action=$3
+
+  echo ""
+  echo -e "${DIM_COLOR}[${step}/${total}]${CL} ${INFO_COLOR}${INFO_ICON}${CL} ${action}..."
+}
+
 header_info() {
-  clear
-  echo -e "${CY}"
-  cat <<"EOF"
-╔════════════════════════════════════════════════════════════════╗
-║                                                                ║
-║        ██████╗ ██████╗  ██████╗ ██╗  ██╗                      ║
-║        ██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝                      ║
-║        ██████╔╝██████╔╝██║   ██║ ╚███╔╝                       ║
-║        ██╔═══╝ ██╔══██╗██║   ██║ ██╔██╗                       ║
-║        ██║     ██║  ██║╚██████╔╝██╔╝ ██╗                      ║
-║        ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝                      ║
-║                                                                ║
-║     ██████╗  █████╗ ██╗      █████╗ ███╗   ██╗ ██████╗███████╗
-║     ██╔══██╗██╔══██╗██║     ██╔══██╗████╗  ██║██╔════╝██╔════╝
-║     ██████╔╝███████║██║     ███████║██╔██╗ ██║██║     █████╗  ║
-║     ██╔══██╗██╔══██║██║     ██╔══██║██║╚██╗██║██║     ██╔══╝  ║
-║     ██████╔╝██║  ██║███████╗██║  ██║██║ ╚████║╚██████╗███████╗║
-║     ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝╚══════╝║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
-EOF
-  echo -e "${CL}"
-  echo -e "  ${BOLD}${MG}Proxmox Balance Manager${CL} ${DIM}Installer v2.0${CL}"
-  echo -e "  ${DIM}Intelligent VM/CT Load Balancing${CL}"
+  clear 2>/dev/null || true
   echo ""
-  echo -e "  ${STAR} ${YW}https://github.com/Pr0zak/ProxBalance${CL}"
+  echo -e "${SECTION_COLOR}════════════════════════════════════════════════════════════════${CL}"
   echo ""
-  echo -e "${BL}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "   ${BOLD}${HEADER_COLOR}____                 ____        _                   ${CL}"
+  echo -e "  ${BOLD}${HEADER_COLOR}|  _ \ _ __ _____  __| __ )  __ _| | __ _ _ __   ___ ___${CL}"
+  echo -e "  ${BOLD}${HEADER_COLOR}| |_) | '__/ _ \ \/ /|  _ \ / _\` | |/ _\` | '_ \ / __/ _ \ ${CL}"
+  echo -e "  ${BOLD}${HEADER_COLOR}|  __/| | | (_) >  < | |_) | (_| | | (_| | | | | (_|  __/${CL}"
+  echo -e "  ${BOLD}${HEADER_COLOR}|_|   |_|  \___/_/\_\|____/ \__,_|_|\__,_|_| |_|\___\___|${CL}"
+  echo ""
+  echo -e "           ${ACCENT_COLOR}Proxmox Cluster Balance Manager${CL}"
+  echo -e "            ${DIM_COLOR}Intelligent VM/CT Load Balancing${CL}"
+  echo ""
+  echo -e "${SECTION_COLOR}════════════════════════════════════════════════════════════════${CL}"
+  echo ""
+  echo -e "  ${INFO_COLOR}[*]${CL} ${YW}https://github.com/Pr0zak/ProxBalance${CL}"
+  echo ""
+  echo -e "${SECTION_COLOR}────────────────────────────────────────────────────────────────${CL}"
   echo ""
 }
 
@@ -153,33 +262,80 @@ check_proxmox() {
 
 get_next_ctid() {
   local next_id=100
-  while pct status "$next_id" &>/dev/null; do
-    ((next_id++))
+
+  # Method 1: Check pct status
+  # Method 2: Check config file existence
+  # Method 3: Check pvesh API
+  # Method 4: Check running/stopped containers list
+  while true; do
+    # Check if container exists via pct status
+    if pct status "$next_id" &>/dev/null; then
+      next_id=$((next_id + 1))
+      continue
+    fi
+
+    # Check if config file exists
+    if [ -f "/etc/pve/lxc/${next_id}.conf" ]; then
+      next_id=$((next_id + 1))
+      continue
+    fi
+
+    # Check if listed in pvesh (if available)
+    if command -v pvesh &>/dev/null; then
+      if pvesh get /cluster/resources --type vm --output-format json 2>/dev/null | grep -q "\"vmid\":$next_id"; then
+        next_id=$((next_id + 1))
+        continue
+      fi
+    fi
+
+    # Check if in pct list output
+    if pct list 2>/dev/null | awk '{print $1}' | grep -q "^${next_id}$"; then
+      next_id=$((next_id + 1))
+      continue
+    fi
+
+    # All checks passed, this ID is available
+    break
   done
+
   echo "$next_id"
 }
 
 select_container_id() {
-  echo ""
-  msg_info "Container ID Configuration"
-  echo ""
+  subsection_header "Container ID Configuration"
+
+  # Detect next available ID with spinner
+  echo -ne "  ${INFO_COLOR}${INFO_ICON}${CL} Detecting next available container ID"
   local next_ctid
-  next_ctid=$(get_next_ctid)
-
-  echo -e "  ${BOLD}${CY}1)${CL} ${GN}Automatic${CL} ${DIM}(Next available: ${next_ctid})${CL}"
-  echo -e "  ${BOLD}${CY}2)${CL} ${YW}Manual${CL} ${DIM}(Enter custom ID)${CL}"
+  get_next_ctid > /tmp/next_ctid.tmp &
+  local pid=$!
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf "."
+    sleep 0.2
+  done
+  wait "$pid"
+  next_ctid=$(cat /tmp/next_ctid.tmp)
+  rm -f /tmp/next_ctid.tmp
+  echo -e " ${SUCCESS_COLOR}${CHECK}${CL}"
   echo ""
 
-  echo -ne "${CY}▶${CL} Select option [1-2] (default: 1): "
+  menu_option "1" "Automatic" "(Next available: ${next_ctid})"
+  menu_option "2" "Manual" "(Enter custom ID)"
+  echo ""
+
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} Select option [1-2] ${DIM_COLOR}(default: 1)${CL}: "
   read choice
   choice=${choice:-1}
-  
+
   case $choice in
     1)
       CTID=$next_ctid
       ;;
     2)
-      read -p "Enter container ID (100-999999): " custom_id
+      echo ""
+      echo -ne "${PROMPT_COLOR}${ARROW}${CL} Enter container ID (100-999999): "
+      read custom_id
       if [[ ! "$custom_id" =~ ^[0-9]+$ ]] || [ "$custom_id" -lt 100 ]; then
         msg_error "Invalid container ID. Must be >= 100"
         select_container_id
@@ -198,50 +354,57 @@ select_container_id() {
       return
       ;;
   esac
-  
-  msg_ok "Container ID: ${GN}${CTID}${CL}"
+
+  echo ""
+  msg_ok "Container ID: ${VALUE_COLOR}${CTID}${CL}"
 }
 
 select_hostname() {
-  echo ""
-  msg_info "Hostname Configuration"
-  echo ""
-  echo -ne "${CY}▶${CL} Enter hostname (default: ProxBalance): "
+  subsection_header "Hostname Configuration"
+
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} Enter hostname ${DIM_COLOR}(default: ProxBalance)${CL}: "
   read hostname
   HOSTNAME=${hostname:-ProxBalance}
-  msg_ok "Hostname set to: ${BOLD}${HOSTNAME}${CL}"
+
+  echo ""
+  msg_ok "Hostname set to: ${VALUE_COLOR}${HOSTNAME}${CL}"
 }
 
 select_network() {
-  echo ""
-  msg_info "Network Configuration"
-  echo ""
-  echo -e "  ${BOLD}${CY}1)${CL} ${GN}DHCP${CL} ${DIM}(Automatic - Recommended)${CL}"
-  echo -e "  ${BOLD}${CY}2)${CL} ${YW}Static IP${CL} ${DIM}(Manual configuration)${CL}"
+  subsection_header "Network Configuration"
+
+  menu_option "1" "DHCP" "(Automatic - Recommended)"
+  menu_option "2" "Static IP" "(Manual configuration)"
   echo ""
 
-  echo -ne "${CY}▶${CL} Select option [1-2] (default: 1): "
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} Select option [1-2] ${DIM_COLOR}(default: 1)${CL}: "
   read choice
   choice=${choice:-1}
-  
+
   case $choice in
     1)
       NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
-      msg_ok "Network: ${GN}DHCP (Automatic)${CL}"
+      echo ""
+      msg_ok "Network: ${VALUE_COLOR}DHCP (Automatic)${CL}"
       ;;
     2)
-      read -p "Enter IP address (e.g., 10.0.0.131): " ip_addr
-      read -p "Enter CIDR (e.g., 24): " cidr
-      read -p "Enter gateway (e.g., 10.0.0.1): " gateway
-      
+      echo ""
+      echo -ne "${PROMPT_COLOR}${ARROW}${CL} Enter IP address (e.g., 10.0.0.131): "
+      read ip_addr
+      echo -ne "${PROMPT_COLOR}${ARROW}${CL} Enter CIDR (e.g., 24): "
+      read cidr
+      echo -ne "${PROMPT_COLOR}${ARROW}${CL} Enter gateway (e.g., 10.0.0.1): "
+      read gateway
+
       if [[ ! "$ip_addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         msg_error "Invalid IP address format"
         select_network
         return
       fi
-      
+
       NET_CONFIG="name=eth0,bridge=vmbr0,ip=${ip_addr}/${cidr},gw=${gateway}"
-      msg_ok "Static IP: ${GN}${ip_addr}/${cidr}${CL} via ${GN}${gateway}${CL}"
+      echo ""
+      msg_ok "Static IP: ${VALUE_COLOR}${ip_addr}/${cidr}${CL} via ${VALUE_COLOR}${gateway}${CL}"
       ;;
     *)
       msg_error "Invalid selection"
@@ -251,7 +414,7 @@ select_network() {
 }
 
 select_storage() {
-  msg_info "Storage Configuration"
+  subsection_header "Storage Configuration"
 
   # Call pvesm status only once and filter for CT-compatible storage types
   # Valid types: dir, nfs, cifs, lvm, lvmthin, zfspool, btrfs
@@ -276,17 +439,21 @@ select_storage() {
     exit 1
   fi
 
-  echo "Available container storage locations:"
+  echo -e "  ${DIM_COLOR}Available container storage locations:${CL}"
+  echo ""
   for i in "${!STORAGES[@]}"; do
-    echo -e "  ${BL}$((i+1)))${CL} ${STORAGES[$i]} ${YW}(${STORAGE_TYPES[$i]})${CL}"
+    menu_option "$((i+1))" "${STORAGES[$i]}" "(${STORAGE_TYPES[$i]})"
   done
   echo ""
 
   while true; do
-    read -p "Select storage [1-${#STORAGES[@]}]: " choice
+    echo -ne "${PROMPT_COLOR}${ARROW}${CL} Select storage [1-${#STORAGES[@]}] ${DIM_COLOR}(default: 1)${CL}: "
+    read choice
+    choice=${choice:-1}
     if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#STORAGES[@]} ]; then
       STORAGE="${STORAGES[$((choice-1))]}"
-      msg_ok "Using storage: ${GN}${STORAGE}${CL}"
+      echo ""
+      msg_ok "Using storage: ${VALUE_COLOR}${STORAGE}${CL}"
       break
     else
       msg_error "Invalid selection"
@@ -295,39 +462,43 @@ select_storage() {
 }
 
 select_template() {
-  msg_info "Template Configuration"
-  
+  subsection_header "Template Configuration"
+
   local template_name="debian-12-standard_12.2-1_amd64.tar.zst"
   local template_path="local:vztmpl/${template_name}"
-  
+
   if pveam list local | grep -q "$template_name"; then
     TEMPLATE="$template_path"
-    msg_ok "Using template: ${GN}${template_name}${CL}"
+    msg_ok "Using template: ${VALUE_COLOR}${template_name}${CL}"
     return
   fi
-  
+
   mapfile -t TEMPLATES < <(pveam available | grep "debian-12-standard" | awk '{print $2}')
-  
+
   if [ ${#TEMPLATES[@]} -eq 0 ]; then
     msg_warn "No Debian 12 templates available"
-    read -p "Enter template path manually: " TEMPLATE
+    echo -ne "${PROMPT_COLOR}${ARROW}${CL} Enter template path manually: "
+    read TEMPLATE
     return
   fi
-  
-  echo "Available Debian 12 templates:"
+
+  echo -e "  ${DIM_COLOR}Available Debian 12 templates:${CL}"
+  echo ""
   for i in "${!TEMPLATES[@]}"; do
-    echo -e "  ${BL}$((i+1)))${CL} ${TEMPLATES[$i]}"
+    menu_option "$((i+1))" "${TEMPLATES[$i]}" ""
   done
   echo ""
-  
+
   local default_choice=1
-  read -p "Select template [1-${#TEMPLATES[@]}] (default: 1): " choice
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} Select template [1-${#TEMPLATES[@]}] ${DIM_COLOR}(default: 1)${CL}: "
+  read choice
   choice=${choice:-$default_choice}
-  
+
   if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#TEMPLATES[@]} ]; then
     local selected_template="${TEMPLATES[$((choice-1))]}"
-    
+
     if ! pveam list local | grep -q "$selected_template"; then
+      echo ""
       msg_info "Downloading template..."
       if pveam download local "$selected_template"; then
         msg_ok "Template downloaded"
@@ -336,9 +507,10 @@ select_template() {
         exit 1
       fi
     fi
-    
+
     TEMPLATE="local:vztmpl/${selected_template}"
-    msg_ok "Using template: ${GN}${selected_template}${CL}"
+    echo ""
+    msg_ok "Using template: ${VALUE_COLOR}${selected_template}${CL}"
   else
     msg_error "Invalid selection"
     select_template
@@ -346,30 +518,33 @@ select_template() {
 }
 
 select_resources() {
-  msg_info "Resource Configuration"
+  subsection_header "Resource Configuration"
 
-  read -p "Memory (MB) [default: 2048]: " memory
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} Memory (MB) ${DIM_COLOR}(default: 2048)${CL}: "
+  read memory
   MEMORY=${memory:-2048}
 
-  read -p "CPU cores [default: 2]: " cores
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} CPU cores ${DIM_COLOR}(default: 2)${CL}: "
+  read cores
   CORES=${cores:-2}
 
-  read -p "Disk size (GB) [default: 8]: " disk
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} Disk size (GB) ${DIM_COLOR}(default: 8)${CL}: "
+  read disk
   DISK=${disk:-8}
 
-  msg_ok "Resources: ${GN}${MEMORY}${CL}MB RAM, ${GN}${CORES}${CL} cores, ${GN}${DISK}${CL}GB disk"
+  echo ""
+  msg_ok "Resources: ${VALUE_COLOR}${MEMORY}${CL}MB RAM, ${VALUE_COLOR}${CORES}${CL} cores, ${VALUE_COLOR}${DISK}${CL}GB disk"
 }
 
 select_password() {
-  echo ""
-  msg_info "Root Password Configuration"
-  echo ""
-  echo -e "  ${BOLD}${CY}1)${CL} ${YW}Set a custom password${CL} ${DIM}(Secure for production)${CL}"
-  echo -e "  ${BOLD}${CY}2)${CL} ${GN}No password (auto-login to console)${CL} ${DIM}(Recommended for homelab)${CL}"
-  echo -e "  ${BOLD}${CY}3)${CL} ${MG}Random password${CL} ${DIM}(Will be displayed after creation)${CL}"
+  subsection_header "Root Password Configuration"
+
+  menu_option "1" "Set a custom password" "(Secure for production)"
+  menu_option "2" "No password (auto-login)" "(Recommended for homelab)"
+  menu_option "3" "Random password" "(Will be displayed after creation)"
   echo ""
 
-  echo -ne "${CY}▶${CL} Select option [1-3] (default: 2): "
+  echo -ne "${PROMPT_COLOR}${ARROW}${CL} Select option [1-3] ${DIM_COLOR}(default: 2)${CL}: "
   read choice
   choice=${choice:-2}
 
@@ -545,7 +720,7 @@ verify_proxmox_connectivity() {
       sleep 2
     fi
 
-    ((attempt++))
+    attempt=$((attempt + 1))
   done
 
   if [ "$connected" = true ]; then
@@ -610,6 +785,10 @@ create_container() {
     password_arg="--password $ROOT_PASSWORD"
   fi
 
+  # Create container and capture output
+  local error_log="/tmp/proxbalance_create_error_$$.log"
+  local output_log="/tmp/proxbalance_create_output_$$.log"
+
   (
     if [ -n "$password_arg" ]; then
       pct create "$CTID" "$TEMPLATE" \
@@ -622,7 +801,7 @@ create_container() {
         --features nesting=1 \
         --onboot 1 \
         --start 1 \
-        $password_arg >/dev/null 2>&1
+        $password_arg >"$output_log" 2>"$error_log"
     else
       pct create "$CTID" "$TEMPLATE" \
         --hostname "$HOSTNAME" \
@@ -633,14 +812,27 @@ create_container() {
         --unprivileged 1 \
         --features nesting=1 \
         --onboot 1 \
-        --start 1 >/dev/null 2>&1
+        --start 1 >"$output_log" 2>"$error_log"
     fi
   ) &
 
   if spinner $! "Creating container ${CTID}"; then
     msg_ok "Container ${CTID} created"
+    rm -f "$error_log" "$output_log"
   else
     msg_error "Failed to create container"
+    echo ""
+    if [ -f "$error_log" ] && [ -s "$error_log" ]; then
+      echo -e "${YW}Error details:${CL}"
+      cat "$error_log" | head -10
+    elif [ -f "$output_log" ] && [ -s "$output_log" ]; then
+      echo -e "${YW}Output:${CL}"
+      cat "$output_log" | head -10
+    else
+      echo -e "${YW}No additional error information available${CL}"
+    fi
+    rm -f "$error_log" "$output_log"
+    echo ""
     exit 1
   fi
 
@@ -670,7 +862,7 @@ get_container_ip() {
           exit 0
         fi
 
-        ((attempt++))
+        attempt=$((attempt + 1))
         sleep 2
       done
       exit 1
@@ -698,17 +890,32 @@ install_dependencies() {
   (
     pct exec "$CTID" -- bash -c "
       export DEBIAN_FRONTEND=noninteractive
-      apt-get update >/dev/null 2>&1
+      apt-get update >> '$INSTALL_LOG_VERBOSE' 2>&1
     "
   ) &
   spinner $! "Updating package lists"
+  echo ""
+
+  # Configure locales to prevent Perl warnings
+  (
+    pct exec "$CTID" -- bash -c "
+      export DEBIAN_FRONTEND=noninteractive
+      echo '=== Installing locales ===' >> '$INSTALL_LOG_VERBOSE'
+      apt-get install -y locales >> '$INSTALL_LOG_VERBOSE' 2>&1
+      sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
+      locale-gen >> '$INSTALL_LOG_VERBOSE' 2>&1
+      update-locale LANG=en_US.UTF-8 >> '$INSTALL_LOG_VERBOSE' 2>&1
+    "
+  ) &
+  spinner $! "Configuring locales"
   echo ""
 
   # Install Python and related tools
   (
     pct exec "$CTID" -- bash -c "
       export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y python3 python3-venv python3-pip >/dev/null 2>&1
+      echo '=== Installing Python ===' >> '$INSTALL_LOG_VERBOSE'
+      apt-get install -y python3 python3-venv python3-pip >> '$INSTALL_LOG_VERBOSE' 2>&1
     "
   ) &
   spinner $! "Installing Python 3, venv, and pip"
@@ -718,7 +925,8 @@ install_dependencies() {
   (
     pct exec "$CTID" -- bash -c "
       export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y curl jq git >/dev/null 2>&1
+      echo '=== Installing utilities ===' >> '$INSTALL_LOG_VERBOSE'
+      apt-get install -y curl jq git >> '$INSTALL_LOG_VERBOSE' 2>&1
     "
   ) &
   spinner $! "Installing utilities (curl, jq, git)"
@@ -728,9 +936,10 @@ install_dependencies() {
   (
     pct exec "$CTID" -- bash -c "
       export DEBIAN_FRONTEND=noninteractive
+      echo '=== Installing Node.js ===' >> '$INSTALL_LOG_VERBOSE'
       # Install Node.js from NodeSource (LTS version)
-      curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
-      apt-get install -y nodejs >/dev/null 2>&1
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >> '$INSTALL_LOG_VERBOSE' 2>&1
+      apt-get install -y nodejs >> '$INSTALL_LOG_VERBOSE' 2>&1
     "
   ) &
   spinner $! "Installing Node.js 20 LTS (for frontend build)"
@@ -740,7 +949,8 @@ install_dependencies() {
   (
     pct exec "$CTID" -- bash -c "
       export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y nginx >/dev/null 2>&1
+      echo '=== Installing Nginx ===' >> '$INSTALL_LOG_VERBOSE'
+      apt-get install -y nginx >> '$INSTALL_LOG_VERBOSE' 2>&1
     "
   ) &
   spinner $! "Installing Nginx web server"
@@ -757,22 +967,22 @@ install_proxbalance() {
     PROXBALANCE_BRANCH="main"
   fi
 
-  msg_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  msg_info "════════════════════════════════════════════════════════════════"
   msg_ok "Installing from branch: $PROXBALANCE_BRANCH"
-  msg_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  msg_info "════════════════════════════════════════════════════════════════"
   echo ""
 
-  pct exec "$CTID" -- bash <<EOF
+  if ! pct exec "$CTID" -- bash <<EOF
 set +u  # Disable unbound variable check for this heredoc
 cd /opt
 
 # Clone the specific branch
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo "Git clone starting..."
 echo "Repository: https://github.com/Pr0zak/ProxBalance.git"
 echo "Branch: ${PROXBALANCE_BRANCH}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo ""
 
 if ! git clone -b "${PROXBALANCE_BRANCH}" https://github.com/Pr0zak/ProxBalance.git proxmox-balance-manager 2>&1; then
@@ -791,10 +1001,10 @@ cd proxmox-balance-manager
 # Verify correct branch was cloned
 CLONED_BRANCH=\$(git branch --show-current)
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo "✓ Git clone completed"
 echo "Current branch: \${CLONED_BRANCH}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo ""
 
 # Verify AI features if feature branch
@@ -815,11 +1025,26 @@ fi
 
 python3 -m venv venv
 source venv/bin/activate
-pip install -q --upgrade pip
+
+# Upgrade pip with timeout and retries
+echo "  Upgrading pip..."
+pip install --timeout=120 --retries=5 --quiet --upgrade pip || {
+  echo "  WARNING: pip upgrade failed, continuing with system pip"
+}
+
+# Install Python packages with timeout and retries
 if [ -f requirements.txt ]; then
-  pip install -q -r requirements.txt
+  echo "  Installing Python packages from requirements.txt..."
+  pip install --timeout=120 --retries=5 --quiet -r requirements.txt || {
+    echo "  ERROR: Failed to install Python packages"
+    exit 1
+  }
 else
-  pip install -q flask flask-cors flask-compress gunicorn requests proxmoxer
+  echo "  Installing Python packages..."
+  pip install --timeout=120 --retries=5 --quiet flask flask-cors flask-compress gunicorn requests proxmoxer || {
+    echo "  ERROR: Failed to install Python packages"
+    exit 1
+  }
 fi
 deactivate
 
@@ -844,11 +1069,27 @@ if [ "${PROXBALANCE_BRANCH}" = "feature/ai-migration-recommendations" ]; then
 fi
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo "Branch verification: PASSED"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo ""
 EOF
+  then
+    msg_error "Failed to install ProxBalance"
+    echo ""
+    echo -e "${YW}Common causes:${CL}"
+    echo -e "  ${INFO_ICON} Network connectivity issues (GitHub or PyPI)"
+    echo -e "  ${INFO_ICON} Firewall blocking outbound connections"
+    echo -e "  ${INFO_ICON} Insufficient disk space"
+    echo -e "  ${INFO_ICON} Missing branch: $PROXBALANCE_BRANCH"
+    echo ""
+    echo -e "${YW}Troubleshooting:${CL}"
+    echo -e "  1. Check container logs: ${BL}pct exec $CTID -- journalctl -xe${CL}"
+    echo -e "  2. Verify network: ${BL}pct exec $CTID -- curl -I https://pypi.org${CL}"
+    echo -e "  3. Check disk space: ${BL}pct exec $CTID -- df -h${CL}"
+    echo ""
+    exit 1
+  fi
 
   msg_ok "ProxBalance installed from branch: $PROXBALANCE_BRANCH"
 }
@@ -963,9 +1204,9 @@ build_frontend() {
   pct exec "$CTID" -- bash <<'BUILD_EOF'
 cd /opt/proxmox-balance-manager
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo "Frontend Build Process"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "════════════════════════════════════════════════════════════════"
 echo ""
 
 # Check if we need to build
@@ -988,6 +1229,7 @@ if [ "$NEEDS_BUILD" = "true" ]; then
   # Create directory structure
   echo "Creating build directories..."
   mkdir -p /var/www/html/assets/js
+  mkdir -p /opt/proxmox-balance-manager/assets/js
   mkdir -p src
 
   # Step 1: Install Babel dependencies
@@ -1067,9 +1309,9 @@ BABEL_CONFIG
   echo "  ✓ Optimized index.html created (${INDEX_SIZE} bytes)"
 
   echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "════════════════════════════════════════════════════════════════"
   echo "✓ Frontend build complete!"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "════════════════════════════════════════════════════════════════"
 else
   echo "ℹ  Skipping build - copying pre-built files..."
   cp -f index.html /var/www/html/
@@ -1168,17 +1410,17 @@ setup_api_token_auth() {
   echo ""
 
   # Display token information
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
+  echo -e "${BL}════════════════════════════════════════════════════════════════${CL}"
   echo -e "${BL}Token Configuration${CL}"
-  echo -e "${BL}═══════════════════════════════════════════════════════════════${CL}"
+  echo -e "${BL}════════════════════════════════════════════════════════════════${CL}"
   echo ""
   echo -e "  ${GN}Token User:${CL}  ${YW}proxbalance@pam${CL}"
   echo -e "  ${GN}Token Name:${CL}  ${YW}proxbalance${CL}"
   echo -e "  ${GN}Token ID:${CL}    ${YW}proxbalance@pam!proxbalance${CL}"
   echo ""
-  echo -e "${BL}─────────────────────────────────────────────────────────────${CL}"
+  echo -e "${BL}────────────────────────────────────────────────────────────────${CL}"
   echo -e "${BL}Permission Options${CL}"
-  echo -e "${BL}─────────────────────────────────────────────────────────────${CL}"
+  echo -e "${BL}────────────────────────────────────────────────────────────────${CL}"
   echo ""
   echo -e "  ${BL}1)${CL} ${GN}Minimal (Read-Only)${CL} - Monitoring only"
   echo -e "     ${YW}Recommended for:${CL} Data collection and recommendations"
@@ -1236,9 +1478,9 @@ setup_api_token_auth() {
         2)
           msg_info "Keeping existing token"
           echo ""
-          echo -e "${YW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+          echo -e "${YW}════════════════════════════════════════════════════════════════${CL}"
           echo -e "  ${BOLD}${YW}Please enter the existing token secret${CL}"
-          echo -e "${YW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+          echo -e "${YW}════════════════════════════════════════════════════════════════${CL}"
           echo ""
           echo -e "  ${INFO} ${DIM}You can find this in Proxmox:${CL}"
           echo -e "  ${DIM}  Datacenter → Permissions → API Tokens${CL}"
@@ -1280,14 +1522,75 @@ setup_api_token_auth() {
               esac
             else
               # Store the manually entered token
-              api_token_id="${TOKEN_USER}!${TOKEN_NAME}"
-              api_token_secret="$existing_token_secret"
-              msg_ok "Existing token secret accepted"
+              API_TOKEN_ID="${TOKEN_USER}!${TOKEN_NAME}"
+              API_TOKEN_SECRET="$existing_token_secret"
+              msg_ok "Existing token secret received"
               echo ""
-              msg_info "Token will be configured in ProxBalance"
 
-              # Skip token creation since we're using existing
-              return 0
+              # Test the manually entered token
+              msg_info "Validating token..."
+              if timeout 10 curl -k -s -f \
+                -H "Authorization: PVEAPIToken=${API_TOKEN_ID}=${API_TOKEN_SECRET}" \
+                "https://${PROXMOX_HOST}:8006/api2/json/version" >/dev/null 2>&1; then
+                msg_ok "Token validated successfully"
+
+                # Save for config file
+                echo "$API_TOKEN_SECRET" > /tmp/proxbalance_token_secret.txt
+                chmod 600 /tmp/proxbalance_token_secret.txt
+                AUTH_METHOD="api_token"
+
+                # Configure permissions based on choice
+                msg_info "Configuring API permissions..."
+                if [ "$TOKEN_PERMS" = "minimal" ]; then
+                  pvesh set /access/acl --path / --roles PVEAuditor --users "${TOKEN_USER}" --propagate 1 2>/dev/null || true
+                  pvesh set /access/acl --path / --roles PVEAuditor --tokens "${API_TOKEN_ID}" --propagate 1 2>/dev/null || true
+                  msg_ok "Minimal permissions applied"
+                else
+                  pvesh set /access/acl --path / --roles PVEAuditor --users "${TOKEN_USER}" --propagate 1 2>/dev/null || true
+                  pvesh set /access/acl --path / --roles PVEVMAdmin --users "${TOKEN_USER}" --propagate 1 2>/dev/null || true
+                  pvesh set /access/acl --path / --roles PVEAuditor --tokens "${API_TOKEN_ID}" --propagate 1 2>/dev/null || true
+                  pvesh set /access/acl --path / --roles PVEVMAdmin --tokens "${API_TOKEN_ID}" --propagate 1 2>/dev/null || true
+                  msg_ok "Full permissions applied"
+                fi
+                return 0
+              else
+                msg_error "Token validation failed - incorrect token or insufficient permissions"
+                echo ""
+                echo -e "  ${BL}1)${CL} Try entering token again"
+                echo -e "  ${BL}2)${CL} Delete and create new token"
+                echo -e "  ${BL}3)${CL} Continue anyway (fix in UI later)"
+                echo ""
+                read -p "Select option [1-3]: " validation_choice
+
+                case $validation_choice in
+                  1)
+                    continue
+                    ;;
+                  2)
+                    msg_info "Deleting existing token..."
+                    pvesh delete /access/users/${TOKEN_USER}/token/${TOKEN_NAME} 2>/dev/null || true
+                    break
+                    ;;
+                  3)
+                    msg_warn "Continuing with unvalidated token"
+                    echo ""
+                    echo -e "${YW}⚠ WARNING: Token may not work correctly${CL}"
+                    echo -e "  You will need to update the token in the UI:"
+                    echo -e "  ${BL}Settings → API Configuration → Update Token${CL}"
+                    echo ""
+
+                    # Save for config file anyway
+                    echo "$API_TOKEN_SECRET" > /tmp/proxbalance_token_secret.txt
+                    chmod 600 /tmp/proxbalance_token_secret.txt
+                    AUTH_METHOD="api_token"
+                    return 0
+                    ;;
+                  *)
+                    msg_error "Invalid selection"
+                    continue
+                    ;;
+                esac
+              fi
             fi
           done
           ;;
@@ -1387,10 +1690,19 @@ setup_api_token_auth() {
       ) &
 
       if spinner $! "Verifying API token connectivity"; then
-        msg_ok "API access verified"
+        msg_ok "API access verified - token is working correctly"
         return 0
       else
-        msg_warn "Could not verify API access (may be normal)"
+        msg_warn "Could not verify API access immediately"
+        echo ""
+        echo -e "${YW}This may be normal if:${CL}"
+        echo -e "  • Services are still starting up"
+        echo -e "  • Network configuration is pending"
+        echo -e "  • Firewall rules need adjustment"
+        echo ""
+        echo -e "${INFO} The token has been created and configured."
+        echo -e "${INFO} If data collection fails, check token in the UI later."
+        echo ""
         return 0
       fi
     else
@@ -1648,55 +1960,40 @@ initial_collection() {
   spinner $! "Waiting for services to stabilize"
   echo ""
 
-  # Try to trigger initial collection with retries
-  local max_attempts=3
-  local attempt=1
+  # Try to trigger initial collection (single attempt)
   local success=false
+  local timeout_seconds=15
 
-  while [ $attempt -le $max_attempts ]; do
-    if [ $attempt -eq 1 ]; then
-      echo -e "  ${BOLD}${CY}Attempt ${attempt}/${max_attempts}${CL}"
-    else
-      echo ""
-      echo -e "  ${BOLD}${YW}Retry attempt ${attempt}/${max_attempts}${CL}"
-      sleep 3 &
-      spinner $! "Waiting before retry"
-      echo ""
-    fi
+  # Start the collection service
+  pct exec "$CTID" -- systemctl start proxmox-collector.service 2>/dev/null || true
 
-    # Start the collection service
-    pct exec "$CTID" -- systemctl start proxmox-collector.service 2>/dev/null
-
-    # Wait for collection to complete (up to 60 seconds)
-    (
-      local waited=0
-      while [ $waited -lt 60 ]; do
-        # Check if service completed successfully
-        if pct exec "$CTID" -- systemctl status proxmox-collector.service 2>/dev/null | grep -q "Deactivated successfully"; then
+  # Wait for collection to complete (up to 15 seconds)
+  (
+    set +e  # Disable exit on error for this subshell
+    local waited=0
+    while [ $waited -lt $timeout_seconds ]; do
+      # Check if service completed successfully
+      if pct exec "$CTID" -- systemctl status proxmox-collector.service 2>/dev/null | grep -q "Deactivated successfully"; then
+        exit 0
+      fi
+      # Check if cache file was created/updated recently
+      if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null; then
+        local cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
+        local now=$(date +%s)
+        local age=$((now - cache_age))
+        if [ $age -lt 30 ]; then
           exit 0
         fi
-        # Check if cache file was created/updated recently
-        if pct exec "$CTID" -- test -f /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null; then
-          local cache_age=$(pct exec "$CTID" -- stat -c %Y /opt/proxmox-balance-manager/cluster_cache.json 2>/dev/null || echo "0")
-          local now=$(date +%s)
-          local age=$((now - cache_age))
-          if [ $age -lt 30 ]; then
-            exit 0
-          fi
-        fi
-        sleep 2
-        waited=$((waited + 2))
-      done
-      exit 1
-    ) &
+      fi
+      sleep 2
+      waited=$((waited + 2))
+    done
+    exit 1
+  ) &
 
-    if spinner $! "Collecting data from Proxmox cluster (may take up to 60 seconds)"; then
-      success=true
-      break
-    fi
-
-    ((attempt++))
-  done
+  if spinner $! "Collecting data from Proxmox cluster (up to ${timeout_seconds} seconds)"; then
+    success=true
+  fi
 
   echo ""
   if [ "$success" = true ]; then
@@ -1708,31 +2005,45 @@ initial_collection() {
   else
     msg_warn "Initial collection did not complete immediately"
     echo ""
-    echo -e "  ${BOLD}${YW}This is normal and not a problem!${CL}"
+    echo -e "  ${BOLD}${YW}This may be normal, or there could be an issue:${CL}"
+    echo ""
+    echo -e "  ${DIM}Common causes:${CL}"
+    echo -e "  • Services still starting up (wait a few minutes)"
+    echo -e "  • Invalid or insufficient API token permissions"
+    echo -e "  • Network connectivity issues"
+    echo -e "  • Proxmox host not reachable from container"
     echo ""
     echo -e "  ${INFO} The collector timer is running in the background"
     echo -e "  ${INFO} Data will be collected automatically within 60 minutes"
     echo -e "  ${INFO} You can access the UI now - it will populate when ready"
     echo ""
-    echo -e "  ${DIM}Manual trigger command:${CL}"
-    echo -e "  ${BL}pct exec $CTID -- systemctl start proxmox-collector.service${CL}"
+    echo -e "  ${BOLD}${CY}Troubleshooting:${CL}"
+    echo -e "  ${DIM}Check logs:${CL}"
+    echo -e "    ${BL}pct exec $CTID -- journalctl -u proxmox-collector.service -n 50${CL}"
+    echo ""
+    echo -e "  ${DIM}Manual trigger:${CL}"
+    echo -e "    ${BL}pct exec $CTID -- systemctl start proxmox-collector.service${CL}"
+    echo ""
+    echo -e "  ${DIM}Fix token in UI:${CL}"
+    echo -e "    ${BL}http://${CONTAINER_IP}${CL} → Settings → API Configuration"
+    echo ""
   fi
 }
 
 show_completion() {
   echo ""
   echo ""
-  echo -e "${GN}╔════════════════════════════════════════════════════════════════╗${CL}"
-  echo -e "${GN}║                                                                ║${CL}"
-  echo -e "${GN}║${CL}        ${BOLD}${GN}✓  INSTALLATION COMPLETE!  ✓${CL}                      ${GN}║${CL}"
-  echo -e "${GN}║                                                                ║${CL}"
-  echo -e "${GN}╚════════════════════════════════════════════════════════════════╝${CL}"
+  echo -e "${GN}════════════════════════════════════════════════════════════════${CL}"
+  echo ""
+  echo -e "        ${BOLD}${GN}✓  INSTALLATION COMPLETE!  ✓${CL}"
+  echo ""
+  echo -e "${GN}════════════════════════════════════════════════════════════════${CL}"
   echo ""
 
   if [ "$CONTAINER_IP" != "<DHCP-assigned>" ]; then
-    echo -e "${CY}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓${CL}"
-    echo -e "${CY}┃${CL} ${BOLD}${BFR}📡 Access Information${CL}                                       ${CY}┃${CL}"
-    echo -e "${CY}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${CL}"
+    echo -e "${CY}════════════════════════════════════════════════════════════════${CL}"
+    echo -e "  ${BOLD}${BFR}📡 Access Information${CL}"
+    echo -e "${CY}════════════════════════════════════════════════════════════════${CL}"
     echo ""
     echo -e "  ${BOLD}${CY}🌐 Web Interface:${CL}  ${BOLD}${GN}http://${CONTAINER_IP}${CL}"
     echo -e "  ${BOLD}${CY}⚡ API Endpoint:${CL}   ${BOLD}${GN}http://${CONTAINER_IP}/api${CL}"
@@ -1743,9 +2054,9 @@ show_completion() {
 
   # Display password information if random password was generated
   if [ "$PASSWORD_TYPE" = "random" ]; then
-    echo -e "${YW}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓${CL}"
-    echo -e "${YW}┃${CL} ${BOLD}${BFR}🔐 Container Root Password (Save This!)${CL}                     ${YW}┃${CL}"
-    echo -e "${YW}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${CL}"
+    echo -e "${YW}════════════════════════════════════════════════════════════════${CL}"
+    echo -e "  ${BOLD}${BFR}🔐 Container Root Password (Save This!)${CL}"
+    echo -e "${YW}════════════════════════════════════════════════════════════════${CL}"
     echo ""
     echo -e "  ${BOLD}${YW}Password:${CL} ${BOLD}${GN}${ROOT_PASSWORD}${CL}"
     echo ""
@@ -1753,18 +2064,18 @@ show_completion() {
     echo -e "  ${INFO} ${DIM}Access container console: ${BL}pct enter ${CTID}${CL}"
     echo ""
   elif [ "$PASSWORD_TYPE" = "none" ]; then
-    echo -e "${GN}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓${CL}"
-    echo -e "${GN}┃${CL} ${BOLD}${BFR}🔐 Container Access${CL}                                         ${GN}┃${CL}"
-    echo -e "${GN}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${CL}"
+    echo -e "${GN}════════════════════════════════════════════════════════════════${CL}"
+    echo -e "  ${BOLD}${BFR}🔐 Container Access${CL}"
+    echo -e "${GN}════════════════════════════════════════════════════════════════${CL}"
     echo ""
     echo -e "  ${CM} ${GN}Auto-login enabled${CL} ${DIM}(No password required)${CL}"
     echo -e "  ${INFO} ${DIM}Access container console: ${BL}pct enter ${CTID}${CL}"
     echo ""
   fi
 
-  echo -e "${MG}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓${CL}"
-  echo -e "${MG}┃${CL} ${BOLD}${BFR}🛠️  Quick Commands${CL}                                            ${MG}┃${CL}"
-  echo -e "${MG}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${CL}"
+  echo -e "${MG}════════════════════════════════════════════════════════════════${CL}"
+  echo -e "  ${BOLD}${BFR}🛠️  Quick Commands${CL}"
+  echo -e "${MG}════════════════════════════════════════════════════════════════${CL}"
   echo ""
   echo -e "  ${BOLD}${YW}📊 Check detailed status:${CL}"
   echo -e "     ${BL}bash -c \"\$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/check-status.sh)\" _ ${CTID}${CL}"
@@ -1784,16 +2095,44 @@ show_completion() {
   echo -e "  ${BOLD}${YW}⚙️  Edit configuration:${CL}"
   echo -e "     ${BL}pct exec ${CTID} -- nano /opt/proxmox-balance-manager/config.json${CL}"
   echo ""
-  echo -e "${GN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  echo -e "${GN}════════════════════════════════════════════════════════════════${CL}"
   echo ""
   echo -e "  ${BOLD}${GN}🎉 ProxBalance is ready!${CL} ${BOLD}${CY}→${CL} ${BOLD}${GN}http://${CONTAINER_IP}${CL}"
   echo ""
   echo -e "${DIM}  📚 Documentation: https://github.com/Pr0zak/ProxBalance${CL}"
   echo -e "${DIM}  🐛 Report issues:  https://github.com/Pr0zak/ProxBalance/issues${CL}"
   echo ""
+  echo -e "${DIM}  📋 Logs:${CL}"
+  echo -e "${DIM}     Screen output: ${INSTALL_LOG}${CL}"
+  echo -e "${DIM}     Verbose:       ${INSTALL_LOG_VERBOSE}${CL}"
+  echo ""
+  echo -e "${DIM}Installation completed: $(date)${CL}"
+  echo ""
 }
 
 main() {
+  # Set total steps for progress tracking (8 config steps + 1 detect nodes)
+  TOTAL_STEPS=9
+
+  # Setup installation log
+  INSTALL_LOG="/var/log/proxbalance-install-$(date +%Y%m%d-%H%M%S).log"
+  INSTALL_LOG_VERBOSE="/var/log/proxbalance-install-$(date +%Y%m%d-%H%M%S)-verbose.log"
+
+  # User-facing log (what they see on screen)
+  exec > >(tee -a "$INSTALL_LOG") 2>&1
+
+  # Verbose log header
+  echo "ProxBalance Installation - Verbose Log" > "$INSTALL_LOG_VERBOSE"
+  echo "Started: $(date)" >> "$INSTALL_LOG_VERBOSE"
+  echo "========================================" >> "$INSTALL_LOG_VERBOSE"
+  echo "" >> "$INSTALL_LOG_VERBOSE"
+
+  echo "ProxBalance Installation Log"
+  echo "Started: $(date)"
+  echo "Log file: $INSTALL_LOG"
+  echo "Verbose log: $INSTALL_LOG_VERBOSE"
+  echo ""
+
   header_info
   check_root
   check_proxmox
@@ -1802,7 +2141,6 @@ main() {
   msg_ok "Running as root"
   echo ""
 
-  section_header "Configuration" "1" "3"
   select_container_id
   select_hostname
   select_network
@@ -1813,7 +2151,6 @@ main() {
   detect_proxmox_nodes
   show_summary
 
-  section_header "Installation" "2" "3"
   create_container
   get_container_ip
   install_dependencies
@@ -1826,11 +2163,9 @@ main() {
   setup_motd
   set_container_notes
 
-  section_header "Finalization" "3" "3"
   start_services
   initial_collection
   show_completion
 }
 
-trap '' INT
 main "$@"
