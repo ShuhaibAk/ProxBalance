@@ -272,6 +272,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             return saved || 'cpu';
           });
 
+          // Cluster map show powered off VMs/CTs
+          const [showPoweredOffGuests, setShowPoweredOffGuests] = useState(() => {
+            const saved = localStorage.getItem('showPoweredOffGuests');
+            return saved === null ? true : saved === 'true';
+          });
+
           // Migration dialog state
           const [selectedGuest, setSelectedGuest] = useState(null);
           const [showMigrationDialog, setShowMigrationDialog] = useState(false);
@@ -350,6 +356,11 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           useEffect(() => {
             localStorage.setItem('clusterMapViewMode', clusterMapViewMode);
           }, [clusterMapViewMode]);
+
+          // Save show powered off guests preference to localStorage whenever it changes
+          useEffect(() => {
+            localStorage.setItem('showPoweredOffGuests', showPoweredOffGuests.toString());
+          }, [showPoweredOffGuests]);
 
           // Save dashboard header collapse state to localStorage
           useEffect(() => {
@@ -7941,7 +7952,23 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                         </button>
                       </div>
                       {!collapsedSections.clusterMap && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Show Powered Off:</span>
+                            <button
+                              onClick={() => setShowPoweredOffGuests(!showPoweredOffGuests)}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                showPoweredOffGuests ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                              }`}
+                              title={showPoweredOffGuests ? 'Click to hide powered off VMs/CTs' : 'Click to show powered off VMs/CTs'}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-transform ${
+                                  showPoweredOffGuests ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          </div>
                           <span className="text-sm text-gray-600 dark:text-gray-400">View by:</span>
                           <div className="flex rounded-lg bg-gray-100 dark:bg-gray-700 p-1">
                             <button
@@ -8003,8 +8030,14 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                       <div className="relative" style={{minHeight: '400px'}}>
                         <div className="flex flex-wrap gap-8 justify-center items-start py-8">
                           {Object.values(data.nodes).map(node => {
-                            const nodeGuests = Object.values(data.guests || {}).filter(g => g.node === node.name);
-                            const maxResources = Math.max(...Object.values(data.guests || {}).map(g => {
+                            const allNodeGuests = Object.values(data.guests || {}).filter(g => g.node === node.name);
+                            const poweredOffCount = allNodeGuests.filter(g => g.status !== 'running').length;
+                            const nodeGuests = showPoweredOffGuests
+                              ? allNodeGuests
+                              : allNodeGuests.filter(g => g.status === 'running');
+                            const maxResources = Math.max(...Object.values(data.guests || {}).filter(g =>
+                              showPoweredOffGuests || g.status === 'running'
+                            ).map(g => {
                               if (clusterMapViewMode === 'cpu') {
                                 // Use CPU usage %
                                 return g.cpu_current || 0;
@@ -8054,7 +8087,12 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                                           MAINTENANCE
                                         </div>
                                       )}
-                                      <div className="text-xs text-gray-600 dark:text-gray-400">{nodeGuests.length} guests</div>
+                                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                                        {nodeGuests.length} guests
+                                        {!showPoweredOffGuests && poweredOffCount > 0 && (
+                                          <span className="text-gray-500 dark:text-gray-500"> (+{poweredOffCount} off)</span>
+                                        )}
+                                      </div>
                                     </div>
 
                                     {/* Capacity indicators */}
