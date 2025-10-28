@@ -3763,6 +3763,129 @@ def import_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/validate-token", methods=["POST"])
+def validate_token():
+    """Validate Proxmox API token and check permissions"""
+    try:
+        data = request.get_json()
+        token_id = data.get('proxmox_api_token_id', '')
+        token_secret = data.get('proxmox_api_token_secret', '')
+
+        if not token_id or not token_secret:
+            return jsonify({
+                "success": False,
+                "error": "Token ID and secret are required"
+            }), 400
+
+        # Load config to get host information
+        config = load_config()
+        if config.get('error'):
+            return jsonify({
+                "success": False,
+                "error": "Failed to load configuration"
+            }), 500
+
+        proxmox_host = config.get('proxmox_host', 'localhost')
+        proxmox_port = config.get('proxmox_port', 8006)
+        verify_ssl = config.get('proxmox_verify_ssl', False)
+
+        # Parse token ID to extract user and token name
+        # Format: user@realm!tokenname
+        try:
+            user_part, token_name = token_id.split('!')
+        except ValueError:
+            return jsonify({
+                "success": False,
+                "error": "Invalid token ID format. Expected: user@realm!tokenname"
+            }), 400
+
+        # Test API connectivity with the provided token
+        try:
+            from proxmoxer import ProxmoxAPI
+            proxmox = ProxmoxAPI(
+                proxmox_host,
+                user=user_part,
+                token_name=token_name,
+                token_value=token_secret,
+                port=proxmox_port,
+                verify_ssl=verify_ssl
+            )
+
+            # Test basic connectivity by getting version
+            version_info = proxmox.version.get()
+            version = version_info.get('version', 'Unknown')
+
+            # Try to get permissions for the token
+            permissions = []
+            try:
+                # Get cluster resources - basic permission test
+                resources = proxmox.cluster.resources.get()
+                permissions.append("✓ Can read cluster resources")
+
+                # Test node access
+                try:
+                    nodes = proxmox.nodes.get()
+                    permissions.append(f"✓ Can access {len(nodes)} node(s)")
+                except:
+                    permissions.append("✗ Cannot access nodes")
+
+                # Test VM/CT access
+                try:
+                    vms = [r for r in resources if r.get('type') in ['qemu', 'lxc']]
+                    permissions.append(f"✓ Can see {len(vms)} guest(s)")
+                except:
+                    permissions.append("✗ Cannot list guests")
+
+                # Try to get ACL to determine actual permissions
+                try:
+                    # This will fail if user doesn't have permission to read ACLs
+                    acl_result = proxmox.access.acl.get()
+                    # Find permissions for this token
+                    token_acls = [acl for acl in acl_result if token_id in str(acl)]
+                    if token_acls:
+                        for acl in token_acls[:3]:  # Show first 3
+                            path = acl.get('path', '/')
+                            roleid = acl.get('roleid', 'Unknown')
+                            permissions.append(f"✓ Role '{roleid}' on path '{path}'")
+                except:
+                    # Can't read ACLs, but that's okay - we already tested basic access
+                    permissions.append("ℹ Cannot read ACL details (limited permissions)")
+
+            except Exception as perm_error:
+                permissions.append(f"✗ Permission check failed: {str(perm_error)}")
+
+            return jsonify({
+                "success": True,
+                "message": "Token is valid and working!",
+                "version": version,
+                "permissions": permissions
+            })
+
+        except Exception as api_error:
+            error_msg = str(api_error)
+            if '401' in error_msg or 'Unauthorized' in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": "Authentication failed: Invalid token credentials"
+                }), 401
+            elif '403' in error_msg or 'Permission denied' in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": "Permission denied: Token lacks required permissions"
+                }), 403
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": f"Connection failed: {error_msg}"
+                }), 500
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Validation error: {str(e)}"
+        }), 500
+
+
 @app.route("/api/penalty-config", methods=["GET"])
 def get_penalty_config():
     """Get penalty scoring configuration with defaults"""

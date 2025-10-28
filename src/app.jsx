@@ -160,6 +160,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
           const [aiAnalysisPeriod, setAiAnalysisPeriod] = useState('24h');
           const [proxmoxTokenId, setProxmoxTokenId] = useState('');
           const [proxmoxTokenSecret, setProxmoxTokenSecret] = useState('');
+          const [validatingToken, setValidatingToken] = useState(false);
+          const [tokenValidationResult, setTokenValidationResult] = useState(null);
+          const [tokenAuthError, setTokenAuthError] = useState(false);
+          const [scrollToApiConfig, setScrollToApiConfig] = useState(false);
           const [showBranchModal, setShowBranchModal] = useState(false);
           const [availableBranches, setAvailableBranches] = useState([]);
           const [logoBalancing, setLogoBalancing] = useState(false);
@@ -573,6 +577,46 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             }
           };
 
+          const validateToken = async () => {
+            setValidatingToken(true);
+            setTokenValidationResult(null);
+            try {
+              const response = await fetch(`${API_BASE}/validate-token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  proxmox_api_token_id: proxmoxTokenId,
+                  proxmox_api_token_secret: proxmoxTokenSecret
+                })
+              });
+
+              const result = await response.json();
+
+              if (result.success) {
+                setTokenValidationResult({
+                  success: true,
+                  message: 'Token is valid!',
+                  permissions: result.permissions || [],
+                  version: result.version || 'Unknown'
+                });
+              } else {
+                setTokenValidationResult({
+                  success: false,
+                  message: result.error || 'Token validation failed',
+                  permissions: []
+                });
+              }
+            } catch (error) {
+              setTokenValidationResult({
+                success: false,
+                message: `Validation error: ${error.message}`,
+                permissions: []
+              });
+            } finally {
+              setValidatingToken(false);
+            }
+          };
+
           const saveSettings = async () => {
             setSavingSettings(true);
             try {
@@ -720,9 +764,19 @@ const ProxBalanceLogo = ({ size = 32 }) => (
               if (!response.ok) {
                 if (response.status === 503) {
                   const result = await response.json();
-                  setError(result.error || 'Service temporarily unavailable');
+                  const errorMsg = result.error || 'Service temporarily unavailable';
+
+                  // Check if it's a token/auth issue
+                  if (errorMsg.toLowerCase().includes('token') || errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('401') || errorMsg.toLowerCase().includes('unauthorized')) {
+                    setError(`${errorMsg}. Please check your API token configuration in Settings.`);
+                    setTokenAuthError(true); // Show top banner
+                  } else {
+                    setError(errorMsg);
+                    setTokenAuthError(false);
+                  }
                 } else {
-                  setError(`Server error: ${response.status}`);
+                  setError(`Server error: ${response.status}. Please check your API token configuration in Settings.`);
+                  setTokenAuthError(false);
                 }
                 setLoading(false);
                 return;
@@ -812,6 +866,10 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                 });
               } else {
                 console.error('[fetchGuestLocations] Invalid response:', result);
+                // Check if it's a token/auth issue
+                if (result.error && (result.error.toLowerCase().includes('token') || result.error.toLowerCase().includes('401') || result.error.toLowerCase().includes('unauthorized'))) {
+                  setTokenAuthError(true); // Show top banner
+                }
               }
             } catch (err) {
               console.error('[fetchGuestLocations] Error fetching guest locations:', err);
@@ -1771,6 +1829,28 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             return () => clearInterval(interval);
           }, [autoRefreshInterval]);
 
+          // Scroll to Proxmox API Configuration when navigating from error banner
+          useEffect(() => {
+            if (scrollToApiConfig && currentPage === 'settings') {
+              // First expand Advanced System Settings
+              setShowAdvancedSettings(true);
+
+              // Wait for DOM to render and expand animation to complete
+              setTimeout(() => {
+                const element = document.getElementById('proxmox-api-config');
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  // Add highlight effect
+                  element.classList.add('ring-4', 'ring-red-500', 'ring-opacity-50', 'rounded-lg');
+                  setTimeout(() => {
+                    element.classList.remove('ring-4', 'ring-red-500', 'ring-opacity-50', 'rounded-lg');
+                  }, 3000);
+                }
+                setScrollToApiConfig(false);
+              }, 400);
+            }
+          }, [scrollToApiConfig, currentPage]);
+
           // Lazy load Chart.js when Node Status section is expanded
           useEffect(() => {
             if (!collapsedSections.nodeStatus && !chartJsLoaded) {
@@ -2026,61 +2106,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             };
           }, [data, chartPeriod, darkMode, collapsedSections.nodeStatus, cpuThreshold, memThreshold, currentPage, chartJsLoaded]);
 
-          if (error) {
-            return (
-              <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-8">
-                <div className="max-w-7xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-                  <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
-                    <AlertCircle size={24} />
-                    <div>
-                      <h3 className="text-lg font-semibold">Error</h3>
-                      <p className="text-sm">{error}</p>
-                    </div>
-                  </div>
-                  <button onClick={handleRefresh} className="mt-4 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600">Retry</button>
-                </div>
-              </div>
-            );
-          }
-
-          if (!data) {
-            return (
-              <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4">
-                <div className="max-w-7xl mx-auto">
-                  {/* Header Skeleton */}
-                  <div className="flex items-center justify-between mb-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="skeleton h-10 w-10 rounded-full"></div>
-                      <div className="skeleton h-8 w-48"></div>
-                    </div>
-                    <div className="skeleton h-10 w-32"></div>
-                  </div>
-
-                  {/* Dashboard Grid Skeleton */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                    <SkeletonClusterMap />
-                    <div className="space-y-6">
-                      <SkeletonCard />
-                      <SkeletonCard />
-                    </div>
-                  </div>
-
-                  {/* Node Cards Skeleton */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <SkeletonNodeCard />
-                    <SkeletonNodeCard />
-                    <SkeletonNodeCard />
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          const ignoredGuests = Object.values(data.guests).filter(g => g.tags.has_ignore);
-          const excludeGuests = Object.values(data.guests).filter(g => g.tags.exclude_groups.length > 0);
-          const violations = checkAffinityViolations();
-
-          // Settings Page
+          // Settings Page - allow access even without data
           if (currentPage === 'settings') {
             return (
               <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -3148,7 +3174,7 @@ const ProxBalanceLogo = ({ size = 32 }) => (
 
                     <hr className="border-gray-300 dark:border-gray-600" />
 
-                    <div>
+                    <div id="proxmox-api-config">
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Proxmox API Configuration</h3>
                       <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded">
                         <div>
@@ -3181,9 +3207,76 @@ const ProxBalanceLogo = ({ size = 32 }) => (
                             The UUID token secret from Proxmox
                           </p>
                         </div>
+                        <button
+                          onClick={validateToken}
+                          disabled={validatingToken || !proxmoxTokenId || !proxmoxTokenSecret}
+                          className="w-full px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {validatingToken ? (
+                            <>
+                              <RefreshCw size={16} className="animate-spin" />
+                              Validating Token...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={16} />
+                              Validate Token & Check Permissions
+                            </>
+                          )}
+                        </button>
+
+                        {tokenValidationResult && (
+                          <div className={`p-4 rounded border ${
+                            tokenValidationResult.success
+                              ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                              : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                          }`}>
+                            <div className="flex items-start gap-2">
+                              {tokenValidationResult.success ? (
+                                <CheckCircle size={20} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                              ) : (
+                                <AlertCircle size={20} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                              )}
+                              <div className="flex-1">
+                                <p className={`font-semibold text-sm mb-1 ${
+                                  tokenValidationResult.success
+                                    ? 'text-green-900 dark:text-green-200'
+                                    : 'text-red-900 dark:text-red-200'
+                                }`}>
+                                  {tokenValidationResult.message}
+                                </p>
+                                {tokenValidationResult.success && (
+                                  <>
+                                    {tokenValidationResult.version && (
+                                      <p className="text-xs text-green-800 dark:text-green-300 mb-2">
+                                        Proxmox VE Version: {tokenValidationResult.version}
+                                      </p>
+                                    )}
+                                    {tokenValidationResult.permissions && tokenValidationResult.permissions.length > 0 && (
+                                      <div className="mt-2">
+                                        <p className="text-xs font-semibold text-green-900 dark:text-green-200 mb-1">
+                                          Token Permissions:
+                                        </p>
+                                        <ul className="text-xs text-green-800 dark:text-green-300 space-y-1 ml-4">
+                                          {tokenValidationResult.permissions.map((perm, idx) => (
+                                            <li key={idx} className="flex items-start gap-1">
+                                              <span className="text-green-600 dark:text-green-400">•</span>
+                                              <span>{perm}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3">
                           <p className="text-sm text-blue-900 dark:text-blue-200">
-                            <strong>Tip:</strong> Use the installation script to automatically create an API token with proper permissions.
+                            <strong>Tip:</strong> Use the installation script to automatically create an API token with proper permissions. Click "Validate Token" after entering credentials to verify connectivity and check permissions.
                           </p>
                         </div>
                       </div>
@@ -6107,11 +6200,140 @@ const ProxBalanceLogo = ({ size = 32 }) => (
             );
           }
 
+          // If no data available, show loading or error message but don't block UI
+          if (!data) {
+            return (
+              <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4">
+                <div className="max-w-7xl mx-auto">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                    <div className="flex items-center gap-3">
+                      <ProxBalanceLogo size={40} />
+                      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ProxBalance</h1>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setDarkMode(!darkMode)}
+                        className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                      >
+                        {darkMode ? <Sun size={20} className="text-yellow-500" /> : <Moon size={20} className="text-gray-700" />}
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage('settings')}
+                        className="p-2 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600"
+                        title="Settings"
+                      >
+                        <Settings size={20} />
+                      </button>
+                    </div>
+                  </div>
 
-          // Dashboard Page
+                  {/* Error Banner */}
+                  {error && (
+                    <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle size={24} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <h3 className="text-lg font-semibold text-red-900 dark:text-red-200">Connection Error</h3>
+                          <p className="text-sm text-red-800 dark:text-red-300 mt-1">{error}</p>
+                          <button
+                            onClick={handleRefresh}
+                            disabled={loading}
+                            className="mt-3 px-4 py-2 bg-red-600 dark:bg-red-500 text-white rounded hover:bg-red-700 dark:hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                          >
+                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                            {loading ? 'Retrying...' : 'Retry'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Loading State */}
+                  {loading && !error && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                        <RefreshCw size={48} className="text-blue-600 dark:text-blue-400 animate-spin" />
+                        <div>
+                          <p className="text-lg font-semibold text-gray-900 dark:text-white">Loading cluster data...</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Please wait 30-60 seconds for initial data collection</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Info State - No Data Yet */}
+                  {!loading && !error && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-8 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                        <Info size={48} className="text-blue-600 dark:text-blue-400" />
+                        <div>
+                          <p className="text-lg font-semibold text-blue-900 dark:text-blue-200">No Data Available</p>
+                          <p className="text-sm text-blue-800 dark:text-blue-300 mt-1">
+                            Waiting for cluster data collection. Please wait 30-60 seconds and refresh.
+                          </p>
+                          <button
+                            onClick={handleRefresh}
+                            className="mt-4 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 flex items-center gap-2 mx-auto"
+                          >
+                            <RefreshCw size={16} />
+                            Refresh
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          // Dashboard Page - data is guaranteed to be available here
+          const ignoredGuests = Object.values(data.guests || {}).filter(g => g.tags?.has_ignore);
+          const excludeGuests = Object.values(data.guests || {}).filter(g => g.tags?.exclude_groups?.length > 0);
+          const violations = checkAffinityViolations();
+
           return (<>
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4">
               <div className="max-w-7xl mx-auto">
+                {/* Token Authentication Error Banner */}
+                {tokenAuthError && (
+                  <div className="mb-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-600 dark:border-red-400 p-4 rounded-r-lg shadow-lg">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle size={24} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-red-900 dark:text-red-200 mb-1">
+                          API Token Authentication Failed
+                        </h3>
+                        <p className="text-sm text-red-800 dark:text-red-300 mb-3">
+                          ProxBalance cannot connect to the Proxmox API due to invalid or misconfigured token credentials.
+                          This prevents cluster data collection and monitoring.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            onClick={() => {
+                              setScrollToApiConfig(true);
+                              setCurrentPage('settings');
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-600 dark:bg-red-500 text-white rounded hover:bg-red-700 dark:hover:bg-red-600 font-medium"
+                          >
+                            <Settings size={16} />
+                            Fix Token Configuration
+                          </button>
+                          <button
+                            onClick={() => setTokenAuthError(false)}
+                            className="flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                          >
+                            <X size={16} />
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 mb-6 overflow-hidden">
                   {/* Minimal Header - Always Visible */}
                   <div className="flex items-center justify-between p-4">

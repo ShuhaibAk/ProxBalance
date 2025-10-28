@@ -60,6 +60,9 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main
 - ⚡ Real-time progress tracking with spinning status indicators
 - 📊 Detailed installation steps showing exactly what's happening
 - ✅ Smart validation and comprehensive error checking
+- 🔄 Intelligent error recovery with retry/continue options
+- 📝 Verbose logging to separate file for troubleshooting
+- ⚙️ Improved token validation and API connectivity testing
 
 ### Installation Time
 - **Small clusters** (1-4 nodes): ~3-5 minutes
@@ -175,11 +178,17 @@ The automated installer performs these steps:
    - Stores token ID and secret in config.json
    - Securely transfers to container
    - Removes temporary token file after transfer
-3. ✅ Tests API connectivity from container
+3. ✅ **Enhanced API token validation**
    - Verifies token authentication works
    - Tests basic API call (/api2/json/version)
    - Confirms cluster access
+   - Retry options if token validation fails
+   - Continue option to manually configure token later
 4. ✅ Reports API token creation success with token ID
+5. ✅ **Verbose logging for troubleshooting**
+   - All installation steps logged to `/tmp/proxbalance-install-verbose.log`
+   - Detailed error messages and command output captured
+   - Useful for diagnosing installation issues
 
 ### Phase 7: Frontend Build Process (1-2 minutes)
 1. ✅ Detects if build is needed (checks for inline JSX in index.html)
@@ -203,7 +212,7 @@ The automated installer performs these steps:
 ### Phase 9: Initial Data Collection (2-5 minutes)
 1. ✅ Triggers first cluster data collection with progress monitoring
 2. ✅ Shows detailed progress with animation and status updates
-3. ✅ Waits for collection to complete (up to 60 seconds per attempt)
+3. ✅ **Optimized collection timeout** - Reduced from 180s to 15s for faster feedback
 4. ✅ Retries up to 3 times if collection fails or times out
 5. ✅ Monitors both service status and cache file creation
 6. ✅ Data collection process:
@@ -214,6 +223,10 @@ The automated installer performs these steps:
    - Writes to cluster_cache.json with atomic rename
    - Takes 30-90 seconds depending on cluster size
 7. ✅ Displays success confirmation or detailed error messages
+8. ✅ **Improved error handling**
+   - Clear error messages for common failures
+   - Suggestions for fixing configuration issues
+   - Ctrl+C support for canceling installation
 
 ### Phase 10: Completion
 1. ✅ Displays access information
