@@ -192,6 +192,52 @@ pct exec <ctid> -- nano /opt/proxmox-balance-manager/config.json
 pct exec <ctid> -- systemctl restart proxmox-collector
 ```
 
+### How to view an existing API token secret
+
+**Important:** API token secrets cannot be retrieved after creation for security reasons. If you lost the secret, you must create a new token.
+
+**Problem:** Need to view or recover an existing API token secret.
+
+**Solution:**
+```bash
+# ❌ Cannot view existing token secret
+# Token secrets are one-way hashed and cannot be retrieved
+
+# ✅ Delete old token and create new one
+# 1. Delete the existing token
+pveum user token remove proxbalance@pam proxbalance
+
+# 2. Create a new token
+pveum user token add proxbalance@pam proxbalance --privsep=0
+
+# 3. Copy the token secret (ONLY shown this once!)
+# Example output:
+# {
+#    "full-tokenid" : "proxbalance@pam!proxbalance",
+#    "value" : "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# }
+
+# 4. Add permissions (both user AND token need ACLs)
+# For monitoring + migrations:
+pveum acl modify / --users proxbalance@pam --roles PVEVMAdmin
+pveum acl modify / --tokens proxbalance@pam!proxbalance --roles PVEVMAdmin
+
+# 5. Update ProxBalance config via web UI
+# Settings → Proxmox API Configuration
+# - API Token ID: proxbalance@pam!proxbalance
+# - API Token Secret: (paste the value from step 2)
+# - Click "Save Settings"
+
+# 6. Restart collector to apply
+pct exec <ctid> -- systemctl restart proxmox-collector
+```
+
+**Why you can't view existing tokens:**
+- Security: Secrets are hashed one-way (like passwords)
+- Best practice: Secrets should never be stored in plain text
+- If compromised: Delete and regenerate immediately
+- Always save new secrets securely when created
+
 ### Error: DHCP IP not detected
 
 **Problem:** Container didn't receive IP or detection timeout.
