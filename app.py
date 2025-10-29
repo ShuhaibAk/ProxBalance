@@ -4397,15 +4397,15 @@ def update_system():
 
                 update_log.append(f"Pulling {commits_to_pull} new commit(s) from branch: {current_branch}")
 
-                # Stash any local changes before pulling
+                # Stash any local changes (including untracked files) before pulling
                 result = subprocess.run(
-                    [GIT_CMD, "stash"],
+                    [GIT_CMD, "stash", "--include-untracked"],
                     cwd=GIT_REPO_PATH,
                     capture_output=True,
                     text=True
                 )
                 if result.returncode == 0 and "No local changes to save" not in result.stdout:
-                    update_log.append("Stashed local changes")
+                    update_log.append("Stashed local changes (including build artifacts)")
 
                 # Pull changes with fast-forward only first
                 result = subprocess.run(
@@ -4520,21 +4520,30 @@ def update_system():
 
         systemctl_cmd = "/usr/bin/systemctl"
         restart_commands = [
-            ([systemctl_cmd, "restart", "proxmox-balance"], "API service"),
-            ([systemctl_cmd, "restart", "proxmox-collector.timer"], "Collector timer")
+            ([systemctl_cmd, "restart", "proxmox-collector.timer"], "Collector timer", 15),
         ]
 
-        for cmd, name in restart_commands:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                update_log.append(f"✓ Restarted {name}")
-            else:
-                error_msg = result.stderr.strip() if result.stderr else "unknown error"
-                if "API service" in name:
-                    # API service can't restart itself while handling the request
-                    update_log.append(f"ℹ API service will restart automatically (reload page to see changes)")
+        for cmd, name, timeout_sec in restart_commands:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
+                if result.returncode == 0:
+                    update_log.append(f"✓ Restarted {name}")
                 else:
+                    error_msg = result.stderr.strip() if result.stderr else "unknown error"
                     update_log.append(f"⚠ Failed to restart {name}: {error_msg}")
+            except subprocess.TimeoutExpired:
+                update_log.append(f"⚠ {name} restart timed out after {timeout_sec}s")
+
+        # Schedule API service restart using systemd (can't restart itself directly)
+        update_log.append("ℹ  API service will restart automatically in 2 seconds...")
+        try:
+            # Use systemd-run to schedule a delayed restart (after this response completes)
+            subprocess.Popen([
+                systemctl_cmd, "restart", "proxmox-balance"
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            update_log.append(f"⚠ Failed to schedule API restart: {str(e)}")
+            update_log.append("ℹ  Please manually restart: systemctl restart proxmox-balance")
 
         # Get new version info
         result = subprocess.run(

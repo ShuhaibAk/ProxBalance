@@ -68,3 +68,10 @@ Thumbs.db
 .cache/
 AUTOMATION_PLAN.md
 FRONTEND_BUILD.md
+
+# Frontend build artifacts
+node_modules/
+package-lock.json
+package.json
+.babelrc
+assets/js/app.js

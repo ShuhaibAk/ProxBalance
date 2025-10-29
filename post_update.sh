@@ -110,23 +110,9 @@ else
     echo "⚠ Dependency update had issues"
 fi
 
-# Restart services
-echo "Restarting ProxBalance services..."
-systemctl restart proxmox-balance 2>&1
-if [ $? -eq 0 ]; then
-    echo "✓ Restarted API service"
-else
-    echo "⚠ Failed to restart API service"
-fi
-
-systemctl restart proxmox-collector.timer 2>&1
-if [ $? -eq 0 ]; then
-    echo "✓ Restarted collector timer"
-else
-    echo "⚠ Failed to restart collector timer"
-fi
-
 # Update systemd service files (for new services/timers)
+# NOTE: Service restarts are handled by the caller (app.py or update.sh)
+# to avoid the API trying to restart itself
 echo "Updating systemd services..."
 if [ -d /opt/proxmox-balance-manager/systemd ]; then
     cp /opt/proxmox-balance-manager/systemd/*.service /etc/systemd/system/ 2>&1
